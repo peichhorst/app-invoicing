@@ -21,9 +21,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   try {
     const body = await request.json();
 
+    type InvoiceItemCreatePayload = {
+      name: string;
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate: number;
+      total: number;
+    };
+
     const itemsInput = Array.isArray(body.items) ? body.items : [];
 
-    const itemsForCreate = itemsInput.map((item: any) => {
+    const itemsForCreate: InvoiceItemCreatePayload[] = itemsInput.map((item: any) => {
       const quantity = Number(item.quantity ?? 1) || 1;
       const unitPrice = Number(item.unitPrice ?? 0) || 0;
       const taxRate = 0; // tax disabled for now
@@ -38,7 +47,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       };
     });
 
-    const totals = itemsForCreate.reduce(
+    const totals = itemsForCreate.reduce<{ subTotal: number }>(
       (acc, item) => {
         const lineSubtotal = Number(item.quantity) * Number(item.unitPrice);
         acc.subTotal += lineSubtotal;

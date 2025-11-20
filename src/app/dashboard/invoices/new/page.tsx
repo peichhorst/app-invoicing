@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useTransition } from 'react';
+import { Suspense, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -58,6 +58,14 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
 const formatCurrency = (value: number) => currencyFormatter.format(Number.isFinite(value) ? value : 0);
 
 export default function CreateInvoicePage() {
+  return (
+    <Suspense fallback={<div className="px-4 py-10 text-sm text-zinc-500">Loading invoice...</div>}>
+      <CreateInvoiceContent />
+    </Suspense>
+  );
+}
+
+function CreateInvoiceContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editId = searchParams.get('edit');
