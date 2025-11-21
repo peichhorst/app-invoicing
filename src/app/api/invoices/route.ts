@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     const taxRatePercent = 0;
 
     const invoice = (await prisma.$transaction(async (tx) => {
-      const invoiceNumber = body.invoiceNumber || (await generateInvoiceNumber(tx));
+      const invoiceNumber = body.invoiceNumber || (await generateInvoiceNumber(tx, currentUser.id));
 
       return tx.invoice.create({
         data: {
@@ -115,8 +115,9 @@ export async function POST(request: Request) {
   }
 }
 
-async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma) {
+async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma, userId: string) {
   const last = await tx.invoice.findFirst({
+    where: { userId },
     orderBy: { createdAt: 'desc' },
     select: { invoiceNumber: true },
   });

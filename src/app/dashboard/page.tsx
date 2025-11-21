@@ -1,7 +1,21 @@
 // src/app/dashboard/page.tsx
 import Link from 'next/link';
+import Image from 'next/image';
+import { getCurrentUser } from '@/lib/auth';
 
-export default function Dashboard() {
+const isValidUrl = (value?: string | null) => {
+  if (!value) return false;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export default async function Dashboard() {
+  const user = await getCurrentUser();
+  const showLogo = isValidUrl(user?.logoDataUrl);
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="mx-auto max-w-6xl">
@@ -10,14 +24,6 @@ export default function Dashboard() {
             <h1 className="text-3xl font-semibold text-gray-900">Dashboard</h1>
             <p className="text-sm text-gray-500">Quick links to manage invoices and clients.</p>
           </div>
-          <form action="/api/auth/logout" method="post">
-            <button
-              type="submit"
-              className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
-            >
-              Logout
-            </button>
-          </form>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2">

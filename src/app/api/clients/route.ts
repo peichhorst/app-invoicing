@@ -21,10 +21,11 @@ export async function POST(request: Request) {
         email: body.email ?? null,
         phone: body.phone ?? null,
         addressLine1: body.addressLine1 ?? null,
+        addressLine2: body.addressLine2 ?? null,
         city: body.city ?? null,
         state: body.state ?? null,
         postalCode: body.postalCode ?? null,
-        country: body.country ?? 'US',
+        country: body.country ?? 'USA',
         notes: body.notes ?? null,
       },
     });

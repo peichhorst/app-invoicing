@@ -2,6 +2,7 @@
 
 import { prisma } from '@lib/prisma';
 import { InvoiceStatus, type Prisma } from '@prisma/client';
+import { getCurrentUser } from '@/lib/auth';
 
 export type ClientOption = {
   id: string;
@@ -26,7 +27,11 @@ export type CreateInvoicePayload = {
 };
 
 export async function fetchClientOptionsAction(): Promise<ClientOption[]> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+
   const clients = await prisma.client.findMany({
+    where: { userId: user.id },
     orderBy: { companyName: 'asc' },
     select: {
       id: true,
@@ -41,12 +46,15 @@ export async function fetchClientOptionsAction(): Promise<ClientOption[]> {
 export async function createInvoiceAction(
   payload: CreateInvoicePayload
 ): Promise<{ invoiceNumber: string; id: string }> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+
   const client = await prisma.client.findUnique({
     where: { id: payload.clientId },
     select: { id: true, userId: true },
   });
 
-  if (!client) {
+  if (!client || client.userId !== user.id) {
     throw new Error('Client not found');
   }
 
@@ -68,12 +76,12 @@ export async function createInvoiceAction(
   );
 
   const created = await prisma.$transaction(async (tx) => {
-    const invoiceNumber = await generateInvoiceNumber(tx);
+    const invoiceNumber = await generateInvoiceNumber(tx, user.id);
 
     const record = await tx.invoice.create({
       data: {
         clientId: payload.clientId,
-        userId: client.userId,
+        userId: user.id,
         invoiceNumber,
         status: payload.status,
         issueDate: new Date(payload.issueDate),
@@ -111,8 +119,9 @@ export async function createInvoiceAction(
   return created;
 }
 
-async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma) {
+async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma, userId: string) {
   const last = await tx.invoice.findFirst({
+    where: { userId },
     orderBy: { createdAt: 'desc' },
     select: { invoiceNumber: true },
   });

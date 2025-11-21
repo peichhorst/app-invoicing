@@ -1,6 +1,7 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -14,9 +15,12 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
 const formatCurrency = (value: number) => currencyFormatter.format(Number.isFinite(value) ? value : 0);
 
 export default async function InvoiceDetailPage({ params }: PageProps) {
+  const user = await getCurrentUser();
+  if (!user) redirect('/');
+
   const { id } = await params;
-  const invoice = await prisma.invoice.findUnique({
-    where: { id },
+  const invoice = await prisma.invoice.findFirst({
+    where: { id, userId: user.id },
     include: {
       client: true,
       items: true,

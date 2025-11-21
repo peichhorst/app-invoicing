@@ -1,9 +1,16 @@
 // src/app/dashboard/clients/page.tsx
 import Link from 'next/link';
 import { prisma } from '@lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 export default async function ClientsPage() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return <div className="p-6 text-sm text-red-600">Unauthorized</div>;
+  }
+
   const clients = await prisma.client.findMany({
+    where: { userId: user.id },
     orderBy: { companyName: 'asc' },
     include: {
       _count: { select: { invoices: true } },

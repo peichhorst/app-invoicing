@@ -54,8 +54,8 @@ export default function AuthPage() {
   const register = mode === 'register';
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-gradient-to-br from-zinc-50 via-white to-zinc-100 px-4 py-6">
-      <div className="w-full max-w-4xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+    <div className="flex min-h-screen flex-col items-center bg-white px-0 py-6">
+      <div className="w-full">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 px-8 py-6 text-white">
           <p className="text-sm font-semibold uppercase tracking-wide">Invoicing Made Simple</p>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
@@ -205,6 +205,7 @@ export default function AuthPage() {
                   <input
                     name="country"
                     defaultValue="USA"
+                    placeholder="Country"
                     className="mt-2 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
                   />
                 </div>

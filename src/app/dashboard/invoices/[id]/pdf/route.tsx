@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
 import { prisma } from '@lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -27,9 +28,14 @@ const styles = StyleSheet.create({
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
 export async function GET(_req: Request, { params }: RouteContext) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { id } = await params;
-  const invoice = await prisma.invoice.findUnique({
-    where: { id },
+  const invoice = await prisma.invoice.findFirst({
+    where: { id, userId: user.id },
     include: { client: true, items: true },
   });
 

@@ -2,9 +2,16 @@
 import Link from 'next/link';
 import { prisma } from '@lib/prisma';
 import { ResendButton } from '@components/ResendButton';
+import { getCurrentUser } from '@/lib/auth';
 
 export default async function InvoicesPage() {
+  const user = await getCurrentUser();
+  if (!user) {
+    return <div className="p-6 text-sm text-red-600">Unauthorized</div>;
+  }
+
   const invoices = await prisma.invoice.findMany({
+    where: { userId: user.id },
     include: { client: true, items: true },
     orderBy: { createdAt: 'desc' },
   });

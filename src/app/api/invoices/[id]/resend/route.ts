@@ -3,12 +3,16 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Prisma } from '@prisma/client';
+import { getCurrentUser } from '@/lib/auth';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
 export async function GET(_req: Request, { params }: RouteContext) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   try {
     const { id } = await params;
 
@@ -17,7 +21,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
       include: { client: true, items: true, user: true },
     })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }> | null;
 
-    if (!invoice) {
+    if (!invoice || invoice.userId !== user.id) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 

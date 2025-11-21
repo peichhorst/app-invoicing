@@ -1,12 +1,16 @@
 // src/app/api/clients/[id]/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getCurrentUser } from '@/lib/auth';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: RouteContext) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
   const { id } = await params;
-  const client = await prisma.client.findUnique({ where: { id } });
+  const client = await prisma.client.findFirst({ where: { id, userId: user.id } });
   if (!client) {
     return NextResponse.json({ error: 'Client not found' }, { status: 404 });
   }
@@ -15,8 +19,14 @@ export async function GET(_req: Request, { params }: RouteContext) {
 
 export async function PUT(request: Request, { params }: RouteContext) {
   try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
     const { id } = await params;
     const body = await request.json();
+
+    const client = await prisma.client.findFirst({ where: { id, userId: user.id } });
+    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
 
     const updated = await prisma.client.update({
       where: { id },
