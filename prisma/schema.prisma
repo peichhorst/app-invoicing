@@ -1,10 +1,21 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")   
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PAID
+  OVERDUE
+  VOID
 }
 
 model User {
@@ -41,24 +52,24 @@ model Client {
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String         @id @default(cuid())
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
-  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   clientId      String
-  invoiceNumber String        @unique
-  status        InvoiceStatus @default(DRAFT)
+  invoiceNumber String         @unique
+  status        InvoiceStatus  @default(DRAFT)
   issueDate     DateTime
-  dueDate       DateTime
-  currency      String        @default("USD")
-  subTotal      Float         @default(0)
-  taxRate       Float         @default(0)
-  taxAmount     Float         @default(0)
-  total         Float         @default(0)
+  dueDate       DateTime?
+  currency      String         @default("USD")
+  subTotal      Float          @default(0)
+  taxRate       Float          @default(0)
+  taxAmount     Float          @default(0)
+  total         Float          @default(0)
   notes         String?
   items         InvoiceItem[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([userId])
   @@index([clientId])
@@ -70,21 +81,12 @@ model InvoiceItem {
   invoiceId   String
   name        String
   description String?
-  quantity    Int       @default(1)
-  unitPrice   Float     @default(0)
-  taxRate     Float?     
-  total       Float      @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  quantity    Int      @default(1)
+  unitPrice   Float    @default(0)
+  taxRate     Float?   @default(0)
+  total       Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([invoiceId])
-}
-
-enum InvoiceStatus {
-  DRAFT
-  SENT
-  VIEWED
-  PAID
-  OVERDUE
-  VOID
 }
