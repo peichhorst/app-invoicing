@@ -21,15 +21,20 @@ export async function GET(_req: Request, { params }: RouteContext) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     }
 
+    const dueDays =
+      invoice.dueDate != null
+        ? Math.max(
+            0,
+            Math.round(
+              (new Date(invoice.dueDate).getTime() - new Date(invoice.issueDate).getTime()) /
+                (1000 * 60 * 60 * 24)
+            )
+          )
+        : 0;
+
     const emailInvoice = {
       ...invoice,
-      dueDays: Math.max(
-        0,
-        Math.round(
-          (new Date(invoice.dueDate).getTime() - new Date(invoice.issueDate).getTime()) /
-            (1000 * 60 * 60 * 24)
-        )
-      ),
+      dueDays,
       items: invoice.items.map((item) => ({
         ...item,
         amount: item.total ?? Number(item.unitPrice) * Number(item.quantity),

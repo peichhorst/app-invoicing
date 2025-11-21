@@ -44,6 +44,9 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     { subtotal: 0, tax: 0, total: 0 }
   );
 
+  const issuedOn = invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString() : '—';
+  const dueOn = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'No due date';
+
   return (
     <div className="min-h-screen bg-gray-50 px-6 py-10">
       <div className="mx-auto flex max-w-6xl flex-col gap-8">
@@ -54,8 +57,7 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
             </p>
             <h1 className="text-3xl font-semibold text-gray-900">Invoice Details</h1>
             <p className="text-sm text-gray-500">
-              Issued on {new Date(invoice.issueDate).toLocaleDateString()} - Due{' '}
-              {new Date(invoice.dueDate).toLocaleDateString()}
+              Issued on {issuedOn} - Due {dueOn}
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

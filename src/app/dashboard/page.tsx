@@ -80,6 +80,9 @@ export default async function Dashboard() {
                   const taxRate = Number(invoice.taxRate) || 0;
                   const tax = subtotal * (taxRate / 100);
                   const total = subtotal + tax;
+                  const dueDateLabel = invoice.dueDate
+                    ? new Date(invoice.dueDate).toLocaleDateString()
+                    : 'No due date';
 
                   return (
                     <tr key={invoice.id} className="hover:bg-gray-50">
@@ -108,7 +111,7 @@ export default async function Dashboard() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(invoice.dueDate).toLocaleDateString()}
+                        {dueDateLabel}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <div className="flex gap-3">

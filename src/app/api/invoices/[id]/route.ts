@@ -77,15 +77,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true } }>;
 
     if (updated.status === 'SENT') {
+      const dueDays =
+        updated.dueDate != null
+          ? Math.max(
+              0,
+              Math.round(
+                (new Date(updated.dueDate).getTime() - new Date(updated.issueDate).getTime()) / (1000 * 60 * 60 * 24)
+              )
+            )
+          : 0;
+
       const emailInvoice = {
         ...updated,
-        dueDays: Math.max(
-          0,
-          Math.round(
-            (new Date(updated.dueDate).getTime() - new Date(updated.issueDate).getTime()) /
-              (1000 * 60 * 60 * 24)
-          )
-        ),
+        dueDays,
         items: updated.items.map((item) => ({
           ...item,
           amount: item.total ?? Number(item.unitPrice) * Number(item.quantity),

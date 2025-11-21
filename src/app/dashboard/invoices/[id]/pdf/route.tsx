@@ -53,14 +53,16 @@ export async function GET(_req: Request, { params }: RouteContext) {
     { subtotal: 0, tax: 0, total: 0 }
   );
 
+  const issuedOn = invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString() : '';
+  const dueOn = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : 'No due date';
+
   const doc = (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           <Text style={styles.title}>Invoice #{invoice.invoiceNumber}</Text>
           <Text style={styles.subtitle}>
-            Issued {new Date(invoice.issueDate).toLocaleDateString()} - Due{' '}
-            {new Date(invoice.dueDate).toLocaleDateString()}
+            Issued {issuedOn} - Due {dueOn}
           </Text>
           <Text style={styles.subtitle}>Status: {invoice.status}</Text>
         </View>
