@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import { NextResponse } from 'next/server';
 import type { Prisma } from '@prisma/client';
+import { getCurrentUser } from '@/lib/auth';
 
 type IncomingItem = {
   description?: string;
@@ -17,18 +18,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const invoiceNumber = body.invoiceNumber || (await generateInvoiceNumber(body.clientId));
-
-    // Temporary owner until auth is wired
-    let user = await prisma.user.findFirst();
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          name: 'Demo User',
-          email: 'demo@example.com',
-          password: 'placeholder',
-        },
-      });
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const itemsInput: IncomingItem[] = Array.isArray(body.items) ? body.items : [];
@@ -60,32 +52,36 @@ export async function POST(request: Request) {
       { subTotal: 0, taxAmount: 0 }
     );
 
-    const total = totals.subTotal;
     const taxRatePercent = 0;
 
-    const invoice = (await prisma.invoice.create({
-      data: {
-        invoiceNumber,
-        issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
-        dueDate: body.dueDate ? new Date(body.dueDate) : new Date(),
-        notes: body.notes?.trim() ? body.notes.trim() : null,
-        client: { connect: { id: body.clientId } },
-        user: { connect: { id: user.id } },
-        status: 'SENT',
-        currency: 'USD',
-        subTotal: totals.subTotal,
-        taxRate: taxRatePercent,
-        taxAmount: totals.taxAmount,
-        total,
-        items: {
-          create: itemsForCreate,
+    const invoice = (await prisma.$transaction(async (tx) => {
+      const invoiceNumber = body.invoiceNumber || (await generateInvoiceNumber(tx));
+
+      return tx.invoice.create({
+        data: {
+          invoiceNumber,
+          issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
+          dueDate: body.dueDate ? new Date(body.dueDate) : null,
+          notes: body.notes?.trim() ? body.notes.trim() : null,
+          client: { connect: { id: body.clientId } },
+          user: { connect: { id: currentUser.id } },
+          status: 'SENT',
+          currency: 'USD',
+          subTotal: totals.subTotal,
+          taxRate: taxRatePercent,
+          taxAmount: totals.taxAmount,
+          total: totals.subTotal,
+          items: {
+            create: itemsForCreate,
+          },
         },
-      },
-      include: {
-        client: true,
-        items: true,
-      },
-    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true } }>;
+        include: {
+          client: true,
+          items: true,
+          user: true,
+        },
+      });
+    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
 
     const dueDays =
       invoice.dueDate != null
@@ -107,7 +103,7 @@ export async function POST(request: Request) {
       })),
     };
 
-    await sendInvoiceEmail(emailInvoice, invoice.client);
+    await sendInvoiceEmail(emailInvoice, invoice.client, invoice.user);
 
     return NextResponse.json(invoice, { status: 201 });
   } catch (error: any) {
@@ -119,8 +115,11 @@ export async function POST(request: Request) {
   }
 }
 
-async function generateInvoiceNumber(clientId: string) {
-  const count = await prisma.invoice.count({ where: { clientId } });
-  const next = count + 1;
+async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma) {
+  const last = await tx.invoice.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { invoiceNumber: true },
+  });
+  const next = (last ? Number(last.invoiceNumber) || 0 : 0) + 1;
   return next.toString();
 }

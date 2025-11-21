@@ -14,8 +14,8 @@ export async function GET(_req: Request, { params }: RouteContext) {
 
     const invoice = (await prisma.invoice.findUnique({
       where: { id },
-      include: { client: true, items: true },
-    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true } }> | null;
+      include: { client: true, items: true, user: true },
+    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }> | null;
 
     if (!invoice) {
       return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
@@ -41,7 +41,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
       })),
     };
 
-    await sendInvoiceEmail(emailInvoice, invoice.client);
+    await sendInvoiceEmail(emailInvoice, invoice.client, invoice.user);
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

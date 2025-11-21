@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@lib/prisma';
-import { InvoiceStatus } from '@prisma/client';
+import { InvoiceStatus, type Prisma } from '@prisma/client';
 
 export type ClientOption = {
   id: string;
@@ -19,7 +19,7 @@ type LineItemInput = {
 export type CreateInvoicePayload = {
   clientId: string;
   issueDate: string;
-  dueDate: string;
+  dueDate?: string | null;
   notes?: string | null;
   status: InvoiceStatus;
   items: LineItemInput[];
@@ -67,48 +67,55 @@ export async function createInvoiceAction(
     { subtotal: 0, tax: 0, total: 0 }
   );
 
-  const invoiceNumber = await generateInvoiceNumber(payload.clientId);
+  const created = await prisma.$transaction(async (tx) => {
+    const invoiceNumber = await generateInvoiceNumber(tx);
 
-  const created = await prisma.invoice.create({
-    data: {
-      clientId: payload.clientId,
-      userId: client.userId,
-      invoiceNumber,
-      status: payload.status,
-      issueDate: new Date(payload.issueDate),
-      dueDate: new Date(payload.dueDate),
-      currency: 'USD',
-      subTotal: computedTotals.subtotal,
-      taxRate: computedTotals.subtotal > 0 ? (computedTotals.tax / computedTotals.subtotal) * 100 : 0,
-      taxAmount: computedTotals.tax,
-      total: computedTotals.total,
-      notes: payload.notes?.trim() ? payload.notes.trim() : null,
-      items: {
-        create: payload.items.map((item) => {
-          const quantity = Number(item.quantity) || 0;
-          const unitPrice = Number(item.unitPrice) || 0;
-          const rate = Number(item.taxRate) || 0;
-          const lineSubtotal = quantity * unitPrice;
-          const lineTax = lineSubtotal * (rate / 100);
+    const record = await tx.invoice.create({
+      data: {
+        clientId: payload.clientId,
+        userId: client.userId,
+        invoiceNumber,
+        status: payload.status,
+        issueDate: new Date(payload.issueDate),
+        dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+        currency: 'USD',
+        subTotal: computedTotals.subtotal,
+        taxRate: computedTotals.subtotal > 0 ? (computedTotals.tax / computedTotals.subtotal) * 100 : 0,
+        taxAmount: computedTotals.tax,
+        total: computedTotals.total,
+        notes: payload.notes?.trim() ? payload.notes.trim() : null,
+        items: {
+          create: payload.items.map((item) => {
+            const quantity = Number(item.quantity) || 0;
+            const unitPrice = Number(item.unitPrice) || 0;
+            const rate = Number(item.taxRate) || 0;
+            const lineSubtotal = quantity * unitPrice;
+            const lineTax = lineSubtotal * (rate / 100);
 
-          return {
-            name: item.description,
-            description: item.description,
-            quantity,
-            unitPrice,
-            taxRate: rate,
-            total: lineSubtotal + lineTax,
-          };
-        }),
+            return {
+              name: item.description,
+              description: item.description,
+              quantity,
+              unitPrice,
+              taxRate: rate,
+              total: lineSubtotal + lineTax,
+            };
+          }),
+        },
       },
-    },
+    });
+
+    return { invoiceNumber, id: record.id };
   });
 
-  return { invoiceNumber, id: created.id };
+  return created;
 }
 
-async function generateInvoiceNumber(clientId: string) {
-  const count = await prisma.invoice.count({ where: { clientId } });
-  const next = count + 1;
+async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma) {
+  const last = await tx.invoice.findFirst({
+    orderBy: { createdAt: 'desc' },
+    select: { invoiceNumber: true },
+  });
+  const next = (last ? Number(last.invoiceNumber) || 0 : 0) + 1;
   return next.toString();
 }

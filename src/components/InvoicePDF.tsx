@@ -1,5 +1,5 @@
 // src/components/InvoicePDF.tsx
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 11, color: '#111' },
@@ -18,7 +18,13 @@ const styles = StyleSheet.create({
 
 const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 
-export const InvoicePDF = ({ invoice, client }: any) => {
+type InvoicePDFProps = {
+  invoice: any;
+  client: any;
+  user?: any;
+};
+
+export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
   const totals = invoice.items.reduce(
     (acc: any, item: any) => {
       const qty = Number(item.quantity) || 0;
@@ -31,6 +37,17 @@ export const InvoicePDF = ({ invoice, client }: any) => {
     { subtotal: 0, total: 0 }
   );
 
+  const issuedOn = invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString() : '';
+  const dueOn = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : '';
+  const fromLines = [
+    user?.companyName || 'Your Company',
+    user?.email,
+    user?.phone,
+    [user?.addressLine1, user?.addressLine2].filter(Boolean).join(', '),
+    [user?.city, user?.state, user?.postalCode].filter(Boolean).join(', '),
+    user?.country,
+  ].filter(Boolean);
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -38,14 +55,18 @@ export const InvoicePDF = ({ invoice, client }: any) => {
           <View>
             <Text style={styles.title}>Invoice #{invoice.invoiceNumber}</Text>
             <Text>
-              Issue: {new Date(invoice.issueDate).toLocaleDateString()} • Due:{' '}
-              {new Date(invoice.dueDate).toLocaleDateString()}
+              Issue: {issuedOn}
+              {dueOn ? ` • Due: ${dueOn}` : ''}
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text>From</Text>
-            <Text>Your Company</Text>
-            <Text>invoices@858webdesign.com</Text>
+            {user?.logoDataUrl ? (
+              <Image src={user.logoDataUrl} style={{ width: 80, height: 40, objectFit: 'contain', marginBottom: 6 }} />
+            ) : null}
+            {fromLines.map((line: string, idx: number) => (
+              <Text key={idx}>{line}</Text>
+            ))}
           </View>
         </View>
 

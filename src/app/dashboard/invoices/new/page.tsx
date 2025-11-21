@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -24,7 +25,7 @@ const invoiceSchema = z
   .object({
     clientId: z.string().min(1, 'Client is required'),
     issueDate: z.string().min(1, 'Issue date is required'),
-    dueDate: z.string().min(1, 'Due date is required'),
+    dueDate: z.string().optional(),
     notes: z
       .string()
       .max(1000, 'Notes must be under 1000 characters')
@@ -75,6 +76,7 @@ function CreateInvoiceContent() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [dueEnabled, setDueEnabled] = useState(false);
   const defaultDates = useMemo(() => {
     const today = new Date();
     const dueDate = new Date(today);
@@ -91,6 +93,7 @@ function CreateInvoiceContent() {
     register,
     getValues,
     handleSubmit,
+    setValue,
     formState: { errors },
     reset,
   } = useForm<InvoiceFormValues>({
@@ -98,7 +101,7 @@ function CreateInvoiceContent() {
     defaultValues: {
       clientId: '',
       issueDate: defaultDates.issueDate,
-      dueDate: defaultDates.dueDate,
+      dueDate: '',
       notes: '',
       items: [
         {
@@ -154,7 +157,7 @@ function CreateInvoiceContent() {
         reset({
           clientId: data.clientId,
           issueDate: data.issueDate ? data.issueDate.split('T')[0] : defaultDates.issueDate,
-          dueDate: data.dueDate ? data.dueDate.split('T')[0] : defaultDates.dueDate,
+          dueDate: data.dueDate ? data.dueDate.split('T')[0] : '',
           notes: data.notes || '',
           items: data.items.map((item: any) => ({
             description: item.description || item.name || '',
@@ -163,6 +166,7 @@ function CreateInvoiceContent() {
             taxRate: 0,
           })),
         });
+        setDueEnabled(Boolean(data.dueDate));
       })
       .catch((err) => {
         console.error('Failed to load invoice', err);
@@ -180,6 +184,10 @@ function CreateInvoiceContent() {
   const watchedItems = useWatch<InvoiceFormValues, 'items'>({
     control,
     name: 'items',
+  });
+  const watchedDueDate = useWatch<InvoiceFormValues, 'dueDate'>({
+    control,
+    name: 'dueDate',
   });
 
   type Totals = {
@@ -263,7 +271,8 @@ function CreateInvoiceContent() {
             <View style={styles.header}>
               <Text style={styles.title}>Invoice (PDF draft)</Text>
               <Text style={styles.subtitle}>
-                Issued {values.issueDate || 'N/A'} - Due {values.dueDate || 'N/A'}
+                Issued {values.issueDate || 'N/A'}
+                {values.dueDate ? ` - Due ${values.dueDate}` : ''}
               </Text>
               <Text style={styles.subtitle}>Status: {values.clientId ? 'SENT' : 'DRAFT'}</Text>
             </View>
@@ -349,12 +358,17 @@ function CreateInvoiceContent() {
     if (isPending) return;
 
     handleSubmit((values) => {
+      const normalizedValues = {
+        ...values,
+        dueDate: dueEnabled && values.dueDate ? values.dueDate : null,
+      };
+
       startTransition(() => {
         if (status === 'SENT') {
           fetch('/api/invoices', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...values, status }),
+            body: JSON.stringify({ ...normalizedValues, status }),
           })
             .then(async (res) => {
               if (!res.ok) throw new Error(await res.text());
@@ -379,12 +393,12 @@ function CreateInvoiceContent() {
             ? fetch(`/api/invoices/${editId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...values, status }),
+                body: JSON.stringify({ ...normalizedValues, status }),
               }).then(async (res) => {
                 if (!res.ok) throw new Error(await res.text());
                 return res.json();
               })
-            : createInvoiceAction({ ...values, status });
+            : createInvoiceAction({ ...normalizedValues, status });
 
           action
             .then((result: any) => {
@@ -422,15 +436,23 @@ function CreateInvoiceContent() {
       )}
 
       <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <div className="mb-8 flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold text-zinc-900">
-            {isEdit ? 'Edit Invoice' : 'Create Invoice'}
-          </h1>
-          <p className="text-sm text-zinc-500">
-            {isEdit
-              ? 'Update your draft or send it when ready.'
-              : 'Select a client, add line items, and save your work as a draft or send the invoice immediately.'}
-          </p>
+        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <h1 className="text-3xl font-semibold text-zinc-900">
+              {isEdit ? 'Edit Invoice' : 'Create Invoice'}
+            </h1>
+            <p className="text-sm text-zinc-500">
+              {isEdit
+                ? 'Update your draft or send it when ready.'
+                : 'Select a client, add line items, and save your work as a draft or send the invoice immediately.'}
+            </p>
+          </div>
+          <Link
+            href="/dashboard"
+            className="inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 cursor-pointer"
+          >
+            ← Back to Dashboard
+          </Link>
         </div>
 
         <form className="space-y-10">
@@ -474,12 +496,43 @@ function CreateInvoiceContent() {
                 {errors.issueDate && <p className="text-xs text-rose-500">{errors.issueDate.message}</p>}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-700">Due Date</label>
-                <input
-                  type="date"
-                  {...register('dueDate')}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                />
+                <div className="flex items-center justify-between text-sm font-medium text-zinc-700">
+                  <span>Due Date</span>
+                  {dueEnabled ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDueEnabled(false);
+                        setValue('dueDate', '');
+                      }}
+                      className="text-xs font-medium text-rose-600 hover:text-rose-700"
+                    >
+                      Clear
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDueEnabled(true);
+                        setValue('dueDate', defaultDates.dueDate);
+                      }}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      Set due date
+                    </button>
+                  )}
+                </div>
+                {dueEnabled ? (
+                  <input
+                    type="date"
+                    {...register('dueDate')}
+                    className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                  />
+                ) : (
+                  <div className="w-full rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500">
+                    No due date set
+                  </div>
+                )}
                 {errors.dueDate && <p className="text-xs text-rose-500">{errors.dueDate.message}</p>}
               </div>
             </div>
@@ -647,19 +700,19 @@ function CreateInvoiceContent() {
               </button>
               <button
                 type="button"
-                disabled={isPending}
-                onClick={() => triggerSubmit('SENT')}
-                className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPending ? 'Sending...' : 'Send Invoice'}
-              </button>
-              <button
-                type="button"
                 disabled={isGeneratingPdf}
                 onClick={handleSavePdf}
                 className="inline-flex items-center justify-center rounded-xl border border-zinc-300 px-6 py-2.5 text-sm font-semibold text-zinc-900 shadow-sm transition hover:bg-zinc-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isGeneratingPdf ? 'Generating...' : 'Save PDF'}
+              </button>
+              <button
+                type="button"
+                disabled={isPending}
+                onClick={() => triggerSubmit('SENT')}
+                className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isPending ? 'Sending...' : 'Send Invoice'}
               </button>
             </div>
           </div>

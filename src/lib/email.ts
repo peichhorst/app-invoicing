@@ -17,7 +17,7 @@ export async function sendTestEmail(to: string) {
   });
 }
 
-export async function sendInvoiceEmail(invoice: any, client: any) {
+export async function sendInvoiceEmail(invoice: any, client: any, user: any) {
   const pdfElement = React.createElement(InvoicePDF as any, { invoice, client }) as ReactElement;
   const pdfBuffer = await renderToBuffer(pdfElement as any);
   const pdfBase64 = pdfBuffer.toString('base64');
@@ -35,8 +35,9 @@ export async function sendInvoiceEmail(invoice: any, client: any) {
 
   await resend.emails.send({
     from: defaultFrom,
+    replyTo: user?.email || undefined,
     to: [client.email],
-    subject: `Invoice #${invoice.invoiceNumber} from Your Company`,
+    subject: `Invoice #${invoice.invoiceNumber} from ${user?.companyName || 'Your Company'}`,
     html: `
       <div style="font-family: system-ui, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 12px;">
         <h1 style="color: #1a1a1a;">Invoice #${invoice.invoiceNumber}</h1>
@@ -51,7 +52,7 @@ export async function sendInvoiceEmail(invoice: any, client: any) {
         <p>Payment is due within ${dueDays} days.</p>
         <p>Questions? Just reply to this email.</p>
         <hr style="margin: 40px 0; border: none; border-top: 1px solid #eee;" />
-        <small>Your Company - invoices@858webdesign.com</small>
+        <small>${user?.companyName || 'Your Company'} - ${user?.email || defaultFrom}</small>
       </div>
     `,
     attachments: [

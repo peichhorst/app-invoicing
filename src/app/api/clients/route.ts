@@ -2,22 +2,15 @@
 import { prisma } from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
 import { NextResponse } from 'next/server';
+import { getCurrentUser } from '@/lib/auth';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // For now, attach clients to a demo user. In a real app this would come from the session.
-    let user = await prisma.user.findFirst();
+    const user = await getCurrentUser();
     if (!user) {
-      const hashedPassword = await bcrypt.hash('password123', 10);
-      user = await prisma.user.create({
-        data: {
-          name: 'Demo User',
-          email: 'demo@example.com',
-          password: hashedPassword,
-        },
-      });
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const client = await prisma.client.create({

@@ -61,7 +61,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       where: { id },
       data: {
         issueDate: body.issueDate ? new Date(body.issueDate) : undefined,
-        dueDate: body.dueDate ? new Date(body.dueDate) : undefined,
+        dueDate: body.dueDate === null ? null : body.dueDate ? new Date(body.dueDate) : undefined,
         notes: body.notes?.trim() ? body.notes.trim() : null,
         status: body.status ?? undefined,
         subTotal: totals.subTotal,
@@ -73,8 +73,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           create: itemsForCreate,
         },
       },
-      include: { client: true, items: true },
-    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true } }>;
+      include: { client: true, items: true, user: true },
+    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
 
     if (updated.status === 'SENT') {
       const dueDays =
@@ -95,7 +95,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           amount: item.total ?? Number(item.unitPrice) * Number(item.quantity),
         })),
       };
-      await sendInvoiceEmail(emailInvoice, updated.client);
+      await sendInvoiceEmail(emailInvoice, updated.client, updated.user);
     }
 
     return NextResponse.json(updated);
