@@ -4,14 +4,15 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String    @id @default(cuid())
-  name      String
-  email     String    @unique
-  password  String
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  password     String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
   companyName  String?
   logoDataUrl  String?
   phone        String?
@@ -20,12 +21,10 @@ model User {
   city         String?
   state        String?
   postalCode   String?
-  country      String? @default("USA")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  clients   Client[]
-  invoices  Invoice[]
-  sessions  Session[]
+  country      String?   @default("USA")
+  clients      Client[]
+  invoices     Invoice[]
+  Session      Session[]
 }
 
 model Client {
@@ -54,7 +53,7 @@ model Invoice {
   id            String        @id @default(cuid())
   userId        String
   clientId      String
-  invoiceNumber String        @unique
+  invoiceNumber String
   status        InvoiceStatus @default(DRAFT)
   issueDate     DateTime
   dueDate       DateTime?
@@ -70,6 +69,7 @@ model Invoice {
   user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   items         InvoiceItem[]
 
+  @@unique([userId, invoiceNumber])
   @@index([userId])
   @@index([clientId])
 }
@@ -91,12 +91,12 @@ model InvoiceItem {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  token     String   @unique
+  id        String    @id
+  token     String    @unique
   userId    String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   expiresAt DateTime?
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  User      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }

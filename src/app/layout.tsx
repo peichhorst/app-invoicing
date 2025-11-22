@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { getCurrentUser } from "@/lib/auth";
 import { User } from "lucide-react";
+import { PWARegister } from "./PWARegister";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -18,6 +19,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "SuperInvoicing",
   description: "SuperInvoicing",
+  manifest: "/manifest.webmanifest",
+};
+
+export const viewport = {
+  themeColor: "#4f46e5",
 };
 
 export default async function RootLayout({
@@ -42,6 +48,7 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <PWARegister />
         <header className="border-b border-zinc-200 bg-white">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
             <Link href="/" className="text-xl font-semibold tracking-tight text-zinc-900 flex items-center gap-2">

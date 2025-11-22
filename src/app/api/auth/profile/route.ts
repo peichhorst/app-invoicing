@@ -18,7 +18,6 @@ export async function PUT(request: Request) {
 
     const data: any = {
       name: body.name || user.name,
-      email: body.email || user.email,
       companyName: body.companyName ?? null,
       logoDataUrl: body.logoDataUrl ?? null,
       phone: body.phone ?? null,

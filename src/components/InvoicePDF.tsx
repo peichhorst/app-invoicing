@@ -56,8 +56,9 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
             <Text style={styles.title}>Invoice #{invoice.invoiceNumber}</Text>
             <Text>
               Issue: {issuedOn}
-              {dueOn ? ` • Due: ${dueOn}` : ''}
+              {dueOn ? ` · Due: ${dueOn}` : ''}
             </Text>
+            {user?.companyName ? <Text style={{ marginTop: 4 }}>{user.companyName}</Text> : null}
           </View>
           <View style={{ alignItems: 'flex-end' }}>
             <Text>From</Text>

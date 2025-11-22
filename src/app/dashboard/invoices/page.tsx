@@ -4,6 +4,8 @@ import { prisma } from '@lib/prisma';
 import { ResendButton } from '@components/ResendButton';
 import { getCurrentUser } from '@/lib/auth';
 
+export const dynamic = 'force-dynamic';
+
 export default async function InvoicesPage() {
   const user = await getCurrentUser();
   if (!user) {

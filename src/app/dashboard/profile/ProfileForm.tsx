@@ -59,13 +59,14 @@ export function ProfileForm({ initial }: ProfileFormProps) {
           />
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium text-zinc-700">Email</label>
+          <label className="text-sm font-medium text-zinc-700">Email (view only)</label>
           <input
             name="email"
             type="email"
             defaultValue={initial.email}
-            required
-            className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            readOnly
+            disabled
+            className="w-full cursor-not-allowed rounded-lg border border-zinc-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 shadow-sm"
           />
         </div>
       </div>
