@@ -91,13 +91,12 @@ model InvoiceItem {
 }
 
 model Session {
-  id        String    @id
+  id        String    @id @default(cuid())
   token     String    @unique
   userId    String
   createdAt DateTime  @default(now())
-  expiresAt DateTime?
-  User      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
+  expiresAt DateTime?  
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@index([userId])
 }
 

@@ -5,6 +5,7 @@ import "./globals.css";
 import { getCurrentUser } from "@/lib/auth";
 import { User } from "lucide-react";
 import { PWARegister } from "./PWARegister";
+import { InstallPromptButton } from "./InstallPromptButton";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -57,35 +58,36 @@ export default async function RootLayout({
               </span>
               <span className="text-2xl font-bold">Invoicing</span>
             </Link>
-            {user ? (
-              <form action="/api/auth/logout" method="post" className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  {hasLogo ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={user.logoDataUrl as string}
-                      alt="Logo"
-                      className="h-10 w-10 rounded-full object-cover border border-zinc-200"
-                    />
-                  ) : (
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-zinc-500">
-                      <User size={20} />
-                    </div>
-                  )}
-                  <Link href="/dashboard/profile" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
-                    Edit Profile
-                  </Link>
-                </div>
-                <button
-                  type="submit"
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 cursor-pointer"
-                >
-                  Logout
-                </button>
-              </form>
-            ) : (
-              <div className="flex items-center gap-3 text-sm" />
-            )}
+            <div className="flex items-center gap-3">
+              <InstallPromptButton />
+              {user ? (
+                <form action="/api/auth/logout" method="post" className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    {hasLogo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={user.logoDataUrl as string}
+                        alt="Logo"
+                        className="h-10 w-10 rounded-full object-cover border border-zinc-200"
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-zinc-500">
+                        <User size={20} />
+                      </div>
+                    )}
+                    <Link href="/dashboard/profile" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
+                      Edit Profile
+                    </Link>
+                  </div>
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 cursor-pointer"
+                  >
+                    Logout
+                  </button>
+                </form>
+              ) : null}
+            </div>
           </div>
         </header>
         <main className="mx-auto max-w-6xl">{children}</main>

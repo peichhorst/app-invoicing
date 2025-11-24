@@ -9,12 +9,18 @@ export async function POST(request: Request) {
     const { name, email, password, companyName, logoDataUrl, phone, addressLine1, addressLine2, city, state, postalCode, country } = body;
 
     if (!email || !password || !name) {
-      return NextResponse.json({ error: 'Name, email, and password are required.' }, { status: 400 });
+      return new Response('Name, email, and password are required.', {
+        status: 400,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return NextResponse.json({ error: 'Email already registered.' }, { status: 409 });
+      return new Response('Email already registered.', {
+        status: 409,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     const hashed = await hashPassword(password);
@@ -45,6 +51,9 @@ export async function POST(request: Request) {
     return res;
   } catch (error: any) {
     console.error('Registration failed', error);
-    return NextResponse.json({ error: 'Registration failed', details: error?.message || String(error) }, { status: 500 });
+    return new Response('Registration failed. Please try again.', {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   }
 }

@@ -9,17 +9,26 @@ export async function POST(request: Request) {
     const { email, password } = body;
 
     if (!email || !password) {
-      return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
+      return new Response('Email and password are required.', {
+        status: 400,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+      return new Response('Invalid credentials.', {
+        status: 401,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     const valid = await verifyPassword(password, user.password);
     if (!valid) {
-      return NextResponse.json({ error: 'Invalid credentials.' }, { status: 401 });
+      return new Response('Invalid credentials.', {
+        status: 401,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     const { token } = await createSession(user.id);
@@ -28,6 +37,9 @@ export async function POST(request: Request) {
     return res;
   } catch (error: any) {
     console.error('Login failed', error);
-    return NextResponse.json({ error: 'Login failed', details: error?.message || String(error) }, { status: 500 });
+    return new Response('Login failed. Please try again.', {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   }
 }

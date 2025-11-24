@@ -12,4 +12,3 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   return <>{children}</>;
 }
 
-<SpeedInsights />
