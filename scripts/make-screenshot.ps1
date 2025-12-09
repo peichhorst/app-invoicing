@@ -55,7 +55,7 @@ New-Screenshot `
     -Width 1280 `
     -Height 720 `
     -Path "public/screenshot-wide.png" `
-    -Title "SuperInvoicing" `
+    -Title "ClientWave" `
     -Subtitle "Dashboard & Invoice Builder" `
     -Lines @(
         "Clients, invoices, PDF + email",
@@ -68,7 +68,7 @@ New-Screenshot `
     -Width 720 `
     -Height 1280 `
     -Path "public/screenshot-portrait.png" `
-    -Title "SuperInvoicing" `
+    -Title "ClientWave" `
     -Subtitle "Mobile-first auth & invoices" `
     -Lines @(
         "Login + Register in one screen",

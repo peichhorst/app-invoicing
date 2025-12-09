@@ -5,11 +5,11 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const to = url.searchParams.get('to') || process.env.RESEND_TEST_TO;
+    const to = url.searchParams.get('to');
 
     if (!to) {
       return NextResponse.json(
-        { error: 'Missing recipient. Provide ?to=address or set RESEND_TEST_TO.' },
+        { error: 'Missing recipient. Provide ?to=address.' },
         { status: 400 }
       );
     }

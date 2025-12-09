@@ -1,7 +1,7 @@
 'use server';
 
 import { prisma } from '@lib/prisma';
-import { InvoiceStatus, type Prisma } from '@prisma/client';
+import { InvoiceStatus, Prisma } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
 
 export type ClientOption = {
@@ -24,6 +24,12 @@ export type CreateInvoicePayload = {
   notes?: string | null;
   status: InvoiceStatus;
   items: LineItemInput[];
+  recurring?: boolean;
+  recurringInterval?: 'week' | 'month' | 'quarter' | 'year' | null;
+  recurringDayOfMonth?: number | null;
+  recurringDayOfWeek?: number | null;
+  nextOccurrence?: string | null;
+  recurringParentId?: string | null;
 };
 
 export async function fetchClientOptionsAction(): Promise<ClientOption[]> {
@@ -58,7 +64,7 @@ export async function createInvoiceAction(
     throw new Error('Client not found');
   }
 
-  const computedTotals = payload.items.reduce(
+const computedTotals = payload.items.reduce(
     (acc, item) => {
       const quantity = Number(item.quantity) || 0;
       const unitPrice = Number(item.unitPrice) || 0;
@@ -75,25 +81,31 @@ export async function createInvoiceAction(
     { subtotal: 0, tax: 0, total: 0 }
   );
 
-  const created = await prisma.$transaction(async (tx) => {
-    const invoiceNumber = await generateInvoiceNumber(tx, user.id);
+    const created = await prisma.$transaction(async (tx) => {
+      const invoiceNumber = await generateInvoiceNumber(tx, user.id);
 
-    const record = await tx.invoice.create({
-      data: {
-        clientId: payload.clientId,
-        userId: user.id,
-        invoiceNumber,
-        status: payload.status,
-        issueDate: new Date(payload.issueDate),
-        dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
-        currency: 'USD',
-        subTotal: computedTotals.subtotal,
-        taxRate: computedTotals.subtotal > 0 ? (computedTotals.tax / computedTotals.subtotal) * 100 : 0,
-        taxAmount: computedTotals.tax,
-        total: computedTotals.total,
-        notes: payload.notes?.trim() ? payload.notes.trim() : null,
-        items: {
-          create: payload.items.map((item) => {
+        const record = await tx.invoice.create({
+          data: {
+            clientId: payload.clientId,
+            userId: user.id,
+            invoiceNumber,
+            status: payload.status,
+            issueDate: new Date(payload.issueDate),
+            dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
+            currency: 'USD',
+            subTotal: computedTotals.subtotal,
+            taxRate: computedTotals.subtotal > 0 ? (computedTotals.tax / computedTotals.subtotal) * 100 : 0,
+            taxAmount: computedTotals.tax,
+            total: computedTotals.total,
+            notes: payload.notes?.trim() ? payload.notes.trim() : null,
+            recurring: payload.recurring ?? false,
+            recurringInterval: payload.recurringInterval ?? null,
+            recurringDayOfMonth: payload.recurringDayOfMonth ?? null,
+            recurringDayOfWeek: payload.recurringDayOfWeek ?? null,
+            nextOccurrence: payload.nextOccurrence ? new Date(payload.nextOccurrence) : null,
+            recurringParentId: payload.recurringParentId ?? null,
+            items: {
+              create: payload.items.map((item) => {
             const quantity = Number(item.quantity) || 0;
             const unitPrice = Number(item.unitPrice) || 0;
             const rate = Number(item.taxRate) || 0;
@@ -113,10 +125,85 @@ export async function createInvoiceAction(
       },
     });
 
-    return { invoiceNumber, id: record.id };
-  });
+        if (
+          payload.recurring &&
+          payload.recurringInterval &&
+          payload.nextOccurrence
+        ) {
+          await tx.recurringInvoice.create({
+            data: {
+              clientId: payload.clientId,
+              userId: user.id,
+              title: payload.notes?.trim() || 'Recurring invoice',
+              amount: new Prisma.Decimal(record.total),
+              currency: 'USD',
+              interval: payload.recurringInterval,
+              dayOfMonth:
+                payload.recurringInterval !== 'week'
+                  ? payload.recurringDayOfMonth ?? null
+                  : null,
+              dayOfWeek:
+                payload.recurringInterval === 'week'
+                  ? payload.recurringDayOfWeek ?? null
+                  : null,
+              nextSendDate: new Date(payload.nextOccurrence),
+              status: 'ACTIVE',
+              sendFirstNow: true,
+            },
+          });
+        }
+
+        return { invoiceNumber, id: record.id };
+      });
 
   return created;
+}
+
+export type CreateRecurringInvoicePayload = {
+  clientId: string;
+  amount: number;
+  interval: 'week' | 'month' | 'quarter' | 'year';
+  dayOfMonth?: number | null;
+  dayOfWeek?: number | null;
+  nextSendDate: string;
+  sendFirstNow?: boolean;
+  title?: string | null;
+  currency?: string;
+  status?: string;
+};
+
+export async function createRecurringInvoiceAction(
+  payload: CreateRecurringInvoicePayload
+): Promise<{ id: string }> {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Unauthorized');
+
+  const client = await prisma.client.findUnique({
+    where: { id: payload.clientId },
+    select: { id: true, userId: true },
+  });
+
+  if (!client || client.userId !== user.id) {
+    throw new Error('Client not found');
+  }
+
+  const recurring = await prisma.recurringInvoice.create({
+    data: {
+      clientId: payload.clientId,
+      userId: user.id,
+      title: payload.title?.trim() ? payload.title.trim() : 'Recurring invoice',
+      amount: new Prisma.Decimal(payload.amount),
+      currency: payload.currency ?? 'USD',
+      interval: payload.interval,
+      dayOfMonth: payload.dayOfMonth ?? null,
+      dayOfWeek: payload.dayOfWeek ?? null,
+      nextSendDate: new Date(payload.nextSendDate),
+      status: payload.status ?? 'ACTIVE',
+      sendFirstNow: payload.sendFirstNow ?? true,
+    },
+  });
+
+  return { id: recurring.id };
 }
 
 async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma, userId: string) {

@@ -1,0 +1,5 @@
+ALTER TABLE "User"
+ADD COLUMN "proTrialReminderSent" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "Client"
+ADD COLUMN "archived" BOOLEAN NOT NULL DEFAULT false;

@@ -33,93 +33,105 @@ export default function EditClientPage({ params }: PageProps) {
 
   useEffect(() => {
     let active = true;
-    params.then(({ id }) =>
-      fetch(`/api/clients/${id}`)
-        .then(async (res) => {
-          if (!res.ok) throw new Error(await res.text());
-          const data = await res.json();
-          if (active) setClient(data);
-        })
-        .catch((err) => {
-          console.error('Failed to load client', err);
-          if (active) setError('Failed to load client');
-        })
-        .finally(() => {
-          if (active) setLoading(false);
-        })
-    );
+    params
+      .then(({ id }) =>
+        fetch(`/api/clients/${id}`)
+          .then(async (res) => {
+            if (!res.ok) throw new Error(await res.text());
+            const data = await res.json();
+            if (active) setClient(data);
+          })
+          .catch((err) => {
+            console.error('Failed to load client', err);
+            if (active) setError('Failed to load client');
+          })
+          .finally(() => {
+            if (active) setLoading(false);
+          })
+      )
+      .catch((err) => {
+        console.error('Failed to load params', err);
+        setLoading(false);
+        setError('Failed to load client');
+      });
     return () => {
       active = false;
     };
   }, [params]);
 
-  if (loading) {
-    return <div className="p-6 text-sm text-gray-500">Loading client…</div>;
-  }
-
-  if (error || !client) {
-    return (
-      <div className="p-6 text-sm text-red-600">
-        {error || 'Client not found.'}{' '}
-        <button className="text-blue-600 underline" onClick={() => router.push('/dashboard/clients')}>
-          Back to Clients
-        </button>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
-      <div className="mx-auto max-w-2xl">
-        <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-3xl font-bold">Edit Client</h1>
+    <div className="min-h-screen bg-gray-50 px-10 py-10">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-gray-900">Edit Client</h1>
+            <p className="text-sm text-gray-500">Update client details and contact information.</p>
+          </div>
+        <div className="flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => router.push('/dashboard/clients')}
-            className="rounded bg-gray-200 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-300"
+            className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 cursor-pointer"
           >
-            ← Back to Clients
+            &larr; Back to Clients
           </button>
         </div>
-        <ClientForm
-          initialValues={{
-            companyName: client.companyName,
-            contactName: client.contactName ?? '',
-            email: client.email ?? '',
-            phone: client.phone ?? '',
-            addressLine1: client.addressLine1 ?? '',
-            addressLine2: client.addressLine2 ?? '',
-            city: client.city ?? '',
-            state: client.state ?? '',
-            postalCode: client.postalCode ?? '',
-            country: client.country ?? 'USA',
-            notes: client.notes ?? '',
-          }}
-          submitting={saving}
-          submitLabel="Save Changes"
-          onCancel={() => router.push('/dashboard/clients')}
-          onSubmit={async (values: ClientFormValues) => {
-            if (!client) return;
-            setSaving(true);
-            setError(null);
+        </div>
 
-            const res = await fetch(`/api/clients/${client.id}`, {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(values),
-            });
+        {loading ? (
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm">
+            Loading client…
+          </div>
+        ) : error || !client ? (
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
+            {error || 'Client not found.'}{' '}
+            <button className="text-purple-600 underline" onClick={() => router.push('/dashboard/clients')}>
+              Back to Clients
+            </button>
+          </div>
+        ) : (
+          <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+            <ClientForm
+              initialValues={{
+                companyName: client.companyName,
+                contactName: client.contactName ?? '',
+                email: client.email ?? '',
+                phone: client.phone ?? '',
+                addressLine1: client.addressLine1 ?? '',
+                addressLine2: client.addressLine2 ?? '',
+                city: client.city ?? '',
+                state: client.state ?? '',
+                postalCode: client.postalCode ?? '',
+                country: client.country ?? 'USA',
+                notes: client.notes ?? '',
+              }}
+              submitting={saving}
+              submitLabel="Save Changes"
+              onCancel={() => router.push('/dashboard/clients')}
+              onSubmit={async (values: ClientFormValues) => {
+                if (!client) return;
+                setSaving(true);
+                setError(null);
 
-            if (res.ok) {
-              router.push('/dashboard/clients');
-              router.refresh();
-            } else {
-              setError('Failed to update client');
-              console.error('Update client failed', await res.text());
-            }
-            setSaving(false);
-          }}
-        />
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+                const res = await fetch(`/api/clients/${client.id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(values),
+                });
+
+                if (res.ok) {
+                  router.push('/dashboard/clients');
+                  router.refresh();
+                } else {
+                  setError('Failed to update client');
+                  console.error('Update client failed', await res.text());
+                }
+                setSaving(false);
+              }}
+            />
+            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          </div>
+        )}
       </div>
     </div>
   );

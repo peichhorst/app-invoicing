@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SuperInvoicing",
-  description: "SuperInvoicing",
+  title: "ClientWave - Client & Invoicing Management Made Simple",
+  description: "ClientWave - Client & Invoicing Management Made Simple",
   manifest: "/manifest.webmanifest",
 };
 
@@ -46,23 +46,48 @@ export default async function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-1144687877247453"
+          crossOrigin="anonymous"
+        ></script>
+      </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased overflow-x-hidden`}
       >
         <PWARegister />
-        <header className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-            <Link href="/" className="text-xl font-semibold tracking-tight text-zinc-900 flex items-center gap-2">
-              <span className="rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-bold uppercase text-white">
-                Super
+        <header className="border-b border-zinc-200 bg-white relative overflow-hidden w-full">
+          <div className="grid-overlay absolute inset-0 opacity-25" />
+          <div className="mx-auto flex max-w-6xl items-center justify-between px-0 sm:px-8 lg:px-10 py-3">
+            <Link href="/" className="group flex items-center gap-4">
+              <span className="rounded-full bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 px-5 py-3 text-md font-bold tracking-[0.3em] text-white flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center">
+                  <svg viewBox="0 0 24 16" className="h-full w-full stroke-white" fill="none">
+                    <path
+                      d="M1 12C5 3 9 13 13 4s7 14 11 6"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M1 14C5 7 9 15 13 7s7 12 11 8"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      opacity="0.6"
+                    />
+                  </svg>
+                </span>
+                ClientWave
               </span>
-              <span className="text-2xl font-bold">Invoicing</span>
             </Link>
             <div className="flex items-center gap-3">
               <InstallPromptButton />
               {user ? (
                 <form action="/api/auth/logout" method="post" className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
+                  <Link
+                    href="/dashboard/profile"
+                    className="flex items-center gap-2"
+                  >
                     {hasLogo ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -75,10 +100,7 @@ export default async function RootLayout({
                         <User size={20} />
                       </div>
                     )}
-                    <Link href="/dashboard/profile" className="text-sm font-semibold text-blue-600 hover:text-blue-700">
-                      Edit Profile
-                    </Link>
-                  </div>
+                  </Link>
                   <button
                     type="submit"
                     className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 cursor-pointer"
@@ -90,7 +112,9 @@ export default async function RootLayout({
             </div>
           </div>
         </header>
-        <main className="mx-auto max-w-6xl">{children}</main>
+        <main className="min-h-screen w-full bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 px-0 sm:px-0 py-0">
+          <div className="mx-auto w-full max-w-6xl px-0 sm:px-8 lg:px-10">{children}</div>
+        </main>
       </body>
     </html>
   );

@@ -2,8 +2,9 @@
 import { prisma } from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import { NextResponse } from 'next/server';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
+import { generateUniqueShortCode } from '@/lib/shortcodes';
 
 type IncomingItem = {
   description?: string;
@@ -41,6 +42,15 @@ export async function POST(request: Request) {
       };
     });
 
+    const client = await prisma.client.findUnique({
+      where: { id: body.clientId },
+      select: { id: true, userId: true },
+    });
+
+    if (!client || client.userId !== currentUser.id) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+    }
+
     const totals = itemsForCreate.reduce(
       (acc, item) => {
         const lineSubtotal = Number(item.quantity) * Number(item.unitPrice);
@@ -57,20 +67,29 @@ export async function POST(request: Request) {
     const invoice = (await prisma.$transaction(async (tx) => {
       const invoiceNumber = body.invoiceNumber || (await generateInvoiceNumber(tx, currentUser.id));
 
-      return tx.invoice.create({
+      const shortCode = await generateUniqueShortCode(tx);
+
+      const record = await tx.invoice.create({
         data: {
           invoiceNumber,
           issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
           dueDate: body.dueDate ? new Date(body.dueDate) : null,
           notes: body.notes?.trim() ? body.notes.trim() : null,
-          client: { connect: { id: body.clientId } },
+          shortCode,
+          client: { connect: { id: client.id } },
           user: { connect: { id: currentUser.id } },
           status: 'SENT',
+          sentCount: 1,
           currency: 'USD',
           subTotal: totals.subTotal,
           taxRate: taxRatePercent,
           taxAmount: totals.taxAmount,
           total: totals.subTotal,
+          recurring: Boolean(body.recurring),
+          recurringInterval: body.recurringInterval ?? null,
+          recurringDayOfMonth: body.recurringDayOfMonth ?? null,
+          recurringDayOfWeek: body.recurringDayOfWeek ?? null,
+          nextOccurrence: body.nextOccurrence ? new Date(body.nextOccurrence) : null,
           items: {
             create: itemsForCreate,
           },
@@ -81,6 +100,33 @@ export async function POST(request: Request) {
           user: true,
         },
       });
+
+      if (
+        body.recurring &&
+        body.recurringInterval &&
+        body.nextOccurrence &&
+        body.clientId
+      ) {
+        await tx.recurringInvoice.create({
+          data: {
+            clientId: client.id,
+            userId: currentUser.id,
+            title: body.notes?.trim() || 'Recurring invoice',
+            amount: new Prisma.Decimal(record.total),
+            currency: record.currency,
+            interval: body.recurringInterval,
+            dayOfMonth:
+              body.recurringInterval !== 'week' ? body.recurringDayOfMonth ?? null : null,
+            dayOfWeek:
+              body.recurringInterval === 'week' ? body.recurringDayOfWeek ?? null : null,
+            nextSendDate: new Date(body.nextOccurrence),
+            status: 'ACTIVE',
+            sendFirstNow: true,
+          },
+        });
+      }
+
+      return record;
     })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
 
     const dueDays =

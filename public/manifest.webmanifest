@@ -1,6 +1,6 @@
 {
-  "name": "SuperInvoicing",
-  "short_name": "SuperInvoicing",
+  "name": "ClientWave",
+  "short_name": "ClientWave",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

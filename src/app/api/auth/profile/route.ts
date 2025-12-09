@@ -10,16 +10,46 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
+  const sanitizeLogoUrl = (value: unknown) => {
+    if (!value || typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.toLowerCase().startsWith('data:image')) return null;
+    return trimmed;
+  };
+
+  type ProfilePayload = {
+    name?: string | null;
+    companyName?: string | null;
+    logoDataUrl?: string | null;
+    phone?: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+    stripeAccountId?: string | null;
+    stripePublishableKey?: string | null;
+    venmoHandle?: string | null;
+    zelleHandle?: string | null;
+    mailToAddressEnabled?: string | null;
+    mailToAddressTo?: string | null;
+    trackdriveLeadToken?: string | null;
+    trackdriveLeadEnabled?: string | null;
+    password?: string | null;
+  };
+
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const body = await request.json();
+    const body = (await request.json()) as ProfilePayload;
 
-    const data: any = {
+    const data: Parameters<typeof prisma.user.update>[0]['data'] = {
       name: body.name || user.name,
       companyName: body.companyName ?? null,
-      logoDataUrl: body.logoDataUrl ?? null,
+      logoDataUrl: sanitizeLogoUrl(body.logoDataUrl),
       phone: body.phone ?? null,
       addressLine1: body.addressLine1 ?? null,
       addressLine2: body.addressLine2 ?? null,
@@ -27,6 +57,14 @@ export async function PUT(request: Request) {
       state: body.state ?? null,
       postalCode: body.postalCode ?? null,
       country: body.country ?? 'USA',
+      stripeAccountId: body.stripeAccountId?.trim() || null,
+      stripePublishableKey: body.stripePublishableKey?.trim() || null,
+      venmoHandle: body.venmoHandle?.trim() || null,
+      zelleHandle: body.zelleHandle?.trim() || null,
+      mailToAddressEnabled: body.mailToAddressEnabled === 'true',
+      mailToAddressTo: body.mailToAddressTo?.trim() || null,
+      trackdriveLeadToken: body.trackdriveLeadToken?.trim() || null,
+      trackdriveLeadEnabled: body.trackdriveLeadEnabled === 'true',
     };
 
     if (body.password) {
@@ -39,8 +77,12 @@ export async function PUT(request: Request) {
     });
 
     return NextResponse.json({ user: updated });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Profile update failed:', error);
-    return NextResponse.json({ error: 'Failed to update profile', details: error?.message || String(error) }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json(
+      { error: 'Failed to update profile', details: message },
+      { status: 500 }
+    );
   }
 }

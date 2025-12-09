@@ -54,3 +54,23 @@ export async function PUT(request: Request, { params }: RouteContext) {
     );
   }
 }
+
+export async function DELETE(_req: Request, { params }: RouteContext) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { id } = await params;
+    const client = await prisma.client.findFirst({ where: { id, userId: user.id } });
+    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+
+    await prisma.client.delete({ where: { id } });
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    console.error('Delete client failed:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete client', details: error?.message || String(error) },
+      { status: 500 }
+    );
+  }
+}

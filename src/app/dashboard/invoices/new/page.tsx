@@ -10,15 +10,19 @@ import type { InvoiceStatus } from '@prisma/client';
 import { Document, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
 import {
   createInvoiceAction,
+  createRecurringInvoiceAction,
   fetchClientOptionsAction,
   type ClientOption,
 } from './actions';
+import { GripVertical } from 'lucide-react';
+import { ClientForm, type ClientFormValues } from '@/components/ClientForm';
 
 const lineItemSchema = z.object({
   description: z.string().min(1, 'Description is required'),
   quantity: z.number().min(1, 'Quantity must be at least 1'),
   unitPrice: z.number().min(0, 'Unit price must be 0 or greater'),
-  taxRate: z.number().min(0, 'Tax rate must be 0 or greater'),
+  taxRate: z.number().min(0, 'Tax rate must be 0 or greater').optional(),
+  taxEnabled: z.boolean().optional(),
 });
 
 const invoiceSchema = z
@@ -31,6 +35,22 @@ const invoiceSchema = z
       .max(1000, 'Notes must be under 1000 characters')
       .optional()
       .or(z.literal('')),
+    recurringEnabled: z.boolean().optional(),
+    recurringInterval: z
+      .enum(['week', 'month', 'quarter', 'year'])
+      .optional(),
+    recurringDayOfMonth: z
+      .number()
+      .int()
+      .min(1, 'Day of month must be between 1 and 31')
+      .max(31, 'Day of month must be between 1 and 31')
+      .optional(),
+    recurringDayOfWeek: z
+      .number()
+      .int()
+      .min(1, 'Day of week must be between 1 and 7')
+      .max(7, 'Day of week must be between 1 and 7')
+      .optional(),
     items: z.array(lineItemSchema).min(1, 'Add at least one line item'),
   })
   .refine(
@@ -51,12 +71,48 @@ type ToastState = {
   variant: 'success' | 'error';
 };
 
+type ExistingInvoiceState = {
+  status: string;
+  recurring: boolean;
+  nextOccurrence?: string | null;
+};
+
 const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
 });
 
 const formatCurrency = (value: number) => currencyFormatter.format(Number.isFinite(value) ? value : 0);
+
+function calculateNextRecurringDate(
+  issueDateStr: string | undefined,
+  interval: 'week' | 'month' | 'quarter' | 'year' | undefined,
+  dayOfMonth: number | undefined,
+  dayOfWeek: number | undefined
+): Date | null {
+  if (!issueDateStr || !interval) return null;
+  const base = new Date(issueDateStr);
+  if (Number.isNaN(base.getTime())) return null;
+
+  if (interval === 'week') {
+    const target = Math.min(Math.max(dayOfWeek ?? 1, 1), 7);
+    const currentDow = base.getDay() === 0 ? 7 : base.getDay();
+    let diff = target - currentDow;
+    if (diff <= 0) diff += 7;
+    const next = new Date(base);
+    next.setDate(base.getDate() + diff);
+    return next;
+  }
+
+  const monthsToAdd = interval === 'quarter' ? 3 : interval === 'year' ? 12 : 1;
+  const next = new Date(base);
+  next.setDate(1);
+  next.setMonth(next.getMonth() + monthsToAdd);
+  const requestedDay = Math.max(dayOfMonth ?? base.getDate(), 1);
+  const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(requestedDay, daysInMonth));
+  return next;
+}
 
 export default function CreateInvoicePage() {
   return (
@@ -77,16 +133,35 @@ function CreateInvoiceContent() {
   const [isPending, startTransition] = useTransition();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [dueEnabled, setDueEnabled] = useState(false);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [planTier, setPlanTier] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
+  const [existingInvoice, setExistingInvoice] = useState<ExistingInvoiceState | null>(null);
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [addingClient, setAddingClient] = useState(false);
+  const [sendFirstNow, setSendFirstNow] = useState(true);
   const defaultDates = useMemo(() => {
     const today = new Date();
     const dueDate = new Date(today);
-    dueDate.setDate(dueDate.getDate() + 7);
+    const nextMonthBase = new Date(today);
+    nextMonthBase.setDate(1);
+    nextMonthBase.setMonth(nextMonthBase.getMonth() + 1);
+    const daysNextMonth = new Date(nextMonthBase.getFullYear(), nextMonthBase.getMonth() + 1, 0).getDate();
+    dueDate.setFullYear(nextMonthBase.getFullYear());
+    dueDate.setMonth(nextMonthBase.getMonth());
+    dueDate.setDate(Math.min(today.getDate(), daysNextMonth));
     const format = (date: Date) => date.toISOString().split('T')[0];
     return {
       issueDate: format(today),
       dueDate: format(dueDate),
     };
   }, []);
+  const defaultRecurringDay = useMemo(() => {
+    const date = new Date(defaultDates.issueDate);
+    return date.getDate();
+  }, [defaultDates.issueDate]);
+  const recurringUpgradeHref = '/dashboard/profile?upgrade=1';
+  const recurringParam = searchParams.get('recurring') === 'true';
 
   const {
     control,
@@ -103,21 +178,56 @@ function CreateInvoiceContent() {
       issueDate: defaultDates.issueDate,
       dueDate: '',
       notes: '',
+      recurringEnabled: false,
+      recurringInterval: 'month',
+      recurringDayOfMonth: defaultRecurringDay,
+      recurringDayOfWeek: 1,
       items: [
         {
           description: '',
           quantity: 1,
-          unitPrice: 0,
+          unitPrice: undefined,
           taxRate: 0,
+          taxEnabled: false,
         },
-      ],
-    },
+        ],
+      },
   });
 
-  const { fields, append, remove } = useFieldArray({
+  const { fields, append, remove, move } = useFieldArray({
     control,
     name: 'items',
   });
+
+  const handleAddClient = async (values: ClientFormValues) => {
+    setAddingClient(true);
+    try {
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || 'Failed to create client');
+      }
+      const newClient = await res.json();
+      const option: ClientOption = {
+        id: newClient.id,
+        companyName: newClient.companyName ?? '',
+        contactName: newClient.contactName ?? '',
+      };
+      setClientOptions((prev) => [option, ...prev]);
+      setValue('clientId', newClient.id, { shouldDirty: true, shouldTouch: true });
+      setShowNewClient(false);
+      setToast({ message: 'Client added successfully', variant: 'success' });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to add client';
+      setToast({ message, variant: 'error' });
+    } finally {
+      setAddingClient(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -148,7 +258,42 @@ function CreateInvoiceContent() {
   }, []);
 
   useEffect(() => {
-    if (!editId) return;
+    let isMounted = true;
+    fetch('/api/auth/me')
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Failed to load plan');
+        return res.json();
+      })
+      .then((data) => {
+        if (!isMounted) return;
+        setPlanTier(data?.user?.planTier ?? null);
+      })
+      .catch(() => {
+        if (isMounted) {
+          setPlanTier(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setPlanLoading(false);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (recurringParam) {
+      setValue('recurringEnabled', true);
+    }
+  }, [recurringParam, setValue]);
+
+  useEffect(() => {
+    if (!editId) {
+      setExistingInvoice(null);
+      return;
+    }
     setIsGeneratingPdf(true);
     fetch(`/api/invoices/${editId}`)
       .then(async (res) => {
@@ -159,14 +304,26 @@ function CreateInvoiceContent() {
           issueDate: data.issueDate ? data.issueDate.split('T')[0] : defaultDates.issueDate,
           dueDate: data.dueDate ? data.dueDate.split('T')[0] : '',
           notes: data.notes || '',
+          recurringEnabled: Boolean(data.recurring),
+          recurringInterval: data.recurringInterval ?? 'month',
+          recurringDayOfMonth:
+            data.recurringDayOfMonth ??
+            new Date(data.issueDate ?? defaultDates.issueDate).getDate(),
+          recurringDayOfWeek: data.recurringDayOfWeek ?? 1,
           items: data.items.map((item: any) => ({
             description: item.description || item.name || '',
             quantity: Number(item.quantity) || 1,
             unitPrice: Number(item.unitPrice) || 0,
-            taxRate: 0,
+            taxRate: Number(item.taxRate) || 0,
+            taxEnabled: Number(item.taxRate) > 0,
           })),
         });
         setDueEnabled(Boolean(data.dueDate));
+        setExistingInvoice({
+          status: data.status,
+          recurring: Boolean(data.recurring),
+          nextOccurrence: data.nextOccurrence ?? null,
+        });
       })
       .catch((err) => {
         console.error('Failed to load invoice', err);
@@ -189,6 +346,74 @@ function CreateInvoiceContent() {
     control,
     name: 'dueDate',
   });
+  const recurringEnabledWatch = useWatch<InvoiceFormValues, 'recurringEnabled'>({
+    control,
+    name: 'recurringEnabled',
+  });
+  const recurringIntervalWatch = useWatch<InvoiceFormValues, 'recurringInterval'>({
+    control,
+    name: 'recurringInterval',
+  });
+  const recurringDayOfMonthWatch = useWatch<InvoiceFormValues, 'recurringDayOfMonth'>({
+    control,
+    name: 'recurringDayOfMonth',
+  });
+  const recurringDayOfWeekWatch = useWatch<InvoiceFormValues, 'recurringDayOfWeek'>({
+    control,
+    name: 'recurringDayOfWeek',
+  });
+  const issueDateWatch = useWatch<InvoiceFormValues, 'issueDate'>({
+    control,
+    name: 'issueDate',
+  });
+  const canUseRecurring = planTier === 'PRO';
+  const nextRecurringPreview = useMemo(() => {
+    if (!canUseRecurring || !recurringEnabledWatch) {
+      return null;
+    }
+    return calculateNextRecurringDate(
+      issueDateWatch,
+      recurringIntervalWatch ?? 'month',
+      recurringDayOfMonthWatch ?? 1,
+      recurringDayOfWeekWatch ?? 1
+    );
+  }, [
+    canUseRecurring,
+    recurringEnabledWatch,
+    issueDateWatch,
+    recurringIntervalWatch,
+    recurringDayOfMonthWatch,
+    recurringDayOfWeekWatch,
+  ]);
+    const formatPreviewDate = (date: Date | null) =>
+      date?.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }) ?? '';
+    const isRecurring = Boolean(recurringEnabledWatch && (recurringParam || canUseRecurring));
+    const todayLabel = formatPreviewDate(new Date());
+    const nextPreviewLabel = formatPreviewDate(nextRecurringPreview);
+  useEffect(() => {
+    if (!recurringEnabledWatch) {
+      setSendFirstNow(true);
+    }
+  }, [recurringEnabledWatch]);
+
+  const handlePauseRecurring = () => {
+    setValue('recurringEnabled', false);
+    setExistingInvoice((prev) => (prev ? { ...prev, recurring: false } : prev));
+    setToast({ message: 'Recurring invoices paused', variant: 'success' });
+  };
+
+  const handleCancelRecurring = () => {
+    setValue('recurringEnabled', false);
+    setValue('recurringInterval', 'month');
+    setValue('recurringDayOfMonth', 1);
+    setValue('recurringDayOfWeek', 1);
+    setExistingInvoice((prev) => (prev ? { ...prev, recurring: false } : prev));
+    setToast({ message: 'Recurring invoices canceled', variant: 'success' });
+  };
 
   type Totals = {
     subtotal: number;
@@ -207,7 +432,8 @@ function CreateInvoiceContent() {
       (acc, item) => {
         const quantity = Number(item?.quantity) || 0;
         const unitPrice = Number(item?.unitPrice) || 0;
-        const rate = Number(item?.taxRate) || 0;
+        const taxEnabled = !!item?.taxEnabled;
+        const rate = taxEnabled ? Number(item?.taxRate) || 0 : 0;
 
         const lineSubtotal = quantity * unitPrice;
         const lineTax = lineSubtotal * (rate / 100);
@@ -236,7 +462,8 @@ function CreateInvoiceContent() {
         (acc, item) => {
           const quantity = Number(item.quantity) || 0;
           const unitPrice = Number(item.unitPrice) || 0;
-          const rate = Number(item.taxRate) || 0;
+          const taxEnabled = !!item.taxEnabled;
+          const rate = taxEnabled ? Number(item.taxRate) || 0 : 0;
           const lineSubtotal = quantity * unitPrice;
           const lineTax = lineSubtotal * (rate / 100);
           return {
@@ -294,7 +521,8 @@ function CreateInvoiceContent() {
               {items.map((item, idx) => {
                 const quantity = Number(item.quantity) || 0;
                 const unitPrice = Number(item.unitPrice) || 0;
-                const rate = Number(item.taxRate) || 0;
+                const taxEnabled = !!item.taxEnabled;
+                const rate = taxEnabled ? Number(item.taxRate) || 0 : 0;
                 const lineSubtotal = quantity * unitPrice;
                 const lineTax = lineSubtotal * (rate / 100);
                 const lineTotal = lineSubtotal + lineTax;
@@ -361,22 +589,75 @@ function CreateInvoiceContent() {
       const normalizedValues = {
         ...values,
         dueDate: dueEnabled && values.dueDate ? values.dueDate : null,
+        items:
+          values.items?.map((item) => ({
+            description: item.description,
+            quantity: Number(item.quantity) || 0,
+            unitPrice: Number(item.unitPrice) || 0,
+            taxRate: item.taxEnabled ? Number(item.taxRate) || 0 : 0,
+          })) || [],
       };
+
+      const recurrenceEnabled = canUseRecurring && Boolean(values.recurringEnabled);
+      const nextRecurrenceDate = recurrenceEnabled
+        ? calculateNextRecurringDate(
+            values.issueDate,
+            values.recurringInterval,
+            values.recurringDayOfMonth,
+            values.recurringDayOfWeek
+          )
+        : null;
+      const recurrencePayload = {
+        recurring: recurrenceEnabled,
+        recurringInterval: recurrenceEnabled ? values.recurringInterval ?? 'month' : null,
+        recurringDayOfMonth:
+          recurrenceEnabled && values.recurringInterval !== 'week'
+            ? Number(values.recurringDayOfMonth ?? 1)
+            : null,
+        recurringDayOfWeek:
+          recurrenceEnabled && values.recurringInterval === 'week'
+            ? Number(values.recurringDayOfWeek ?? 1)
+            : null,
+        nextOccurrence: nextRecurrenceDate ? nextRecurrenceDate.toISOString() : null,
+      };
+        const payloadWithRecurring = {
+          ...normalizedValues,
+          ...recurrencePayload,
+        };
+
+        const maybeCreateRecurringRecord = async (result: any) => {
+          if (!recurrenceEnabled || !nextRecurrenceDate) return;
+          if (isEdit) return;
+          try {
+            await createRecurringInvoiceAction({
+              clientId: normalizedValues.clientId,
+              amount: Number(result?.total ?? normalizedValues.total ?? 0),
+              interval: recurrencePayload.recurringInterval ?? 'month',
+              dayOfMonth: recurrencePayload.recurringDayOfMonth ?? undefined,
+              dayOfWeek: recurrencePayload.recurringDayOfWeek ?? undefined,
+              nextSendDate: nextRecurrenceDate.toISOString(),
+              title: normalizedValues.notes?.trim() || 'Recurring invoice',
+            });
+          } catch (error) {
+            console.error('Failed to create recurring invoice record', error);
+          }
+        };
 
       startTransition(() => {
         if (status === 'SENT') {
-          fetch('/api/invoices', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...normalizedValues, status }),
-          })
-            .then(async (res) => {
-              if (!res.ok) throw new Error(await res.text());
-              const result = await res.json();
-              setToast({
-                message: `Invoice ${result.invoiceNumber} sent successfully`,
-                variant: 'success',
-              });
+            fetch('/api/invoices', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ...payloadWithRecurring, status }),
+            })
+              .then(async (res) => {
+                if (!res.ok) throw new Error(await res.text());
+                const result = await res.json();
+                await maybeCreateRecurringRecord(result);
+                setToast({
+                  message: `Invoice ${result.invoiceNumber} sent successfully`,
+                  variant: 'success',
+                });
               window.setTimeout(() => {
                 router.push('/dashboard');
               }, 800);
@@ -393,19 +674,20 @@ function CreateInvoiceContent() {
             ? fetch(`/api/invoices/${editId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...normalizedValues, status }),
+                body: JSON.stringify({ ...payloadWithRecurring, status }),
               }).then(async (res) => {
                 if (!res.ok) throw new Error(await res.text());
                 return res.json();
               })
-            : createInvoiceAction({ ...normalizedValues, status });
+            : createInvoiceAction({ ...payloadWithRecurring, status });
 
-          action
-            .then((result: any) => {
-              setToast({
-                message: isEdit ? `Draft ${result.invoiceNumber} updated` : `Draft ${result.invoiceNumber} saved`,
-                variant: 'success',
-              });
+            action
+              .then(async (result: any) => {
+                await maybeCreateRecurringRecord(result);
+                setToast({
+                  message: isEdit ? `Draft ${result.invoiceNumber} updated` : `Draft ${result.invoiceNumber} saved`,
+                  variant: 'success',
+                });
 
               window.setTimeout(() => {
                 router.push('/dashboard');
@@ -424,75 +706,82 @@ function CreateInvoiceContent() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-10">
-      {toast && (
-        <div
-          className={`fixed right-6 top-6 z-50 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
-            toast.variant === 'success' ? 'bg-emerald-500' : 'bg-rose-500'
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
-
-      <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-semibold text-zinc-900">
-              {isEdit ? 'Edit Invoice' : 'Create Invoice'}
-            </h1>
-            <p className="text-sm text-zinc-500">
-              {isEdit
-                ? 'Update your draft or send it when ready.'
-                : 'Select a client, add line items, and save your work as a draft or send the invoice immediately.'}
-            </p>
-          </div>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 cursor-pointer"
+    <div className="min-h-screen bg-zinc-50 px-4 py-10 sm:px-0">
+      <div className="mx-auto w-full max-w-6xl  sm:px-10">
+        {toast && (
+          <div
+            className={`fixed right-6 top-6 z-50 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
+              toast.variant === 'success' ? 'bg-emerald-500' : 'bg-rose-500'
+            }`}
           >
-            ← Back to Dashboard
-          </Link>
-        </div>
+            {toast.message}
+          </div>
+        )}
 
-        <form className="space-y-10">
+        <div className="space-y-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-2">
+                <h1 className="text-3xl font-semibold text-zinc-900">{isEdit ? 'Edit Invoice' : 'Create Invoice'}</h1>
+                <p className="text-sm text-zinc-500">
+                  {isEdit
+                    ? 'Update your draft or send it when ready.'
+                    : 'Select a client, add line items, and save your work as a draft or send the invoice immediately.'}
+                </p>
+              </div>
+          </div>
+
+
+
+          <form className="space-y-10 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
           <section className="grid gap-6 lg:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium text-zinc-700">
                 Client <span className="text-rose-500">*</span>
               </label>
-              <select
-                {...register('clientId')}
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 cursor-pointer"
-                disabled={clientsLoading || isEdit}
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  {clientsLoading ? 'Loading clients...' : 'Select a client'}
-                </option>
-                {!clientsLoading && clientOptions.length === 0 && (
-                  <option value="" disabled>
-                    No clients found
-                  </option>
-                )}
-                {clientOptions.map((client) => (
-                  <option key={client.id} value={client.id}>
-                    {client.companyName}
-                    {client.contactName ? ` - ${client.contactName}` : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <select
+                    {...register('clientId')}
+                    className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 cursor-pointer"
+                    disabled={clientsLoading || isEdit}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>
+                      {clientsLoading ? 'Loading clients...' : 'Select a client'}
+                    </option>
+                    {!clientsLoading && clientOptions.length === 0 && (
+                      <option value="" disabled>
+                        No clients found
+                      </option>
+                    )}
+                    {clientOptions.map((client) => (
+                      <option key={client.id} value={client.id}>
+                        {client.companyName}
+                        {client.contactName ? ` - ${client.contactName}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNewClient(true)}
+                  className="rounded-full border border-purple-300 bg-white px-3 py-1 text-xs font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50"
+                >
+                  Create client
+                </button>
+              </div>
               {errors.clientId && <p className="text-xs text-rose-500">{errors.clientId.message}</p>}
             </div>
 
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-700">Issue Date</label>
-                <input
-                  type="date"
-                  {...register('issueDate')}
-                  className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                />
+          <div className="grid gap-6 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-zinc-700">Issue Date</label>
+              <input
+                type="date"
+                {...register('issueDate')}
+                min={defaultDates.issueDate}
+                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+              />
                 {errors.issueDate && <p className="text-xs text-rose-500">{errors.issueDate.message}</p>}
               </div>
               <div className="space-y-2">
@@ -516,7 +805,7 @@ function CreateInvoiceContent() {
                         setDueEnabled(true);
                         setValue('dueDate', defaultDates.dueDate);
                       }}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      className="text-xs font-medium text-purple-600 hover:text-purple-700"
                     >
                       Set due date
                     </button>
@@ -526,6 +815,7 @@ function CreateInvoiceContent() {
                   <input
                     type="date"
                     {...register('dueDate')}
+                    min={defaultDates.issueDate}
                     className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
                   />
                 ) : (
@@ -547,13 +837,14 @@ function CreateInvoiceContent() {
               <button
                 type="button"
                 onClick={() =>
-                  append({
-                    description: '',
-                    quantity: 1,
-                    unitPrice: 0,
-                    taxRate: 0,
-                  })
-                }
+              append({
+                description: '',
+                quantity: 1,
+                unitPrice: 0,
+                taxRate: 0,
+                taxEnabled: false,
+              })
+            }
                 className="inline-flex items-center justify-center rounded-xl border border-zinc-200 px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 cursor-pointer"
               >
                 + Add Item
@@ -566,21 +857,69 @@ function CreateInvoiceContent() {
                 const itemErrors = Array.isArray(errors.items) ? errors.items[index] : undefined;
                 const quantity = Number(item?.quantity) || 0;
                 const unitPrice = Number(item?.unitPrice) || 0;
-                const taxRate = Number(item?.taxRate) || 0;
+                const taxEnabled = !!item?.taxEnabled;
+                const taxRate = taxEnabled ? Number(item?.taxRate) || 0 : 0;
                 const lineSubtotal = quantity * unitPrice;
                 const lineTax = lineSubtotal * (taxRate / 100);
                 const lineTotal = lineSubtotal + lineTax;
+                const taxEnabledField = register(`items.${index}.taxEnabled` as const, {
+                  onChange: (e) => {
+                    if (!e.target.checked) setValue(`items.${index}.taxRate`, 0);
+                  },
+                });
 
                 return (
-                  <div key={field.id} className="space-y-4 rounded-2xl border border-zinc-200 p-4 shadow-sm">
+                  <div
+                    key={field.id}
+                    className="space-y-4 rounded-2xl border border-zinc-200 p-4 shadow-sm cursor-grab active:cursor-grabbing transition"
+                    draggable
+                    onDragStart={(e) => {
+                      setDragIndex(index);
+                      e.dataTransfer?.setData('text/plain', String(index));
+                      // hide default ghost for a cleaner drag feel
+                      const img = new Image();
+                      img.src = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+                      e.dataTransfer?.setDragImage(img, 0, 0);
+                      if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const from = Number(e.dataTransfer?.getData('text/plain'));
+                      if (Number.isNaN(from) || from === index) {
+                        setDragIndex(null);
+                        return;
+                      }
+                      move(from, index);
+                      setDragIndex(null);
+                    }}
+                    onDragEnd={() => setDragIndex(null)}
+                  >
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-zinc-700">Description</label>
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+                          <GripVertical className="h-4 w-4 text-zinc-400" aria-hidden="true" />
+                          Description
+                        </label>
+                        <label className="flex items-center gap-2 text-xs font-medium text-zinc-700">
+                          <input
+                            type="checkbox"
+                            {...taxEnabledField}
+                            defaultChecked={taxEnabled}
+                            className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          Enable Tax
+                        </label>
+                      </div>
                       <input
                         type="text"
                         {...register(`items.${index}.description` as const)}
                         defaultValue={field.description}
                         className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                        placeholder="Website design, consultation, etc."
+                        placeholder="Consultation, Service, Product etc."
                       />
                       {itemErrors?.description && (
                         <p className="text-xs text-rose-500">{itemErrors.description.message}</p>
@@ -590,14 +929,14 @@ function CreateInvoiceContent() {
                     <div className="grid gap-4 md:grid-cols-4">
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-zinc-700">Quantity</label>
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          {...register(`items.${index}.quantity` as const, { valueAsNumber: true })}
-                          defaultValue={field.quantity}
-                          className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                        />
+                      <input
+                        type="number"
+                        min={1}
+                        step={1}
+                        {...register(`items.${index}.quantity` as const, { valueAsNumber: true })}
+                        defaultValue={field.quantity ?? ''}
+                        className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                      />
                         {itemErrors?.quantity && (
                           <p className="text-xs text-rose-500">{itemErrors.quantity.message}</p>
                         )}
@@ -606,28 +945,35 @@ function CreateInvoiceContent() {
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-zinc-700">Unit Price</label>
                         <input
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          {...register(`items.${index}.unitPrice` as const, { valueAsNumber: true })}
-                          defaultValue={field.unitPrice}
-                          className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                        />
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        {...register(`items.${index}.unitPrice` as const, { valueAsNumber: true })}
+                        defaultValue={field.unitPrice ?? ''}
+                        className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                      />
                         {itemErrors?.unitPrice && (
                           <p className="text-xs text-rose-500">{itemErrors.unitPrice.message}</p>
                         )}
                       </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700">Tax Rate (%)</label>
-              <input
-                type="number"
-                value={0}
-                readOnly
-                className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm bg-zinc-50 text-zinc-500 cursor-not-allowed"
-              />
-              <p className="text-xs text-zinc-500">Tax is fixed at 0% for now.</p>
-            </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-zinc-700">Tax Rate (%)</label>
+                        {taxEnabled ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            {...register(`items.${index}.taxRate` as const, { valueAsNumber: true })}
+                            defaultValue={field.taxRate ?? ''}
+                            className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                          />
+                        ) : (
+                          <div className="w-full rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500">
+                            Tax disabled
+                          </div>
+                        )}
+                      </div>
 
                       <div className="space-y-2">
                         <label className="text-sm font-medium text-zinc-700">Total</label>
@@ -653,6 +999,147 @@ function CreateInvoiceContent() {
                 );
               })}
             </div>
+          </section>
+
+          <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white/80 p-5 shadow-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Recurring invoices</p>
+              {!planLoading && !canUseRecurring && (
+                <Link href={recurringUpgradeHref} className="text-xs font-semibold text-purple-700 underline hover:text-purple-600">
+                  Upgrade to Pro
+                </Link>
+              )}
+            </div>
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-zinc-800">
+                  <input
+                    type="checkbox"
+                    {...register('recurringEnabled')}
+                    disabled={!canUseRecurring}
+                    className={`h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500 ${
+                      !canUseRecurring ? 'cursor-not-allowed opacity-50' : ''
+                    }`}
+                  />
+                Send this invoice automatically every...
+              </label>
+              {recurringEnabledWatch && canUseRecurring && (
+                <div className="space-y-3 rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-zinc-600">Interval</label>
+                      <select
+                        {...register('recurringInterval')}
+                        className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                      >
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                        <option value="quarter">Quarter</option>
+                        <option value="year">Year</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-zinc-600">
+                        {recurringIntervalWatch === 'week' ? 'Day of week' : 'Day of month'}
+                      </label>
+                      {recurringIntervalWatch === 'week' ? (
+                        <select
+                          {...register('recurringDayOfWeek', { valueAsNumber: true })}
+                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                        >
+                          <option value={1}>Monday</option>
+                          <option value={2}>Tuesday</option>
+                          <option value={3}>Wednesday</option>
+                          <option value={4}>Thursday</option>
+                          <option value={5}>Friday</option>
+                          <option value={6}>Saturday</option>
+                          <option value={7}>Sunday</option>
+                        </select>
+                      ) : (
+                        <select
+                          {...register('recurringDayOfMonth', { valueAsNumber: true })}
+                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                        >
+                          {Array.from({ length: 31 }, (_, idx) => idx + 1).map((day) => (
+                            <option key={day} value={day}>
+                              {day}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                  {nextRecurringPreview && (
+                    <p className="text-xs text-zinc-600">
+                      Next invoice: {nextRecurringPreview.toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </p>
+                  )}
+                  {isRecurring && (
+                    <div className="mt-5 rounded-lg bg-purple-50 p-4">
+                      <p className="text-sm font-medium text-purple-900 mb-3">First invoice</p>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="firstSend"
+                            checked={sendFirstNow}
+                            onChange={() => setSendFirstNow(true)}
+                            className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span>Send today</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="radio"
+                            name="firstSend"
+                            checked={!sendFirstNow}
+                            onChange={() => setSendFirstNow(false)}
+                            className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                          />
+                          <span>Start on next scheduled date</span>
+                        </label>
+                      </div>
+                      <p className="mt-3 text-xs text-purple-700">
+                        {sendFirstNow
+                          ? `First invoice will be sent today (${todayLabel})`
+                          : nextPreviewLabel
+                          ? `First invoice will be sent on ${nextPreviewLabel}`
+                          : 'First invoice will follow the first scheduled date.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {!planLoading && !canUseRecurring && (
+              <p className="text-xs text-purple-700">
+                Upgrade to Pro to schedule recurring invoices.{' '}
+                <Link href={recurringUpgradeHref} className="font-semibold underline">
+                  Upgrade now
+                </Link>
+              </p>
+            )}
+            {isEdit && existingInvoice?.recurring && (
+              <div className="flex flex-wrap gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handlePauseRecurring}
+                  className="inline-flex items-center justify-center rounded-lg border border-purple-200 px-4 py-2 text-xs font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-500"
+                >
+                  Pause recurring
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelRecurring}
+                  className="inline-flex items-center justify-center rounded-lg border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-zinc-500"
+                >
+                  Cancel recurring
+                </button>
+              </div>
+            )}
           </section>
 
           <section className="grid gap-6 lg:grid-cols-[2fr,1fr]">
@@ -685,9 +1172,9 @@ function CreateInvoiceContent() {
             </div>
           </section>
 
-          <div className="flex flex-col gap-3 border-t border-zinc-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 border-t border-zinc-100 pt-0 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-zinc-500">
-              Totals update automatically as you edit line items. All amounts are saved in USD.
+              All amounts are saved in USD.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row">
               <button
@@ -717,6 +1204,29 @@ function CreateInvoiceContent() {
             </div>
           </div>
         </form>
+        {showNewClient && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
+            <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-zinc-900">Create Client</h3>
+                <button
+                  type="button"
+                  className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500 hover:text-zinc-700"
+                  onClick={() => setShowNewClient(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <ClientForm
+                onSubmit={handleAddClient}
+                onCancel={() => setShowNewClient(false)}
+                submitLabel="Create client"
+                submitting={addingClient}
+              />
+            </div>
+          </div>
+        )}
+        </div>
       </div>
     </div>
   );

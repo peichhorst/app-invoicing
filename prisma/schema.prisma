@@ -7,28 +7,43 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  password     String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  companyName  String?
-  logoDataUrl  String?
-  phone        String?
-  addressLine1 String?
-  addressLine2 String?
-  city         String?
-  state        String?
-  postalCode   String?
-  country      String?   @default("USA")
-  clients      Client[]
-  invoices     Invoice[]
-  Session      Session[]
+  id                   String    @id @default(cuid())
+  name                 String
+  email                String    @unique
+  password             String
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  companyName          String?
+  logoDataUrl          String?
+  phone                String?
+  addressLine1         String?
+  addressLine2         String?
+  city                 String?
+  state                String?
+  postalCode           String?
+  country              String?   @default("USA")
+  planTier             String    @default("FREE")
+  mailToAddressEnabled Boolean   @default(false)
+  mailToAddressTo      String?
+  stripeAccountId      String?
+  stripePublishableKey String?
+  venmoHandle          String?
+  zelleHandle          String?
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  trackdriveLeadToken  String?
+  trackdriveLeadEnabled Boolean  @default(false)
+  proTrialEndsAt       DateTime? @map("pro_trial_ends_at")
+  proTrialReminderSent Boolean   @default(false)
+  clients              Client[]
+  invoices             Invoice[]
+  recurringInvoices    RecurringInvoice[]
+  Session              Session[]
+  passwordResetTokens  PasswordResetToken[]
 }
 
 model Client {
-  id           String    @id @default(cuid())
+  id           String            @id @default(cuid())
   userId       String
   companyName  String
   contactName  String?
@@ -41,35 +56,75 @@ model Client {
   postalCode   String?
   country      String?
   notes        String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  archived     Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  portalUser   ClientPortalUser?
   invoices     Invoice[]
+  recurringInvoices RecurringInvoice[]
 
   @@index([userId])
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
-  userId        String
-  clientId      String
-  invoiceNumber String
-  status        InvoiceStatus @default(DRAFT)
-  issueDate     DateTime
-  dueDate       DateTime?
-  currency      String        @default("USD")
-  subTotal      Float         @default(0)
-  taxRate       Float         @default(0)
-  taxAmount     Float         @default(0)
-  total         Float         @default(0)
-  notes         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items         InvoiceItem[]
+  id                 String        @id @default(cuid())
+  userId             String
+  clientId           String
+  invoiceNumber      String
+  status             InvoiceStatus @default(DRAFT)
+  issueDate          DateTime
+  dueDate            DateTime?
+  currency           String        @default("USD")
+  subTotal           Float         @default(0)
+  taxRate            Float         @default(0)
+  taxAmount          Float         @default(0)
+  total              Float         @default(0)
+  sentCount          Int           @default(0)
+  shortCode          String?       @unique
+  lastReminderSentAt DateTime?
+  notes              String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  client             Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items              InvoiceItem[]
+  recurring          Boolean       @default(false)
+  recurringInterval  String?
+  recurringDayOfMonth Int?
+  recurringDayOfWeek  Int?
+  nextOccurrence     DateTime?
+  parentInvoiceId    String?
+  parentInvoice      Invoice?      @relation("RecurringSeries", fields: [parentInvoiceId], references: [id])
+  childInvoices      Invoice[]     @relation("RecurringSeries")
+  recurringParentId  String?
+  recurringParent    RecurringInvoice? @relation("RecurringInvoiceGenerated", fields: [recurringParentId], references: [id])
 
   @@unique([userId, invoiceNumber])
+  @@index([userId])
+  @@index([clientId])
+  @@index([parentInvoiceId])
+}
+
+model RecurringInvoice {
+  id           String    @id @default(cuid())
+  userId       String
+  clientId     String
+  title        String
+  amount       Decimal
+  currency     String    @default("USD")
+  interval     String
+  dayOfMonth   Int?
+  dayOfWeek    Int?
+  nextSendDate DateTime
+  status       String    @default("ACTIVE")
+  sendFirstNow Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client       Client    @relation(fields: [clientId], references: [id])
+  invoices     Invoice[] @relation("RecurringInvoiceGenerated")
+
   @@index([userId])
   @@index([clientId])
 }
@@ -95,8 +150,32 @@ model Session {
   token     String    @unique
   userId    String
   createdAt DateTime  @default(now())
-  expiresAt DateTime?  
+  expiresAt DateTime?
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ClientPortalUser {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  email       String?
+  portalToken String
+  createdAt   DateTime @default(now())
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
   @@index([userId])
 }
 

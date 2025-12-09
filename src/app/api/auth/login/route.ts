@@ -3,9 +3,14 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createSession, verifyPassword, sessionCookieOptions } from '@/lib/auth';
 
+type LoginPayload = {
+  email?: string;
+  password?: string;
+};
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    const body = (await request.json()) as LoginPayload;
     const { email, password } = body;
 
     if (!email || !password) {
@@ -35,9 +40,10 @@ export async function POST(request: Request) {
     const res = NextResponse.json({ success: true });
     res.cookies.set('session_token', token, sessionCookieOptions());
     return res;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Login failed', error);
-    return new Response('Login failed. Please try again.', {
+    const detail = error instanceof Error ? error.message : 'Unknown error';
+    return new Response(`Login failed (temp debug): ${detail}`, {
       status: 500,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });

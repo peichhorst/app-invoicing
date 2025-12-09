@@ -1,12 +1,17 @@
 // src/components/InvoicePDF.tsx
-import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
+import { Document, Page, Text, View, StyleSheet, Image, Font, Link } from '@react-pdf/renderer';
+
+// Prevent react-pdf from auto-hyphenating long URLs (e.g., payment links).
+Font.registerHyphenationCallback((word) => [word]);
 
 const styles = StyleSheet.create({
   page: { padding: 40, fontSize: 11, color: '#111' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
   title: { fontSize: 22, fontWeight: 700 },
   section: { marginBottom: 16 },
   sectionTitle: { fontSize: 12, fontWeight: 600, marginBottom: 6, textTransform: 'uppercase' },
+  partiesRow: { flexDirection: 'row', gap: 16, marginBottom: 12 },
+  partyCard: { flex: 1, padding: 10, border: '1 solid #eee', borderRadius: 6 },
   row: { flexDirection: 'row', borderBottom: '1 solid #eee', paddingVertical: 6 },
   cell: { fontSize: 11 },
   cellRight: { textAlign: 'right' },
@@ -25,6 +30,16 @@ type InvoicePDFProps = {
 };
 
 export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
+  const hasValidLogo = (() => {
+    if (!user?.logoDataUrl) return false;
+    try {
+      const url = new URL(user.logoDataUrl);
+      return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'data:';
+    } catch {
+      return false;
+    }
+  })();
+
   const totals = invoice.items.reduce(
     (acc: any, item: any) => {
       const qty = Number(item.quantity) || 0;
@@ -39,6 +54,9 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
 
   const issuedOn = invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString() : '';
   const dueOn = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : '';
+  const isPaid = invoice.status === 'PAID';
+  const paidOn = invoice.updatedAt ? new Date(invoice.updatedAt).toLocaleDateString() : null;
+
   const fromLines = [
     user?.companyName || 'Your Company',
     user?.email,
@@ -48,35 +66,86 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
     user?.country,
   ].filter(Boolean);
 
+  const mailToTargetText = user?.mailToAddressTo?.trim();
+  const mailRecipientName = mailToTargetText || user?.companyName || user?.name;
+  const mailToLines = [
+    mailRecipientName,
+    user?.addressLine1,
+    user?.addressLine2,
+    [user?.city, user?.state, user?.postalCode].filter(Boolean).join(', '),
+    user?.country,
+  ].filter(Boolean);
+  const showMailBlock = (user?.mailToAddressEnabled ?? false) && mailToLines.length > 0;
+  const mailHeading = 'Mail & Issue Check to:';
+
+  const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
+  const payLink =
+    invoice.shortCode != null
+      ? `${appBase}/p/${invoice.shortCode}`
+      : `${appBase}/payment?seller=${user?.id || ''}&invoice=${invoice.id}`;
+  const venmoLink =
+    user?.venmoHandle && typeof user.venmoHandle === 'string'
+      ? `https://venmo.com/${user.venmoHandle.replace(/^@/, '')}`
+      : null;
+  const venmoQr =
+    venmoLink != null
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(venmoLink)}`
+      : null;
+  const mailBlock =
+    showMailBlock && (
+      <View style={{ marginTop: 6 }}>
+        <Text style={[styles.notes, { fontWeight: 600 }]}>{mailHeading}</Text>
+        {mailToLines.map((line: string, idx: number) => (
+          <Text key={idx} style={styles.notes}>
+            {line}
+          </Text>
+        ))}
+      </View>
+    );
+
+  const footerLines = [
+    'Thank you for your business.',
+    user?.planTier === 'FREE' ? 'Powered by ClientWave' : null,
+  ].filter(Boolean);
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <View style={styles.header}>
+        <View style={styles.headerTop}>
           <View>
-            <Text style={styles.title}>Invoice #{invoice.invoiceNumber}</Text>
-            <Text>
-              Issue: {issuedOn}
-              {dueOn ? ` · Due: ${dueOn}` : ''}
+            <Text style={styles.title}>
+              {isPaid ? 'Receipt for Invoice' : 'Invoice'} #{invoice.invoiceNumber} 
             </Text>
-            {user?.companyName ? <Text style={{ marginTop: 4 }}>{user.companyName}</Text> : null}
+            <Text>Date Issued: {issuedOn || '—'}</Text>
+            {isPaid && paidOn ? <Text>Paid on: {paidOn}</Text> : dueOn ? <Text>Due: {dueOn}</Text> : null}
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text>From</Text>
-            {user?.logoDataUrl ? (
-              <Image src={user.logoDataUrl} style={{ width: 80, height: 40, objectFit: 'contain', marginBottom: 6 }} />
-            ) : null}
+          <View style={{ minWidth: 90, alignItems: 'flex-end' }}>
+            {hasValidLogo ? (
+              <Image src={user.logoDataUrl} style={{ width: 140, height: 80, objectFit: 'contain' }} />
+            ) : user?.logoDataUrl ? (
+              <Text style={{ color: '#b91c1c', fontSize: 9, textAlign: 'right' }}>
+                Logo URL invalid. Update in profile.
+              </Text>
+            ) : (
+              <Text style={{ color: '#777', fontSize: 9, textAlign: 'right' }}></Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.partiesRow}>
+          <View style={styles.partyCard}>
+            <Text style={styles.sectionTitle}>From</Text>
             {fromLines.map((line: string, idx: number) => (
               <Text key={idx}>{line}</Text>
             ))}
           </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Bill To</Text>
-          <Text>{client.companyName}</Text>
-          {client.contactName && <Text>{client.contactName}</Text>}
-          {client.email && <Text>{client.email}</Text>}
-          {client.phone && <Text>{client.phone}</Text>}
+          <View style={styles.partyCard}>
+            <Text style={styles.sectionTitle}>Bill To</Text>
+            <Text>{client.companyName}</Text>
+            {client.contactName && <Text>{client.contactName}</Text>}
+            {client.email && <Text>{client.email}</Text>}
+            {client.phone && <Text>{client.phone}</Text>}
+          </View>
         </View>
 
         <View style={styles.section}>
@@ -104,14 +173,6 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
 
         <View style={styles.totals}>
           <View style={styles.totalRow}>
-            <Text>Subtotal</Text>
-            <Text>{currency.format(totals.subtotal)}</Text>
-          </View>
-          <View style={styles.totalRow}>
-            <Text>Tax (0%)</Text>
-            <Text>{currency.format(0)}</Text>
-          </View>
-          <View style={styles.totalRow}>
             <Text style={{ fontWeight: 'bold' }}>Total</Text>
             <Text style={{ fontWeight: 'bold' }}>{currency.format(totals.total)}</Text>
           </View>
@@ -124,7 +185,40 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
           </View>
         ) : null}
 
-        <Text style={styles.footer}>Thank you for your business.</Text>
+        {(!isPaid && (user?.venmoHandle || user?.zelleHandle || mailToLines.length > 0)) && (
+          <View style={[styles.section, { marginTop: 12 }]}>
+            <Text style={styles.sectionTitle}>Payment Methods</Text>
+              <Text style={[styles.notes, { marginBottom: 6 }]}>
+                <Text style={{ fontWeight: 700 }}>Pay online:</Text>{' '}
+                <Link style={{ color: '#4f46e5' }} src={payLink}>
+                  {payLink}
+                </Link>
+              </Text>
+            {mailBlock}
+            {user?.zelleHandle && (
+              <Text style={[styles.notes, { marginTop: 6 }]}>
+                <Text style={{ fontWeight: 700 }}>Zelle:</Text> {user.zelleHandle}
+              </Text>
+            )}
+            {user?.venmoHandle && (
+              <Text style={[styles.notes, { marginTop: 4 }]}>
+                <Text style={{ fontWeight: 700 }}>Venmo:</Text> {user.venmoHandle}
+              </Text>
+            )}
+            {venmoQr && (
+              <View style={{ marginTop: 6, alignItems: 'flex-start' }}>
+                <Text style={[styles.notes, { marginBottom: 4 }]}>Scan to pay with Venmo</Text>
+                <Image src={venmoQr} style={{ width: 80, height: 80 }} />
+              </View>
+            )}
+          </View>
+        )}
+
+        <View style={styles.footer}>
+          {footerLines.map((line, idx) => (
+            <Text key={idx}>{line}</Text>
+          ))}
+        </View>
       </Page>
     </Document>
   );

@@ -20,6 +20,49 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Local database
+
+Prisma migrations rely on a PostgreSQL server listening on `127.0.0.1:5433`. The easiest way to satisfy that dependency is to spin up the bundled Docker container:
+
+```bash
+docker compose up -d db
+```
+
+That creates a Postgres 18 instance with the credentials `postgres:secret` and exposes it on host port `5433`. Make sure your `.env.local` (or whatever env file you load during development) defines:
+
+- `DATABASE_URL="postgresql://postgres:secret@127.0.0.1:5433/postgres?schema=public"`
+- `SHADOW_DATABASE_URL="postgresql://postgres:secret@127.0.0.1:5433/prisma_shadow?schema=public"`
+
+Once the DB is running, you can run Prisma commands such as `npx prisma migrate dev` or `npx prisma db push`. When you're done, take the database down with `docker compose down`.
+
+If you receive `P1003: Database prisma_shadow does not exist`, create the shadow database before running Prisma:
+
+```bash
+docker exec app-invoicing-db psql -U postgres -c "CREATE DATABASE prisma_shadow;"
+```
+
+## Payment checkout
+
+- Frontend lives at `/payment` and uses Stripe Elements for card entry.
+- Required env vars (add to `.env.local`):  
+  - `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=` your Stripe publishable key  
+  - `NEXT_PUBLIC_PAYMENT_API_BASE=https://backend.petereichhorst.com/wp-json/stripe/v1` (or your own backend that exposes `/calculate` and `/create-payment-intent`).
+  - `INVOICE_ADMIN_EMAIL=petere2103@gmail.com` (optional) to receive every invoice email in addition to the customer; defaults to that address if unset.
+- Restart `npm run dev` after setting env so the Stripe key is picked up.
+
+## Reminder emails
+
+- Define a secret for the reminder route (`INVOICE_REMINDER_SECRET=some-long-token`) and keep the same value in your scheduler.
+- Trigger `POST /api/invoices/reminders` once a day (or as often as needed) with the secret either in the `x-invoice-reminder-secret` header or as a `Bearer` token. Example:
+
+  ```bash
+  curl -X POST \
+    -H "x-invoice-reminder-secret: ${INVOICE_REMINDER_SECRET}" \
+    https://your-app.vercel.app/api/invoices/reminders
+  ```
+
+  The endpoint sends invoices that are older than two weeks on the free plan, switches to daily reminders when the due date passes, and returns how many reminders were sent.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

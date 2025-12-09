@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
+import { MarkInvoicePaidButton } from '../MarkInvoicePaidButton';
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -31,6 +32,15 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  const isPaid = invoice.status === 'PAID';
+  const statusLabel =
+    invoice.status === 'PAID' ? 'Paid' : invoice.status === 'SENT' ? 'Sent' : 'Not Sent';
+  const statusBadgeClass = isPaid
+    ? 'bg-green-100 text-green-800'
+    : invoice.status === 'SENT'
+    ? 'bg-purple-100 text-purple-800'
+    : 'bg-gray-100 text-gray-800';
+
   const totals = invoice.items.reduce(
     (acc, item) => {
       const quantity = Number(item.quantity) || 0;
@@ -56,9 +66,15 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
       <div className="mx-auto flex max-w-6xl flex-col gap-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-1">
-            <p className="text-sm text-gray-500">
-              Invoice #{invoice.invoiceNumber} - {invoice.status}
-            </p>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+              <span>Invoice #{invoice.invoiceNumber}</span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${statusBadgeClass}`}>
+                {statusLabel}
+              </span>
+              {!isPaid && (
+                <MarkInvoicePaidButton invoiceId={invoice.id} status={invoice.status} />
+              )}
+            </div>
             <h1 className="text-3xl font-semibold text-gray-900">Invoice Details</h1>
             <p className="text-sm text-gray-500">
               Issued on {issuedOn} - Due {dueOn}
@@ -66,16 +82,16 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link
-              href="/dashboard"
+              href="/dashboard/invoices"
               className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 shadow-sm transition hover:border-gray-300 hover:bg-white cursor-pointer"
             >
-              Back to Dashboard
+              &larr; Back to Invoices
             </Link>
             <Link
               href={`/dashboard/invoices/${invoice.id}/pdf`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center justify-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-800 cursor-pointer"
+              className="inline-flex items-center justify-center rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700 cursor-pointer"
             >
               Download PDF
             </Link>

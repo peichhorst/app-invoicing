@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { prisma } from './prisma';
 import crypto from 'crypto';
+import { ensureTrialState } from './plan';
 
 const SESSION_COOKIE = 'session_token';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -66,5 +67,6 @@ export async function getCurrentUser() {
     return null;
   }
 
-  return session.user;
+  const updated = await ensureTrialState(session.user);
+  return updated;
 }

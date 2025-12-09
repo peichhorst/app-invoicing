@@ -7,9 +7,12 @@ type BeforeInstallPromptEvent = Event & {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 };
 
+const isStandalone = () =>
+  typeof window === 'undefined' ? false : window.matchMedia('(display-mode: standalone)').matches;
+
 export function InstallPromptButton() {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
-  const [installed, setInstalled] = useState(false);
+  const [installed, setInstalled] = useState(isStandalone);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event: Event) => {
@@ -24,7 +27,6 @@ export function InstallPromptButton() {
 
     // If already running in standalone, hide the button
     const displayModeQuery = window.matchMedia('(display-mode: standalone)');
-    if (displayModeQuery.matches) setInstalled(true);
     const handleDisplayModeChange = (event: MediaQueryListEvent) => setInstalled(event.matches);
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -38,7 +40,21 @@ export function InstallPromptButton() {
     };
   }, []);
 
-  if (installed || !promptEvent) return null;
+  if (installed) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          window.location.href = '/';
+        }}
+        className="rounded-full border border-white/60 bg-white/90 px-3 py-1.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-white cursor-pointer"
+      >
+        Open offline
+      </button>
+    );
+  }
+
+  if (!promptEvent) return null;
 
   const handleInstall = async () => {
     if (!promptEvent) return;

@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Prisma } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
+import { generateUniqueShortCode } from '@/lib/shortcodes';
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -67,13 +68,31 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     const existing = await prisma.invoice.findFirst({ where: { id, userId: user.id } });
     if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
-    const updated = (await prisma.invoice.update({
-      where: { id },
-      data: {
-        issueDate: body.issueDate ? new Date(body.issueDate) : undefined,
-        dueDate: body.dueDate === null ? null : body.dueDate ? new Date(body.dueDate) : undefined,
-        notes: body.notes?.trim() ? body.notes.trim() : null,
-        status: body.status ?? undefined,
+    const shortCode = existing.shortCode || (await generateUniqueShortCode(prisma));
+
+    const requestedStatus = body.status as any;
+    const nextStatus =
+      existing.status !== 'DRAFT' && requestedStatus === 'DRAFT'
+        ? existing.status
+        : (requestedStatus ?? existing.status);
+
+    const nextSentCount =
+      requestedStatus === 'SENT' ? (existing.sentCount ?? 0) + 1 : existing.sentCount ?? 0;
+
+      const updated = (await prisma.invoice.update({
+        where: { id },
+        data: {
+          issueDate: body.issueDate ? new Date(body.issueDate) : undefined,
+          dueDate: body.dueDate === null ? null : body.dueDate ? new Date(body.dueDate) : undefined,
+          notes: body.notes?.trim() ? body.notes.trim() : null,
+          recurring: body.recurring ?? false,
+          recurringInterval: body.recurringInterval ?? null,
+          recurringDayOfMonth: body.recurringDayOfMonth ?? null,
+          recurringDayOfWeek: body.recurringDayOfWeek ?? null,
+          nextOccurrence: body.nextOccurrence ? new Date(body.nextOccurrence) : null,
+          status: nextStatus,
+        sentCount: nextSentCount,
+        shortCode,
         subTotal: totals.subTotal,
         taxRate: 0,
         taxAmount: 0,
@@ -86,7 +105,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       include: { client: true, items: true, user: true },
     })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
 
-    if (updated.status === 'SENT') {
+    if (requestedStatus === 'SENT') {
       const dueDays =
         updated.dueDate != null
           ? Math.max(
@@ -112,5 +131,20 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   } catch (error: any) {
     console.error('Update invoice failed:', error);
     return NextResponse.json({ error: 'Failed to update invoice', details: error?.message || String(error) }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { id } = await params;
+  try {
+    const existing = await prisma.invoice.findFirst({ where: { id, userId: user.id } });
+    if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
+    await prisma.invoice.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (error: any) {
+    console.error('Delete invoice failed:', error);
+    return NextResponse.json({ error: 'Failed to delete invoice', details: error?.message || String(error) }, { status: 500 });
   }
 }
