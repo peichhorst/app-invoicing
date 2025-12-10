@@ -19,7 +19,10 @@ export async function POST(request: Request) {
 
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['payment_method'] });
     const customerId = typeof paymentIntent.customer === 'string' ? paymentIntent.customer : paymentIntent.customer?.id;
-    const paymentMethodId = paymentIntent.payment_method?.id ?? paymentIntent.payment_method;
+    const paymentMethodId =
+      typeof paymentIntent.payment_method === 'string'
+        ? paymentIntent.payment_method
+        : paymentIntent.payment_method?.id;
 
     if (!customerId || !paymentMethodId) {
       return NextResponse.json({ error: 'Incomplete payment data' }, { status: 400 });
