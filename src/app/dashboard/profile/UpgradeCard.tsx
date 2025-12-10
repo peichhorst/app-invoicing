@@ -6,14 +6,12 @@ import type { CurrentPlan } from '@/lib/plan';
 
 type UpgradeCardProps = {
   currentPlan: CurrentPlan;
-  subscriptionId?: string | null;
   upgradeStatus?: string | null;
   sessionId?: string | null;
 };
 
-export function UpgradeCard({ currentPlan, subscriptionId, upgradeStatus, sessionId }: UpgradeCardProps) {
+export function UpgradeCard({ currentPlan, upgradeStatus, sessionId }: UpgradeCardProps) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(
     upgradeStatus === 'cancelled' ? 'Upgrade cancelled.' : null
   );
@@ -21,40 +19,18 @@ export function UpgradeCard({ currentPlan, subscriptionId, upgradeStatus, sessio
   useEffect(() => {
     const confirm = async () => {
       if (upgradeStatus !== 'success' || !sessionId) return;
-      setLoading(true);
       setMessage('Activating your upgrade...');
       try {
         const res = await fetch(`/api/billing/confirm?session_id=${encodeURIComponent(sessionId)}`);
         if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
         setMessage('Upgrade complete! You now have unlimited clients.');
         router.refresh();
       } catch (err: any) {
         setMessage(err?.message || 'Upgrade confirmation failed.');
-      } finally {
-        setLoading(false);
       }
     };
     void confirm();
   }, [upgradeStatus, sessionId, router]);
-
-  const handleUpgrade = async () => {
-    setLoading(true);
-    setMessage(null);
-    try {
-      const res = await fetch('/api/billing/create-session', { method: 'POST' });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url as string;
-      } else {
-        setMessage('No checkout URL returned.');
-      }
-    } catch (err: any) {
-      setMessage(err?.message || 'Could not start upgrade.');
-      setLoading(false);
-    }
-  };
 
   const planLabel =
     currentPlan.planTier === 'PRO_TRIAL'
@@ -99,11 +75,11 @@ export function UpgradeCard({ currentPlan, subscriptionId, upgradeStatus, sessio
           )}
           <button
             type="button"
-            onClick={handleUpgrade}
-            disabled={isPro || loading}
+            onClick={() => router.push('/payment?mode=subscription')}
+            disabled={isPro}
             className="inline-flex items-center justify-center rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-800 cursor-pointer disabled:cursor-not-allowed disabled:bg-purple-400"
           >
-            {isPro ? 'Already Upgraded' : loading ? 'Starting...' : 'Upgrade to Pro ($19/mo)'}
+            {isPro ? 'Already Upgraded' : 'Upgrade to Pro ($19/mo)'}
           </button>
         </div>
       </div>

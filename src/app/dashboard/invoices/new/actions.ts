@@ -206,7 +206,7 @@ export async function createRecurringInvoiceAction(
   return { id: recurring.id };
 }
 
-async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma, userId: string) {
+export async function generateInvoiceNumber(tx: Prisma.TransactionClient | typeof prisma, userId: string) {
   const last = await tx.invoice.findFirst({
     where: { userId },
     orderBy: { createdAt: 'desc' },

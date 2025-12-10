@@ -98,7 +98,7 @@ export default async function Dashboard() {
                 <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500">Invoices</p>
                 <h2 className="text-2xl font-semibold text-zinc-900">Create & manage</h2>
                 <p className="text-sm text-zinc-500">
-                  Send drafts, invoices, and recurring schedules without leaving this view.
+                  Manage invoices, and recurring schedules.
                 </p>
               </div>
               <div className="flex flex-wrap gap-3">

@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
+import { RecurringActions, type RecurringStatus } from '@/components/RecurringActions';
 
 const badgeStyles = {
   ACTIVE: 'bg-purple-50 text-purple-700',
+  PENDING: 'bg-zinc-50 text-zinc-600',
   PAUSED: 'bg-yellow-50 text-yellow-800',
   CANCELLED: 'bg-rose-50 text-rose-700',
 } as const;
@@ -15,8 +17,8 @@ const frequencyLabels: Record<string, string> = {
   year: 'Yearly',
 };
 
-const formatCurrency = (value: string | number) => {
-  const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const formatCurrency = (value: string | number, currency = 'USD') => {
+  const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency });
   return formatter.format(Number(value));
 };
 
@@ -28,24 +30,30 @@ export default async function RecurringPage() {
 
   const recurringInvoices = await prisma.recurringInvoice.findMany({
     where: { userId: user.id },
-    include: { client: true },
+    include: {
+      client: true,
+      invoices: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { invoiceNumber: true, id: true },
+      },
+      _count: { select: { invoices: true } },
+    },
     orderBy: { nextSendDate: 'asc' },
   });
-
-  const actionButton =
-    'inline-flex items-center justify-center gap-1 rounded-full border border-purple-500 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-purple-700 transition hover:bg-purple-50';
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6 sm:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-         
             <h1 className="text-3xl font-semibold text-gray-900">Recurring Invoices</h1>
             <p className="text-sm text-gray-500">Schedule repeat billing for your clients.</p>
           </div>
-          
-          <Link href="/dashboard/invoices/new?recurring=true" className="inline-flex items-center rounded-2xl bg-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-purple-600">
+          <Link
+            href="/dashboard/invoices/new?recurring=true"
+            className="inline-flex items-center rounded-2xl bg-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-purple-600"
+          >
             + New recurring invoice
           </Link>
         </div>
@@ -55,7 +63,10 @@ export default async function RecurringPage() {
             <p className="text-lg font-semibold text-gray-900">No recurring invoices yet</p>
             <p className="mt-2 text-sm text-gray-500">Create a recurring invoice to automatically bill your clients.</p>
             <div className="mt-6">
-              <Link href="/dashboard/invoices/new?recurring=true" className="inline-flex items-center rounded-full border border-purple-500 bg-white px-4 py-2 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50">
+              <Link
+                href="/dashboard/invoices/new?recurring=true"
+                className="inline-flex items-center rounded-full border border-purple-500 bg-white px-4 py-2 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50"
+              >
                 + New recurring invoice
               </Link>
             </div>
@@ -63,11 +74,14 @@ export default async function RecurringPage() {
         ) : (
           <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-zinc-200">
+              <table className="min-w-full divide-y divide-zinc-200 border border-zinc-200">
                 <thead className="bg-zinc-50">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
                       Title / Client
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Invoice #
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
                       Amount
@@ -93,8 +107,11 @@ export default async function RecurringPage() {
                         <div className="text-sm font-semibold text-gray-900">{invoice.title}</div>
                         <div className="text-xs text-zinc-500">{invoice.client?.companyName}</div>
                       </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {invoice.invoices[0]?.invoiceNumber ?? '—'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {formatCurrency(invoice.amount.toString())}
+                        {formatCurrency(invoice.amount.toString(), invoice.currency ?? 'USD')}
                       </td>
                       <td className="px-6 py-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
                         {frequencyLabels[invoice.interval] ?? invoice.interval}
@@ -116,17 +133,12 @@ export default async function RecurringPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex justify-end gap-2">
-                          <Link href="/dashboard/invoices/new?recurring=true" className="text-xs font-semibold text-purple-600 underline hover:text-purple-500">
-                            Edit
-                          </Link>
-                          <button type="button" className="text-xs font-semibold text-zinc-600 hover:text-zinc-900">
-                            Pause
-                          </button>
-                          <button type="button" className="text-xs font-semibold text-zinc-600 hover:text-zinc-900">
-                            Cancel
-                          </button>
-                        </div>
+                        <RecurringActions
+                          recurringId={invoice.id}
+                          status={invoice.status as RecurringStatus}
+                          invoiceCount={invoice._count.invoices}
+                          invoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                        />
                       </td>
                     </tr>
                   ))}

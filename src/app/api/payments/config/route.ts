@@ -93,6 +93,8 @@ export async function GET(request: Request) {
       paidAt,
       customerEmail,
       customerAddress,
+      stripeCustomerId: targetUser.stripeCustomerId || null,
+      defaultPaymentMethodId: targetUser.defaultPaymentMethodId || null,
     });
   } catch (error: any) {
     console.error('Payments config failed', error);

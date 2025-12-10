@@ -20,7 +20,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           <DashboardSidebar />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="md:hidden border-b border-zinc-200 bg-white px-4 py-3 shadow-sm">
+          <div className="md:hidden border-b border-zinc-200 bg-white px-4 py-3 shadow-sm flex justify-end">
             <button
               type="button"
               onClick={() => setMobileOpen(true)}
@@ -36,13 +36,30 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
-          <div
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setMobileOpen(false)}
-          />
-          <div className="absolute inset-y-0 left-0 w-60 bg-white shadow-lg">
-            <DashboardSidebar />
+        <div
+          className="absolute inset-0 bg-black/40"
+          onClick={() => setMobileOpen(false)}
+        />
+        <div className="absolute inset-y-0 left-0 w-60 bg-white shadow-lg">
+          <div className="relative h-full">
+            <button
+              type="button"
+              className="absolute top-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-purple-700 text-white shadow-sm"
+              onClick={() => setMobileOpen(false)}
+            >
+              <span className="sr-only">Close menu</span>
+              <svg viewBox="0 0 24 24" className="h-5 w-5">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+            <DashboardSidebar className="h-full pt-12" />
           </div>
+        </div>
         </div>
       )}
     </div>

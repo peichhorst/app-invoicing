@@ -1,0 +1,109 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Elements } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
+import CheckoutForm from '@/components/CheckoutForm';
+
+type SubscriptionConfig = {
+  publishableKey: string;
+  stripeAccountId: string | null;
+  stripeCustomerId: string | null;
+  defaultPaymentMethodId: string | null;
+  sellerId: string | null;
+};
+
+const SUBSCRIPTION_PRICE_CENTS = Number(process.env.NEXT_PUBLIC_PRO_PRICE_CENTS ?? 1900);
+
+export default function SubscriptionPaymentFlow() {
+  const [config, setConfig] = useState<SubscriptionConfig | null>(null);
+  const [stripePromise, setStripePromise] = useState<Promise<ReturnType<typeof loadStripe>> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const run = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch('/api/payments/config?mode=subscription');
+        if (!res.ok) throw new Error(await res.text());
+        const data: SubscriptionConfig = await res.json();
+        if (!data.publishableKey) throw new Error('Stripe publishable key missing');
+        if (!active) return;
+        setConfig(data);
+        setStripePromise(
+          loadStripe(data.publishableKey, data.stripeAccountId ? { stripeAccount: data.stripeAccountId } : undefined)
+        );
+      } catch (err: unknown) {
+        if (!active) return;
+        const message = err instanceof Error ? err.message : 'Unable to load payment configuration.';
+        setError(message);
+      } finally {
+        if (!active) return;
+        setLoading(false);
+      }
+    };
+    run();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleSuccess = async (paymentIntentId: string) => {
+    await fetch('/api/billing/confirm-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paymentIntentId }),
+    });
+  };
+
+  let content;
+  if (loading || !stripePromise) {
+    content = <p className="text-center text-zinc-500">Preparing upgrade...</p>;
+  } else if (error || !config) {
+    content = (
+      <p className="text-center text-sm text-rose-500">
+        {error || 'Unable to load subscription flow.'}
+      </p>
+    );
+  } else {
+    content = (
+      <Elements stripe={stripePromise}>
+        <CheckoutForm
+          amount={SUBSCRIPTION_PRICE_CENTS}
+          sellerId={config.sellerId || undefined}
+          stripeCustomerId={config.stripeCustomerId || undefined}
+          defaultPaymentMethodId={config.defaultPaymentMethodId || undefined}
+          intentEndpoint="/api/payments/create-subscription-intent"
+          onSuccess={handleSuccess}
+        />
+      </Elements>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="rounded-2xl bg-purple-50 p-8 shadow-sm">
+        <h1 className="text-3xl font-bold text-purple-900">Upgrade to ClientWave Pro</h1>
+        <p className="text-sm text-purple-700">$19 / month · Cancel anytime</p>
+        <ul className="mt-6 space-y-3 text-purple-800">
+          <li>
+            <span className="text-green-600">✓</span> Unlimited clients & invoices
+          </li>
+          <li>
+            <span className="text-green-600">✓</span> Recurring invoices & auto-charge
+          </li>
+          <li>
+            <span className="text-green-600">✓</span> Stripe + Venmo + Zelle payments
+          </li>
+          <li>
+            <span className="text-green-600">✓</span> Priority support & branding removal
+          </li>
+        </ul>
+      </div>
+      {content}
+    </div>
+  );
+}

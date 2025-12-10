@@ -75,6 +75,7 @@ type ExistingInvoiceState = {
   status: string;
   recurring: boolean;
   nextOccurrence?: string | null;
+  recurringParentId?: string | null;
 };
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -160,7 +161,7 @@ function CreateInvoiceContent() {
     const date = new Date(defaultDates.issueDate);
     return date.getDate();
   }, [defaultDates.issueDate]);
-  const recurringUpgradeHref = '/dashboard/profile?upgrade=1';
+  const recurringUpgradeHref = '/payment?mode=subscription';
   const recurringParam = searchParams.get('recurring') === 'true';
 
   const {
@@ -266,7 +267,8 @@ function CreateInvoiceContent() {
       })
       .then((data) => {
         if (!isMounted) return;
-        setPlanTier(data?.user?.planTier ?? null);
+        const tier = (data?.user?.planTier ?? '').toUpperCase();
+        setPlanTier(tier || null);
       })
       .catch(() => {
         if (isMounted) {
@@ -323,6 +325,7 @@ function CreateInvoiceContent() {
           status: data.status,
           recurring: Boolean(data.recurring),
           nextOccurrence: data.nextOccurrence ?? null,
+          recurringParentId: data.recurringParentId ?? null,
         });
       })
       .catch((err) => {
@@ -366,7 +369,7 @@ function CreateInvoiceContent() {
     control,
     name: 'issueDate',
   });
-  const canUseRecurring = planTier === 'PRO';
+  const canUseRecurring = planTier === 'PRO' || planTier === 'PRO_TRIAL';
   const nextRecurringPreview = useMemo(() => {
     if (!canUseRecurring || !recurringEnabledWatch) {
       return null;
@@ -406,7 +409,21 @@ function CreateInvoiceContent() {
     setToast({ message: 'Recurring invoices paused', variant: 'success' });
   };
 
-  const handleCancelRecurring = () => {
+  const handleCancelRecurring = async () => {
+    if (existingInvoice?.recurringParentId) {
+      try {
+        const res = await fetch(`/api/recurring/${existingInvoice.recurringParentId}/cancel`, {
+          method: 'POST',
+        });
+        if (!res.ok) {
+          const payload = await res.json().catch(() => null);
+          throw new Error(payload?.error || 'Failed to cancel recurring invoice');
+        }
+      } catch (error: any) {
+        setToast({ message: error?.message ?? 'Failed to cancel recurring invoice', variant: 'error' });
+        return;
+      }
+    }
     setValue('recurringEnabled', false);
     setValue('recurringInterval', 'month');
     setValue('recurringDayOfMonth', 1);
@@ -625,24 +642,6 @@ function CreateInvoiceContent() {
           ...recurrencePayload,
         };
 
-        const maybeCreateRecurringRecord = async (result: any) => {
-          if (!recurrenceEnabled || !nextRecurrenceDate) return;
-          if (isEdit) return;
-          try {
-            await createRecurringInvoiceAction({
-              clientId: normalizedValues.clientId,
-              amount: Number(result?.total ?? normalizedValues.total ?? 0),
-              interval: recurrencePayload.recurringInterval ?? 'month',
-              dayOfMonth: recurrencePayload.recurringDayOfMonth ?? undefined,
-              dayOfWeek: recurrencePayload.recurringDayOfWeek ?? undefined,
-              nextSendDate: nextRecurrenceDate.toISOString(),
-              title: normalizedValues.notes?.trim() || 'Recurring invoice',
-            });
-          } catch (error) {
-            console.error('Failed to create recurring invoice record', error);
-          }
-        };
-
       startTransition(() => {
         if (status === 'SENT') {
             fetch('/api/invoices', {
@@ -650,10 +649,9 @@ function CreateInvoiceContent() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ ...payloadWithRecurring, status }),
             })
-              .then(async (res) => {
-                if (!res.ok) throw new Error(await res.text());
-                const result = await res.json();
-                await maybeCreateRecurringRecord(result);
+                .then(async (res) => {
+                  if (!res.ok) throw new Error(await res.text());
+                  const result = await res.json();
                 setToast({
                   message: `Invoice ${result.invoiceNumber} sent successfully`,
                   variant: 'success',
@@ -683,7 +681,6 @@ function CreateInvoiceContent() {
 
             action
               .then(async (result: any) => {
-                await maybeCreateRecurringRecord(result);
                 setToast({
                   message: isEdit ? `Draft ${result.invoiceNumber} updated` : `Draft ${result.invoiceNumber} saved`,
                   variant: 'success',

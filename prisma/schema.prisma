@@ -35,6 +35,7 @@ model User {
   trackdriveLeadEnabled Boolean  @default(false)
   proTrialEndsAt       DateTime? @map("pro_trial_ends_at")
   proTrialReminderSent Boolean   @default(false)
+  defaultPaymentMethodId String?
   clients              Client[]
   invoices             Invoice[]
   recurringInvoices    RecurringInvoice[]
@@ -117,8 +118,9 @@ model RecurringInvoice {
   dayOfMonth   Int?
   dayOfWeek    Int?
   nextSendDate DateTime
-  status       String    @default("ACTIVE")
+  status       String    @default("PENDING") // PENDING, ACTIVE, PAUSED, CANCELLED
   sendFirstNow Boolean   @default(true)
+  firstPaidAt  DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)

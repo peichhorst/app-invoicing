@@ -31,6 +31,10 @@ type CheckoutFormProps = {
     postalCode?: string | null;
     country?: string | null;
   };
+  stripeCustomerId?: string;
+  defaultPaymentMethodId?: string | null;
+  intentEndpoint?: string;
+  onSuccess?: (paymentIntentId: string) => void | Promise<void>;
 };
 
 const BASE_PRICE = 50; // cents ($0.50)
@@ -54,7 +58,14 @@ const US_STATES = [
   { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" },
 ];
 
-export function CheckoutForm({ amount, sellerId, invoiceId, initialEmail, initialAddress }: CheckoutFormProps) {
+export function CheckoutForm({
+  amount,
+  sellerId,
+  invoiceId,
+  initialEmail,
+  initialAddress,
+  stripeCustomerId,
+}: CheckoutFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const inputClass =
@@ -95,6 +106,7 @@ export function CheckoutForm({ amount, sellerId, invoiceId, initialEmail, initia
   const [success, setSuccess] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [cardComplete, setCardComplete] = useState(false);
+  const [saveCard, setSaveCard] = useState(Boolean(stripeCustomerId));
 
   useEffect(() => {
     const createIntent = async () => {
@@ -105,7 +117,7 @@ export function CheckoutForm({ amount, sellerId, invoiceId, initialEmail, initia
       setCalculating(true);
       setApiError(null);
       try {
-        const res = await fetch("/api/payments/create-intent", {
+        const res = await fetch(intentEndpoint ?? "/api/payments/create-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ amount: total, email, sellerId, invoiceId }),
@@ -179,16 +191,35 @@ export function CheckoutForm({ amount, sellerId, invoiceId, initialEmail, initia
         },
       });
 
-      if (result.paymentIntent?.status === "succeeded") {
-        setSuccess(true);
-        if (invoiceId) {
-          void fetch("/api/payments/mark-paid", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ invoiceId, sellerId }),
-          });
-        }
-      } else {
+        if (result.paymentIntent?.status === "succeeded") {
+          setSuccess(true);
+          if (invoiceId) {
+            void fetch("/api/payments/mark-paid", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ invoiceId, sellerId }),
+            });
+          }
+          if (
+          saveCard &&
+          stripeCustomerId &&
+          sellerId &&
+          result.paymentIntent.payment_method
+        ) {
+            void fetch("/api/payments/save-card", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: sellerId,
+                customerId: stripeCustomerId,
+                paymentMethodId: result.paymentIntent.payment_method,
+              }),
+            });
+          }
+          if (result.paymentIntent?.id && onSuccess) {
+            await onSuccess(result.paymentIntent.id);
+          }
+        } else {
         alert(result.error?.message || "Payment could not be completed.");
       }
     } catch (err) {
@@ -196,7 +227,7 @@ export function CheckoutForm({ amount, sellerId, invoiceId, initialEmail, initia
       alert(message);
     }
 
-    setLoading(false);
+      setLoading(false);
   };
 
   const renderStateSelect = (value: string, onChange: (value: string) => void) => {
@@ -321,6 +352,20 @@ export function CheckoutForm({ amount, sellerId, invoiceId, initialEmail, initia
                 </div>
               </div>
 
+              {stripeCustomerId && (
+                <label className="flex items-center gap-3 mt-6 text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={saveCard}
+                    onChange={(e) => setSaveCard(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/60 text-purple-600 focus:ring-purple-500"
+                  />
+                  <span>
+                    Save card for automatic recurring payments{" "}
+                    <span className="text-green-300">(recommended)</span>
+                  </span>
+                </label>
+              )}
               {calculating && <p className="text-sm text-white/80">Preparing payment…</p>}
               {apiError && <p className="text-xs text-amber-200">{apiError}</p>}
 

@@ -1,151 +1,144 @@
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
-import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { stripe } from '@/lib/stripe';
 import { sendInvoiceEmail } from '@/lib/email';
+import { generateInvoiceNumber } from '@/app/dashboard/invoices/new/actions';
 
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const stripe = stripeSecretKey ? new Stripe(stripeSecretKey, { apiVersion: '2024-06-20' }) : null;
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
 
-function addInterval(date: Date, interval: string, dayOfMonth?: number | null, dayOfWeek?: number | null): Date {
-  const result = new Date(date);
+const calculateNextRecurringDate = (
+  current: Date,
+  interval: 'week' | 'month' | 'quarter' | 'year',
+  dayOfMonth?: number | null,
+  dayOfWeek?: number | null
+): Date => {
+  const base = new Date(current);
   if (interval === 'week') {
-    const targetDow = Math.min(Math.max(dayOfWeek ?? 1, 1), 7);
-    const currentDow = result.getDay() === 0 ? 7 : result.getDay();
-    let diff = targetDow - currentDow;
+    const target = Math.min(Math.max(dayOfWeek ?? 1, 1), 7);
+    const currentDow = base.getDay() === 0 ? 7 : base.getDay();
+    let diff = target - currentDow;
     if (diff <= 0) diff += 7;
-    result.setDate(result.getDate() + diff);
-    return result;
+    const next = new Date(base);
+    next.setDate(base.getDate() + diff);
+    return next;
   }
-
-  const step = interval === 'quarter' ? 3 : interval === 'year' ? 12 : 1;
-  result.setDate(1);
-  result.setMonth(result.getMonth() + step);
-  const requestedDay = Math.max(dayOfMonth ?? date.getDate(), 1);
-  const daysInMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
-  result.setDate(Math.min(requestedDay, daysInMonth));
-  return result;
-}
-
-async function generateInvoiceNumber(tx: Prisma.TransactionClient, userId: string) {
-  const last = await tx.invoice.findFirst({
-    where: { userId },
-    orderBy: { createdAt: 'desc' },
-    select: { invoiceNumber: true },
-  });
-  const next = (last ? Number(last.invoiceNumber) || 0 : 0) + 1;
-  return next.toString();
-}
-
-async function attemptAutoCharge(userId: string, invoice: { id: string; total: number }, stripeAccountId: string | null) {
-  if (!stripe || !stripeAccountId) return false;
-  const user = await prisma.user.findUnique({ where: { id: userId }, select: { stripeCustomerId: true } });
-  const amountCents = Math.round((invoice.total || 0) * 100);
-  if (amountCents <= 0) return false;
-
-  const params: Stripe.PaymentIntentCreateParams = {
-    amount: amountCents,
-    currency: 'usd',
-    confirm: true,
-    payment_method_types: ['card'],
-    metadata: {
-      invoiceId: invoice.id,
-      source: 'recurring-cron',
-    },
-  };
-  if (user?.stripeCustomerId) {
-    params.customer = user.stripeCustomerId;
-  }
-
-  try {
-    await stripe.paymentIntents.create(params, {
-      stripeAccount: stripeAccountId,
-    });
-    await prisma.invoice.update({
-      where: { id: invoice.id },
-      data: { status: 'PAID' },
-    });
-    console.log(`Recurring cron: auto-charged invoice ${invoice.id}`);
-    return true;
-  } catch (error) {
-    console.error('Recurring cron auto-charge failed', error);
-    return false;
-  }
-}
+  const monthsToAdd = interval === 'quarter' ? 3 : interval === 'year' ? 12 : 1;
+  const next = new Date(base);
+  next.setDate(1);
+  next.setMonth(next.getMonth() + monthsToAdd);
+  const requestedDay = Math.max(dayOfMonth ?? base.getDate(), 1);
+  const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  next.setDate(Math.min(requestedDay, daysInMonth));
+  return next;
+};
 
 export async function GET() {
-  try {
-    const now = new Date();
-    const recurringList = await prisma.recurringInvoice.findMany({
-      where: { status: 'ACTIVE', nextSendDate: { lte: now } },
-      include: { client: true, user: true },
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  const due = await prisma.recurringInvoice.findMany({
+    where: {
+      status: 'ACTIVE',
+      nextSendDate: { lte: today },
+    },
+    include: { user: true, client: true },
+  });
+
+  let processed = 0;
+
+  for (const rec of due) {
+    const invoiceResult = await prisma.$transaction(async (tx) => {
+      const invoiceNumber = await generateInvoiceNumber(tx, rec.userId);
+      const now = new Date();
+      const dueDate = addDays(now, 30);
+      return tx.invoice.create({
+        data: {
+          userId: rec.userId,
+          clientId: rec.clientId,
+          invoiceNumber,
+          title: rec.title,
+          amount: Number(rec.amount),
+          currency: rec.currency,
+          issueDate: now,
+          dueDate,
+          status: 'SENT',
+          subTotal: Number(rec.amount),
+          taxRate: 0,
+          taxAmount: 0,
+          total: Number(rec.amount),
+          recurringParentId: rec.id,
+          items: {
+            create: [
+              {
+                name: rec.title || 'Recurring invoice',
+                description: rec.title || 'Recurring invoice',
+                quantity: 1,
+                unitPrice: Number(rec.amount),
+                taxRate: 0,
+                total: Number(rec.amount),
+              },
+            ],
+          },
+        },
+      });
     });
 
-    if (!recurringList.length) {
-      return NextResponse.json({ processed: 0 });
-    }
+    let invoice = await prisma.invoice.findUnique({
+      where: { id: invoiceResult.id },
+      include: { client: true, user: true, items: true },
+    });
 
-    let processed = 0;
-    for (const recurring of recurringList) {
+    if (!invoice) continue;
+
+    if (rec.user.stripeCustomerId && rec.user.defaultPaymentMethodId) {
       try {
-        const invoice = await prisma.$transaction(async (tx) => {
-          const invoiceNumber = await generateInvoiceNumber(tx, recurring.userId);
-          return tx.invoice.create({
-            data: {
-              clientId: recurring.clientId,
-              userId: recurring.userId,
-              invoiceNumber,
-              status: 'SENT',
-              issueDate: new Date(),
-              currency: recurring.currency,
-              subTotal: Number(recurring.amount),
-              taxRate: 0,
-              taxAmount: 0,
-              total: Number(recurring.amount),
-              notes: `Recurring invoice: ${recurring.title}`,
-              sentCount: 1,
-              items: {
-                create: [
-                  {
-                    name: recurring.title,
-                    description: recurring.title,
-                    quantity: 1,
-                    unitPrice: Number(recurring.amount),
-                    taxRate: 0,
-                    total: Number(recurring.amount),
-                  },
-                ],
-              },
-              recurring: true,
-              recurringParentId: recurring.id,
-            },
-            include: {
-              client: true,
-              user: true,
-              items: true,
-            },
-          });
+        await stripe.paymentIntents.create({
+          amount: Math.round(Number(rec.amount) * 100),
+          currency: rec.currency.toLowerCase(),
+          customer: rec.user.stripeCustomerId,
+          payment_method: rec.user.defaultPaymentMethodId,
+          off_session: true,
+          confirm: true,
+          metadata: { invoiceId: invoice.id },
         });
-
-        await sendInvoiceEmail(invoice, invoice.client, invoice.user);
-
-        await attemptAutoCharge(recurring.userId, { id: invoice.id, total: invoice.total }, recurring.user.stripeAccountId ?? null);
-
-        const nextDate = addInterval(new Date(recurring.nextSendDate), recurring.interval, recurring.dayOfMonth, recurring.dayOfWeek);
-        await prisma.recurringInvoice.update({
-          where: { id: recurring.id },
-          data: { nextSendDate: nextDate },
+        invoice = await prisma.invoice.update({
+          where: { id: invoice.id },
+          data: { status: 'PAID' },
+          include: { client: true, user: true, items: true },
         });
-
-        processed += 1;
       } catch (error) {
-        console.error('Recurring cron processing failed for', recurring.id, error);
+        console.error('Recurring auto-charge failed', error);
       }
     }
 
-    return NextResponse.json({ processed });
-  } catch (error) {
-    console.error('Recurring cron error', error);
-    return NextResponse.json({ error: 'Recurring job failed' }, { status: 500 });
+    await sendInvoiceEmail(invoice, invoice.client, invoice.user);
+
+    const next = calculateNextRecurringDate(
+      rec.nextSendDate,
+      rec.interval as 'week' | 'month' | 'quarter' | 'year',
+      rec.dayOfMonth,
+      rec.dayOfWeek
+    );
+
+    const shouldActivate = invoice.status === 'PAID' && !rec.firstPaidAt;
+
+    await prisma.recurringInvoice.update({
+      where: { id: rec.id },
+      data: {
+        nextSendDate: next,
+        ...(shouldActivate && {
+          status: 'ACTIVE',
+          firstPaidAt: new Date(),
+        }),
+      },
+    });
+
+    processed += 1;
   }
+
+  return NextResponse.json({ processed });
 }

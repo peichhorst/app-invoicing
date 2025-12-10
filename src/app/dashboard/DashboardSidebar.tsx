@@ -40,13 +40,10 @@ export function DashboardSidebar({ className }: { className?: string }) {
           <button
             type="button"
             onClick={() => setCollapsed((prev) => !prev)}
-            className="flex items-center justify-center rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-600 bg-white"
+            className="hidden md:inline-flex items-center justify-center rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold text-zinc-600 bg-white"
           >
             {collapsed ? (
-              <>
-                <ChevronRight size={16} />
-                <span className="hidden sm:inline">Expand</span>
-              </>
+              <ChevronRight size={16} />
             ) : (
               <>
                 <ChevronLeft size={16} />

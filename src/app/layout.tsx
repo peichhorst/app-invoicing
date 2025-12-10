@@ -103,7 +103,7 @@ export default async function RootLayout({
                   </Link>
                   <button
                     type="submit"
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 cursor-pointer"
+                    className="inline-flex items-center justify-center rounded-full border border-purple-500 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-purple-700 transition hover:bg-purple-50"
                   >
                     Logout
                   </button>
