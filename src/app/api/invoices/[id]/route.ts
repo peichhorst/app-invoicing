@@ -9,11 +9,19 @@ import { generateUniqueShortCode } from '@/lib/shortcodes';
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+  const companyId = user.companyId ?? user.company?.id ?? null;
 
   const { id } = await params;
   const invoice = await prisma.invoice.findFirst({
-    where: { id, userId: user.id },
-    include: { client: true, items: true },
+    where: isOwnerOrAdmin
+      ? { id, user: { companyId: companyId ?? undefined } }
+      : { id, userId: user.id },
+    include: {
+      client: true,
+      items: true,
+      user: { include: { company: true } },
+    },
   });
   if (!invoice) {
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
@@ -24,6 +32,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+  const companyId = user.companyId ?? user.company?.id ?? null;
 
   const { id } = await params;
   try {
@@ -65,7 +75,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     );
     const total = totals.subTotal;
 
-    const existing = await prisma.invoice.findFirst({ where: { id, userId: user.id } });
+    const existing = await prisma.invoice.findFirst({
+      where: isOwnerOrAdmin
+        ? { id, user: { companyId: companyId ?? undefined } }
+        : { id, userId: user.id },
+    });
     if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
     const shortCode = existing.shortCode || (await generateUniqueShortCode(prisma));
@@ -102,8 +116,14 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
           create: itemsForCreate,
         },
       },
-      include: { client: true, items: true, user: true },
-    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
+      include: {
+        client: true,
+        items: true,
+        user: { include: { company: true } },
+      },
+    })) as Prisma.InvoiceGetPayload<{
+      include: { client: true; items: true; user: { include: { company: true } } };
+    }>;
 
     if (requestedStatus === 'SENT') {
       const dueDays =
@@ -137,9 +157,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+  const companyId = user.companyId ?? user.company?.id ?? null;
   const { id } = await params;
   try {
-    const existing = await prisma.invoice.findFirst({ where: { id, userId: user.id } });
+    const existing = await prisma.invoice.findFirst({
+      where: isOwnerOrAdmin
+        ? { id, user: { companyId: companyId ?? undefined } }
+        : { id, userId: user.id },
+    });
     if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
     await prisma.invoice.delete({ where: { id } });
     return NextResponse.json({ ok: true });

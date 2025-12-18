@@ -1,76 +1,49 @@
-// src/app/api/clients/[id]/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 
-type RouteContext = { params: Promise<{ id: string }> };
+export async function DELETE(_: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
+    return NextResponse.json({ error: 'Only owners or admins can delete clients' }, { status: 403 });
+  }
+  try {
+    const { id } = await context.params;
+    await prisma.client.delete({ where: { id } });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('Delete client failed', err);
+    return NextResponse.json({ error: 'Failed to delete client' }, { status: 500 });
+  }
+}
 
-export async function GET(_req: Request, { params }: RouteContext) {
+export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id } = await params;
-  const client = await prisma.client.findFirst({ where: { id, userId: user.id } });
-  if (!client) {
-    return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+  const body = await request.json().catch(() => ({}));
+  const isLead = typeof body.isLead === 'boolean' ? body.isLead : undefined;
+  if (isLead === undefined) {
+    return NextResponse.json({ error: 'Nothing to update' }, { status: 400 });
   }
-  return NextResponse.json(client);
-}
 
-export async function PUT(request: Request, { params }: RouteContext) {
+  // allow owner/admin; allow assigned rep to convert their own lead
+  const canConvert = user.role === 'OWNER' || user.role === 'ADMIN';
+  if (!canConvert) {
+    return NextResponse.json({ error: 'Only owners or admins can update lead status' }, { status: 403 });
+  }
+
   try {
-    const user = await getCurrentUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { id } = await params;
-    const body = await request.json();
-
-    const client = await prisma.client.findFirst({ where: { id, userId: user.id } });
-    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-
+    const { id } = await context.params;
     const updated = await prisma.client.update({
       where: { id },
-      data: {
-        companyName: body.companyName,
-        contactName: body.contactName ?? null,
-        email: body.email ?? null,
-        phone: body.phone ?? null,
-        addressLine1: body.addressLine1 ?? null,
-        addressLine2: body.addressLine2 ?? null,
-        city: body.city ?? null,
-        state: body.state ?? null,
-        postalCode: body.postalCode ?? null,
-        country: body.country ?? null,
-        notes: body.notes ?? null,
-      },
+      data: { isLead },
+      select: { id: true, isLead: true },
     });
-
     return NextResponse.json(updated);
-  } catch (error: any) {
-    console.error('Update client failed:', error);
-    return NextResponse.json(
-      { error: 'Failed to update client', details: error?.message || String(error) },
-      { status: 500 }
-    );
-  }
-}
-
-export async function DELETE(_req: Request, { params }: RouteContext) {
-  try {
-    const user = await getCurrentUser();
-    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-    const { id } = await params;
-    const client = await prisma.client.findFirst({ where: { id, userId: user.id } });
-    if (!client) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-
-    await prisma.client.delete({ where: { id } });
-    return NextResponse.json({ success: true });
-  } catch (error: any) {
-    console.error('Delete client failed:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete client', details: error?.message || String(error) },
-      { status: 500 }
-    );
+  } catch (err) {
+    console.error('Update client failed', err);
+    return NextResponse.json({ error: 'Failed to update client' }, { status: 500 });
   }
 }

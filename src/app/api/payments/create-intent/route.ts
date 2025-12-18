@@ -62,12 +62,12 @@ export async function POST(request: Request) {
       amount: Math.round(amount),
       currency: 'usd',
       receipt_email: email || undefined,
-      metadata: {
-        userId: targetUser?.id || 'guest',
-        invoiceId: invoiceId || '',
-        source: 'superinvoicing-app',
-      },
-    };
+    metadata: {
+      userId: targetUser?.id || 'guest',
+      invoiceId: invoiceId || '',
+      source: 'clientwave-app',
+    },
+  };
 
     const intent = await stripe.paymentIntents.create(params, {
       stripeAccount: stripeAccountId,

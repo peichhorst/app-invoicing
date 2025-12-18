@@ -1,10 +1,11 @@
 import Link from 'next/link';
+import { Download } from 'lucide-react';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { RecurringActions, type RecurringStatus } from '@/components/RecurringActions';
 
 const badgeStyles = {
-  ACTIVE: 'bg-purple-50 text-purple-700',
+  ACTIVE: 'bg-emerald-50 text-emerald-700',
   PENDING: 'bg-zinc-50 text-zinc-600',
   PAUSED: 'bg-yellow-50 text-yellow-800',
   CANCELLED: 'bg-rose-50 text-rose-700',
@@ -27,15 +28,19 @@ export default async function RecurringPage() {
   if (!user) {
     return <div className="p-6 text-sm text-red-600">Unauthorized</div>;
   }
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+  const companyId = user.companyId ?? user.company?.id ?? null;
 
   const recurringInvoices = await prisma.recurringInvoice.findMany({
-    where: { userId: user.id },
+    where: isOwnerOrAdmin
+      ? { user: { companyId: companyId ?? undefined } }
+      : { userId: user.id },
     include: {
       client: true,
       invoices: {
         orderBy: { createdAt: 'desc' },
         take: 1,
-        select: { invoiceNumber: true, id: true },
+        select: { invoiceNumber: true, id: true, status: true, issueDate: true },
       },
       _count: { select: { invoices: true } },
     },
@@ -50,12 +55,6 @@ export default async function RecurringPage() {
             <h1 className="text-3xl font-semibold text-gray-900">Recurring Invoices</h1>
             <p className="text-sm text-gray-500">Schedule repeat billing for your clients.</p>
           </div>
-          <Link
-            href="/dashboard/invoices/new?recurring=true"
-            className="inline-flex items-center rounded-2xl bg-purple-700 px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition hover:bg-purple-600"
-          >
-            + New recurring invoice
-          </Link>
         </div>
 
         {recurringInvoices.length === 0 ? (
@@ -72,80 +71,138 @@ export default async function RecurringPage() {
             </div>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-zinc-200 border border-zinc-200">
-                <thead className="bg-zinc-50">
-                  <tr>
+          <>
+            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-zinc-200 border border-zinc-200">
+                  <thead className="bg-zinc-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Title / Client
+                      </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Title / Client
+                      ID
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Invoice #
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Amount
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Frequency
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Next send
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {recurringInvoices.map((invoice) => (
-                    <tr key={invoice.id}>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="text-sm font-semibold text-gray-900">{invoice.title}</div>
-                        <div className="text-xs text-zinc-500">{invoice.client?.companyName}</div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        {invoice.invoices[0]?.invoiceNumber ?? '—'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        {formatCurrency(invoice.amount.toString(), invoice.currency ?? 'USD')}
-                      </td>
-                      <td className="px-6 py-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                        {frequencyLabels[invoice.interval] ?? invoice.interval}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-700">
-                        {invoice.nextSendDate.toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span
-                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                            badgeStyles[invoice.status as keyof typeof badgeStyles] ?? badgeStyles.ACTIVE
-                          }`}
-                        >
-                          {invoice.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <RecurringActions
-                          recurringId={invoice.id}
-                          status={invoice.status as RecurringStatus}
-                          invoiceCount={invoice._count.invoices}
-                          invoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
-                        />
-                      </td>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Amount
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Frequency
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Next send
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Subscription
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Latest Invoice
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-100">
+                    {recurringInvoices.map((invoice, index) => (
+                      <tr key={invoice.id}>
+                        <td className="whitespace-nowrap px-6 py-4">
+                          <div className="text-sm font-semibold text-gray-900">{invoice.title}</div>
+                          <div className="text-xs text-zinc-500">{invoice.client?.companyName}</div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-gray-900">#{index + 1}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {formatCurrency(invoice.amount.toString(), invoice.currency ?? 'USD')}
+                        </td>
+                        <td className="px-6 py-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
+                          {frequencyLabels[invoice.interval] ?? invoice.interval}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-700">
+                          {invoice.nextSendDate.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </td>
+                        <td className="px-6 py-4">
+                          {(() => {
+                            const normalizedStatus =
+                              invoice.status === 'PAID' ? 'ACTIVE' : (invoice.status as keyof typeof badgeStyles);
+                            return (
+                              <span
+                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                                  badgeStyles[normalizedStatus] ?? badgeStyles.ACTIVE
+                                }`}
+                              >
+                                {normalizedStatus}
+                                {normalizedStatus === 'ACTIVE' && ` (${invoice._count.invoices})`}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-6 py-4">
+                          {invoice.invoices[0] ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <span
+                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                                  invoice.invoices[0].status === 'PAID'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : invoice.invoices[0].status === 'SENT'
+                                    ? 'bg-blue-50 text-blue-700'
+                                    : invoice.invoices[0].status === 'OVERDUE'
+                                    ? 'bg-red-50 text-red-700'
+                                    : 'bg-zinc-50 text-zinc-600'
+                                }`}
+                              >
+                                {invoice.invoices[0].status}
+                              </span>
+                              <span className="text-xs text-zinc-500">
+                                {invoice.invoices[0].issueDate.toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-zinc-400">None</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <RecurringActions
+                            recurringId={invoice.id}
+                            status={invoice.status as RecurringStatus}
+                            invoiceCount={invoice._count.invoices}
+                            invoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                            latestInvoiceId={invoice.invoices[0]?.id ?? undefined}
+                            latestInvoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3">
+              <a
+                href="/api/exports/recurring-invoices"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-white"
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Export recurring invoices
+              </a>
+              <Link
+                href="/dashboard/invoices/new?recurring=true"
+                className="ml-auto inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-green-700"
+              >
+                <span>+</span>
+                New recurring invoice
+              </Link>
+            </div>
+          </>
         )}
       </div>
     </div>

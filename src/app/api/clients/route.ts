@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import crypto from 'crypto';
 import { describePlan } from '@/lib/plan';
+import { clientVisibilityWhere } from '@/lib/client-scope';
 
 type ClientPayload = {
   companyName: string;
@@ -17,6 +18,7 @@ type ClientPayload = {
   postalCode?: string;
   country?: string;
   notes?: string;
+  assignedToId?: string | null;
 };
 
 export async function POST(request: Request) {
@@ -28,9 +30,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const companyId = user.companyId ?? user.company?.id ?? null;
+    if (!companyId) {
+      return NextResponse.json({ error: 'User is not linked to a company.' }, { status: 400 });
+    }
+
     const plan = describePlan(user);
     const isPro = plan.effectiveTier === 'PRO';
-    const count = await prisma.client.count({ where: { userId: user.id, archived: false } });
+    const count = await prisma.client.count({ where: { ...clientVisibilityWhere(user), archived: false } });
     if (!isPro && count >= 3) {
       return NextResponse.json(
         { error: 'Free plan allows up to 3 clients. Upgrade to add more.' },
@@ -38,9 +45,28 @@ export async function POST(request: Request) {
       );
     }
 
+    let assignedToId: string | null = user.id;
+    if (user.role === 'OWNER' || user.role === 'ADMIN') {
+      if (Object.prototype.hasOwnProperty.call(body, 'assignedToId')) {
+        const requested = body.assignedToId as string | null | undefined;
+        if (!requested) {
+          assignedToId = null;
+        } else {
+          const target = await prisma.user.findFirst({
+            where: { id: requested, companyId },
+            select: { id: true },
+          });
+          if (target) {
+            assignedToId = target.id;
+          }
+        }
+      }
+    }
+
     const client = await prisma.client.create({
       data: {
-        userId: user.id,
+        companyId,
+        assignedToId,
         companyName: body.companyName,
         contactName: body.contactName ?? null,
         email: body.email ?? null,

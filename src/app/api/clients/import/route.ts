@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { describePlan } from '@/lib/plan';
 import { CLIENT_CSV_FIELD_MAP, normalizeCsvHeader } from '@/lib/client-csv';
+import { clientVisibilityWhere } from '@/lib/client-scope';
 
 type ClientImportResult = {
   imported: number;
@@ -70,6 +71,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const companyId = user.companyId ?? user.company?.id ?? null;
+  if (!companyId) {
+    return NextResponse.json({ error: 'User is not linked to a company.' }, { status: 400 });
+  }
+
   const formData = await request.formData();
   const file = formData.get('file');
   if (!file || !(file instanceof File)) {
@@ -115,7 +121,9 @@ export async function POST(request: Request) {
 
   const plan = describePlan(user);
   const isPro = plan.effectiveTier === 'PRO';
-  const currentCount = await prisma.client.count({ where: { userId: user.id, archived: false } });
+  const currentCount = await prisma.client.count({
+    where: { ...clientVisibilityWhere(user), archived: false },
+  });
   const maxClients = isPro ? Number.MAX_SAFE_INTEGER : 3;
   const availableSlots = Math.max(maxClients - currentCount, 0);
 
@@ -144,7 +152,8 @@ export async function POST(request: Request) {
     try {
       const client = await prisma.client.create({
         data: {
-          userId: user.id,
+          companyId,
+          assignedToId: user.id,
           companyName: row.companyName,
           contactName: row.contactName ?? null,
           email: row.email ?? null,

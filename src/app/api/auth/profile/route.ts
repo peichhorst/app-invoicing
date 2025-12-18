@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser, hashPassword } from '@/lib/auth';
+import { normalizeStateValue } from '@/lib/states';
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -22,6 +23,7 @@ export async function PUT(request: Request) {
     name?: string | null;
     companyName?: string | null;
     logoDataUrl?: string | null;
+    signatureDataUrl?: string | null;
     phone?: string | null;
     addressLine1?: string | null;
     addressLine2?: string | null;
@@ -37,6 +39,8 @@ export async function PUT(request: Request) {
     mailToAddressTo?: string | null;
     trackdriveLeadToken?: string | null;
     trackdriveLeadEnabled?: string | null;
+    reportsToId?: string | null;
+    positionId?: string | null;
     password?: string | null;
   };
 
@@ -46,17 +50,13 @@ export async function PUT(request: Request) {
 
     const body = (await request.json()) as ProfilePayload;
 
+    const normalizedState = normalizeStateValue(body.state ?? user.company?.state ?? undefined);
     const data: Parameters<typeof prisma.user.update>[0]['data'] = {
       name: body.name || user.name,
       companyName: body.companyName ?? null,
       logoDataUrl: sanitizeLogoUrl(body.logoDataUrl),
+      signatureDataUrl: sanitizeLogoUrl(body.signatureDataUrl),
       phone: body.phone ?? null,
-      addressLine1: body.addressLine1 ?? null,
-      addressLine2: body.addressLine2 ?? null,
-      city: body.city ?? null,
-      state: body.state ?? null,
-      postalCode: body.postalCode ?? null,
-      country: body.country ?? 'USA',
       stripeAccountId: body.stripeAccountId?.trim() || null,
       stripePublishableKey: body.stripePublishableKey?.trim() || null,
       venmoHandle: body.venmoHandle?.trim() || null,
@@ -71,12 +71,82 @@ export async function PUT(request: Request) {
       data.password = await hashPassword(body.password);
     }
 
-    const updated = await prisma.user.update({
-      where: { id: user.id },
-      data,
+    const companyId = user.companyId ?? user.company?.id ?? null;
+    const canManageReports = user.role === 'OWNER' || user.role === 'ADMIN';
+    if (canManageReports) {
+      const targetIdRaw = body.reportsToId ?? undefined;
+      const targetId = typeof targetIdRaw === 'string' ? targetIdRaw.trim() : null;
+      if (companyId && targetId) {
+        const target = await prisma.user.findFirst({
+          where: { id: targetId, companyId },
+          select: { id: true },
+        });
+        data.reportsToId = target && target.id !== user.id ? target.id : null;
+      } else {
+        data.reportsToId = null;
+      }
+    }
+
+    if (companyId && user.role === 'OWNER' && body.positionId !== undefined) {
+      const positionIdRaw = typeof body.positionId === 'string' ? body.positionId.trim() : '';
+      if (!positionIdRaw) {
+        data.positionId = null;
+        data.position = null;
+      } else {
+        const position = await prisma.position.findFirst({
+          where: { id: positionIdRaw, companyId },
+          select: { id: true },
+        });
+        if (!position) {
+          return NextResponse.json({ error: 'Position not found for this company' }, { status: 400 });
+        }
+        data.positionId = position.id;
+        data.position = null;
+      }
+    }
+
+    const companyUpdate: Parameters<typeof prisma.company.update>[0]['data'] = {};
+    const appendTrimmed = (value?: string | null) => (value ? value.trim() : '');
+    if (body.addressLine1 !== undefined) {
+      companyUpdate.addressLine1 = appendTrimmed(body.addressLine1) || null;
+    }
+    if (body.addressLine2 !== undefined) {
+      companyUpdate.addressLine2 = appendTrimmed(body.addressLine2) || null;
+    }
+    if (body.city !== undefined) {
+      companyUpdate.city = appendTrimmed(body.city) || null;
+    }
+    if (body.state !== undefined) {
+      companyUpdate.state = normalizedState ?? null;
+    }
+    if (body.postalCode !== undefined) {
+      companyUpdate.postalCode = appendTrimmed(body.postalCode) || null;
+    }
+    if (body.country !== undefined) {
+      const trimmedCountry = appendTrimmed(body.country);
+      companyUpdate.country = trimmedCountry ? trimmedCountry : 'USA';
+    }
+
+    await prisma.$transaction(async (tx) => {
+      if (user.companyId && Object.keys(companyUpdate).length > 0) {
+        await tx.company.update({
+          where: { id: user.companyId },
+          data: companyUpdate,
+        });
+      }
+
+      await tx.user.update({
+        where: { id: user.id },
+        data,
+      });
     });
 
-    return NextResponse.json({ user: updated });
+    const refreshed = await prisma.user.findUnique({
+      where: { id: user.id },
+      include: { company: true },
+    });
+
+    return NextResponse.json({ user: refreshed ?? user });
   } catch (error: unknown) {
     console.error('Profile update failed:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';

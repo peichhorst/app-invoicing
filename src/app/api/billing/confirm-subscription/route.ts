@@ -2,8 +2,10 @@ import { NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import type { Stripe } from 'stripe';
 
 const PRICE_ID = process.env.PRO_SUBSCRIPTION_PRICE_ID;
+const PRODUCT_ID = process.env.PRO_SUBSCRIPTION_PRODUCT_ID;
 const SUBSCRIPTION_AMOUNT_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 1900);
 
 export async function POST(request: Request) {
@@ -28,22 +30,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Incomplete payment data' }, { status: 400 });
     }
 
+    const interval: Stripe.SubscriptionCreateParams.Item.PriceData.Recurring.Interval = 'month';
+    const items =
+      PRICE_ID
+        ? [{ price: PRICE_ID }]
+        : PRODUCT_ID
+          ? [
+              {
+                price_data: {
+                  currency: 'usd',
+                  product: PRODUCT_ID,
+                  recurring: { interval },
+                  unit_amount: SUBSCRIPTION_AMOUNT_CENTS,
+                },
+                quantity: 1,
+              },
+            ]
+          : null;
+
+    if (!items) {
+      return NextResponse.json(
+        { error: 'Subscription price or product not configured' },
+        { status: 500 }
+      );
+    }
+
     const subscription = await stripe.subscriptions.create({
       customer: customerId,
       default_payment_method: paymentMethodId,
-      items: [
-        PRICE_ID
-          ? { price: PRICE_ID }
-          : {
-              price_data: {
-                currency: 'usd',
-                product_data: { name: 'ClientWave Pro' },
-                recurring: { interval: 'month' },
-                unit_amount: SUBSCRIPTION_AMOUNT_CENTS,
-              },
-              quantity: 1,
-            },
-      ],
+      items,
       metadata: { userId: user.id },
     });
 
@@ -54,6 +69,7 @@ export async function POST(request: Request) {
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId,
         defaultPaymentMethodId: paymentMethodId,
+        subscriptionCancelAt: null,
       },
     });
 

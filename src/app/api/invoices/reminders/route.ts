@@ -9,7 +9,7 @@ const MS_IN_DAY = 1000 * 60 * 60 * 24;
 const REMINDER_INTERVAL_MS = 1000 * 60 * 2; // 2 minutes for temporary reminder/testing
 
 type ReminderInvoice = Prisma.InvoiceGetPayload<{
-  include: { client: true; items: true; user: true };
+  include: { client: true; items: true; user: { include: { company: true } } };
 }>;
 
 async function handle(request: Request) {
@@ -29,7 +29,7 @@ async function handle(request: Request) {
     include: {
       client: true,
       items: true,
-      user: true,
+      user: { include: { company: true } },
     },
   });
 

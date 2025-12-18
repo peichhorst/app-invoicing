@@ -55,6 +55,15 @@ a {
   animation: none !important;
 }
 
+button:hover,
+a:hover,
+[role='button']:hover,
+[role='link']:hover,
+button:focus-visible,
+ a:focus-visible {
+  cursor: pointer;
+}
+
 .wave-icon .wave-path {
   animation: wave-bounce 3s ease-in-out infinite;
   transform-origin: center;
@@ -100,3 +109,4 @@ a {
     stroke-opacity: 0.4;
   }
 }
+

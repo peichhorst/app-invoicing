@@ -1,7 +1,21 @@
 import Stripe from 'stripe';
 import { prisma } from '@/lib/prisma';
 import { sendTrialReminderEmail } from '@/lib/email';
-import type { User } from '@prisma/client';
+import type { Company, User } from '@prisma/client';
+
+type UserRole = 'USER' | 'ADMIN' | 'OWNER';
+type UserWithRole = User & { role?: UserRole };
+type UserWithCompany = User & { company?: Company | null };
+type UserWithPlanOwner = UserWithCompany & { planOwner?: User | null };
+const getUserRole = (user: User): UserRole => (user as UserWithRole).role ?? 'USER';
+const getPlanReferenceUser = (user: User): User => {
+  const candidate = user as UserWithPlanOwner;
+  const owner = candidate.planOwner;
+  if (owner && owner.id && owner.id !== user.id) {
+    return owner;
+  }
+  return user;
+};
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 export const TRIAL_LENGTH_MS = 30 * DAY_MS;
@@ -42,6 +56,10 @@ export type CurrentPlan = {
   isInGracePeriod: boolean;
   trialEndsAt?: Date;
   graceEndsAt?: Date;
+
+  // ADD THESE TWO LINES (this is the only thing that was missing)
+  subscriptionCancelAt?: Date | null;      // <-- this kills the TS error
+  subscriptionStatus?: string | null;      // optional but nice to have
 };
 
 const normalizePlanTier = (tier?: string): PlanTier => {
@@ -53,8 +71,16 @@ const normalizePlanTier = (tier?: string): PlanTier => {
 };
 
 const archiveExcessClients = async (userId: string) => {
+  // determine companyId for the user
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { companyId: true },
+  });
+  const companyId = user?.companyId ?? null;
+  if (!companyId) return;
+
   const clients = await prisma.client.findMany({
-    where: { userId, archived: false },
+    where: { companyId, archived: false },
     orderBy: { createdAt: 'asc' },
     select: { id: true },
   });
@@ -67,9 +93,51 @@ const archiveExcessClients = async (userId: string) => {
   });
 };
 
+const attachPlanOwner = async <T extends UserWithCompany>(user: T): Promise<T & { planOwner?: User | null }> => {
+  const ownerId = user.company?.ownerId;
+  const existingPlanOwner = (user as UserWithPlanOwner).planOwner;
+  if (!ownerId || ownerId === user.id) {
+    return {
+      ...user,
+      planOwner: ownerId && ownerId === user.id ? user : existingPlanOwner,
+    };
+  }
+
+  if (existingPlanOwner && existingPlanOwner.id === ownerId) {
+    return user as T & { planOwner?: User | null };
+  }
+
+  const owner = await prisma.user.findUnique({
+    where: { id: ownerId },
+  });
+
+  return {
+    ...user,
+    planOwner: owner ?? existingPlanOwner ?? null,
+  };
+};
+
+const hydrateWithCompany = async <T extends User>(candidate: T) => {
+  const loaded = await prisma.user.findUnique({
+    where: { id: candidate.id },
+    include: { company: true },
+  });
+  const merged = { ...(loaded ?? candidate), ...candidate } as T & { company?: Company | null };
+  return attachPlanOwner(merged);
+};
+
 export async function ensureTrialState(user: User) {
   const now = Date.now();
-  const planTier = normalizePlanTier(user.planTier);
+  const role = getUserRole(user);
+  const isAdminOverride = role === 'ADMIN' && user.stripeSubscriptionId === '1';
+  const planTier = isAdminOverride ? 'PRO' : normalizePlanTier(user.planTier);
+
+  if (role === 'ADMIN' && user.stripeSubscriptionId === '1') {
+    return hydrateWithCompany({
+      ...user,
+      planTier: 'PRO',
+    } as User);
+  }
 
   if (planTier === 'PRO') {
     const { active: subscriptionIsActive, error } = await hasActiveStripeSubscription(user.stripeSubscriptionId);
@@ -81,22 +149,22 @@ export async function ensureTrialState(user: User) {
           stripeSubscriptionId: null,
         },
       });
-      return {
+      return hydrateWithCompany({
         ...updated,
         stripeSubscriptionCheckError: error ?? 'Stripe subscription is no longer active',
-      } as User & { stripeSubscriptionCheckError?: string };
+      } as User & { stripeSubscriptionCheckError?: string });
     }
     if (error) {
-      return {
+      return hydrateWithCompany({
         ...user,
         stripeSubscriptionCheckError: error,
-      } as User & { stripeSubscriptionCheckError?: string };
+      } as User & { stripeSubscriptionCheckError?: string });
     }
-    return user;
+    return hydrateWithCompany(user);
   }
 
   if (planTier !== 'PRO_TRIAL' || !user.proTrialEndsAt) {
-    return user;
+    return hydrateWithCompany(user);
   }
 
   const trialEndsAt = user.proTrialEndsAt;
@@ -104,7 +172,7 @@ export async function ensureTrialState(user: User) {
 
   if (now > graceEndsAt.getTime()) {
     await archiveExcessClients(user.id);
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: user.id },
       data: {
         planTier: 'FREE',
@@ -112,6 +180,7 @@ export async function ensureTrialState(user: User) {
         proTrialReminderSent: false,
       },
     });
+    return hydrateWithCompany(updated);
   }
 
   if (
@@ -121,19 +190,23 @@ export async function ensureTrialState(user: User) {
     user.email
   ) {
     await sendTrialReminderEmail(user.email);
-    return prisma.user.update({
+    const updated = await prisma.user.update({
       where: { id: user.id },
       data: { proTrialReminderSent: true },
     });
+    return hydrateWithCompany(updated);
   }
 
-  return user;
+  return hydrateWithCompany(user);
 }
 
 export function describePlan(user: User): CurrentPlan {
-  const planTier = normalizePlanTier(user.planTier);
+  const planSubject = getPlanReferenceUser(user);
+  const role = getUserRole(planSubject);
+  const isAdminProOverride = role === 'ADMIN' && planSubject.stripeSubscriptionId === '1';
+  const planTier = isAdminProOverride ? 'PRO' : normalizePlanTier(planSubject.planTier);
   const now = Date.now();
-  const trialEndsAt = user.proTrialEndsAt ? new Date(user.proTrialEndsAt) : undefined;
+  const trialEndsAt = planSubject.proTrialEndsAt ? new Date(planSubject.proTrialEndsAt) : undefined;
   const graceEndsAt = trialEndsAt ? new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS) : undefined;
   const isTrialActive =
     planTier === 'PRO_TRIAL' && trialEndsAt !== undefined && now < trialEndsAt.getTime();
@@ -152,5 +225,41 @@ export function describePlan(user: User): CurrentPlan {
     isInGracePeriod,
     trialEndsAt,
     graceEndsAt,
+    subscriptionCancelAt: planSubject.subscriptionCancelAt ?? null,
+    subscriptionStatus: null,
   };
+}
+
+export async function getCurrentPlan(user: User): Promise<CurrentPlan> {
+  const basePlan = describePlan(user);
+  const planSubject = getPlanReferenceUser(user);
+  if (basePlan.planTier !== 'PRO' || !planSubject.stripeSubscriptionId) {
+    return basePlan;
+  }
+
+  if (!stripeClient) {
+    console.error('Stripe secret key is not configured');
+    return {
+      ...basePlan,
+      subscriptionStatus: 'error',
+    };
+  }
+
+  try {
+    const subscription = await stripeClient.subscriptions.retrieve(planSubject.stripeSubscriptionId);
+    const cancelAt = subscription.cancel_at ? new Date(subscription.cancel_at * 1000) : null;
+
+    return {
+      ...basePlan,
+      subscriptionStatus: subscription.status,
+      subscriptionCancelAt: cancelAt ?? basePlan.subscriptionCancelAt ?? null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown Stripe error';
+    console.error('Failed to fetch subscription for plan display:', message);
+    return {
+      ...basePlan,
+      subscriptionStatus: 'error',
+    };
+  }
 }

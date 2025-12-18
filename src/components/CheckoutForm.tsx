@@ -35,6 +35,7 @@ type CheckoutFormProps = {
   defaultPaymentMethodId?: string | null;
   intentEndpoint?: string;
   onSuccess?: (paymentIntentId: string) => void | Promise<void>;
+  onError?: (message: string) => void;
 };
 
 const BASE_PRICE = 50; // cents ($0.50)
@@ -58,13 +59,17 @@ const US_STATES = [
   { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" },
 ];
 
-export function CheckoutForm({
+export default function CheckoutForm({
   amount,
   sellerId,
   invoiceId,
   initialEmail,
   initialAddress,
   stripeCustomerId,
+  defaultPaymentMethodId,
+  intentEndpoint,
+  onSuccess,
+  onError,
 }: CheckoutFormProps) {
   const stripe = useStripe();
   const elements = useElements();
@@ -99,7 +104,7 @@ export function CheckoutForm({
 
   const [shipping] = useState<number | null>(null);
   const [tax] = useState<number | null>(null);
-  const [total] = useState(amount || BASE_PRICE);
+  const [total, setTotal] = useState(amount ?? BASE_PRICE);
   const [clientSecret, setClientSecret] = useState("");
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -128,6 +133,7 @@ export function CheckoutForm({
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to create payment intent.";
         setApiError(message);
+        if (onError) onError(message);
         setClientSecret("");
       } finally {
         setCalculating(false);
@@ -139,6 +145,10 @@ export function CheckoutForm({
     }, 400);
     return () => clearTimeout(timer);
   }, [email, total]);
+
+  useEffect(() => {
+    setTotal(amount ?? BASE_PRICE);
+  }, [amount]);
 
   useEffect(() => {
     if (initialEmail && !email) {
@@ -169,8 +179,10 @@ export function CheckoutForm({
     try {
       const cardElement = elements.getElement(CardElement);
       if (!cardElement) {
+        const message = "Please enter your card details.";
+        alert(message);
+        if (onError) onError(message);
         setLoading(false);
-        alert("Please enter your card details.");
         return;
       }
 
@@ -191,43 +203,41 @@ export function CheckoutForm({
         },
       });
 
-        if (result.paymentIntent?.status === "succeeded") {
-          setSuccess(true);
-          if (invoiceId) {
-            void fetch("/api/payments/mark-paid", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ invoiceId, sellerId }),
-            });
-          }
-          if (
-          saveCard &&
-          stripeCustomerId &&
-          sellerId &&
-          result.paymentIntent.payment_method
-        ) {
-            void fetch("/api/payments/save-card", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                userId: sellerId,
-                customerId: stripeCustomerId,
-                paymentMethodId: result.paymentIntent.payment_method,
-              }),
-            });
-          }
-          if (result.paymentIntent?.id && onSuccess) {
-            await onSuccess(result.paymentIntent.id);
-          }
-        } else {
-        alert(result.error?.message || "Payment could not be completed.");
+      if (result.paymentIntent?.status === "succeeded") {
+        setSuccess(true);
+        if (invoiceId) {
+          void fetch("/api/payments/mark-paid", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ invoiceId, sellerId }),
+          });
+        }
+        if (saveCard && stripeCustomerId && sellerId && result.paymentIntent.payment_method) {
+          void fetch("/api/payments/save-card", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: sellerId,
+              customerId: stripeCustomerId,
+              paymentMethodId: result.paymentIntent.payment_method,
+            }),
+          });
+        }
+        if (result.paymentIntent?.id && onSuccess) {
+          await onSuccess(result.paymentIntent.id);
+        }
+      } else {
+        const message = result.error?.message || "Payment could not be completed.";
+        alert(message);
+        if (onError) onError(message);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Payment failed.";
       alert(message);
-    }
-
+      if (onError) onError(message);
+    } finally {
       setLoading(false);
+    }
   };
 
   const renderStateSelect = (value: string, onChange: (value: string) => void) => {
@@ -264,16 +274,16 @@ export function CheckoutForm({
       {success ? (
         <div className="rounded-2xl border border-white/20 bg-white/10 p-8 text-center text-white shadow-xl backdrop-blur">
           <h2 className="text-3xl font-semibold">Payment Successful!</h2>
-          <p className="mt-2 text-sm text-white/80">Thank you for your purchase. A receipt will be emailed shortly.</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-5 inline-flex items-center justify-center rounded-lg bg-white px-5 py-2.5 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-white/90"
-          >
-            Start New Order
-          </button>
+          <p className="mt-2 text-sm text-white/80">Thank you for your payment. A receipt will be emailed shortly.</p>
+        
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="rounded-2xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur space-y-8 text-white">
+          {apiError && (
+            <div className="rounded-lg border border-white/40 bg-white/20 px-4 py-2 text-sm text-rose-100">
+              {apiError}
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             <h2 className="text-2xl font-semibold">Secure Checkout</h2>
             <p className="text-sm text-white/80">Enter your details and pay with your card.</p>
@@ -384,4 +394,3 @@ export function CheckoutForm({
   );
 }
 
-export default CheckoutForm;

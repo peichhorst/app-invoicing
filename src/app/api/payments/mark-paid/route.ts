@@ -32,7 +32,11 @@ export async function POST(request: Request) {
     const updated = await prisma.invoice.update({
       where: { id: invoiceId },
       data: { status: 'PAID' as any },
-      include: { client: true, user: true, items: true },
+      include: {
+        client: true,
+        user: { include: { company: true } },
+        items: true,
+      },
     });
 
     // Fire and forget: email receipt to client and user

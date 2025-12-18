@@ -1,7 +1,8 @@
 'use client';
 
-import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Country, State } from 'country-state-city';
 
 type ClientPayload = {
   companyName: string;
@@ -33,7 +34,13 @@ const MS_IN_DAY = 1000 * 60 * 60 * 24;
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [user, setUser] = useState<{ email: string; companyName?: string | null; name?: string | null } | null>(null);
+  const [user, setUser] = useState<{
+    email: string;
+    companyName?: string | null;
+    name?: string | null;
+    role?: string | null;
+    company?: { name?: string | null; website?: string | null } | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState(1);
   const [companyName, setCompanyName] = useState('');
@@ -41,6 +48,10 @@ export default function OnboardingPage() {
   const [logoPreview, setLogoPreview] = useState('');
   const [logoError, setLogoError] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [logoFetching, setLogoFetching] = useState(false);
+  const [logoFetchStatus, setLogoFetchStatus] = useState<{ message: string; success: boolean; source?: string } | null>(null);
+  const logoFetchController = useRef<AbortController | null>(null);
   const [phone, setPhone] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
   const [addressLine2, setAddressLine2] = useState('');
@@ -54,9 +65,34 @@ export default function OnboardingPage() {
     companyName: '',
     contactName: '',
     email: '',
+    country: 'USA',
   });
   const [creatingClient, setCreatingClient] = useState(false);
   const [clientMessage, setClientMessage] = useState<string | null>(null);
+  const isOwner = user?.role === 'OWNER';
+
+  const countryList = useMemo(() => {
+    const all = Country.getAllCountries();
+    const us = all.find((c) => c.isoCode === 'US');
+    const rest = all.filter((c) => c.isoCode !== 'US');
+    return (us ? [us, ...rest] : all).map((c) => ({ name: c.name, isoCode: c.isoCode }));
+  }, []);
+
+  const getCountryIso = (label: string) => {
+    const match = countryList.find((c) => c.name === label || c.isoCode === label);
+    return match?.isoCode ?? '';
+  };
+
+  const availableStates = useMemo(() => {
+    const iso = getCountryIso(country);
+    return iso ? State.getStatesOfCountry(iso).map((st) => st.name) : [];
+  }, [country, countryList]);
+
+  const availableClientStates = useMemo(() => {
+    const clientCountry = clientForm.country || country;
+    const iso = getCountryIso(clientCountry);
+    return iso ? State.getStatesOfCountry(iso).map((st) => st.name) : [];
+  }, [clientForm.country, country, countryList]);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -70,18 +106,45 @@ export default function OnboardingPage() {
       .then((data) => {
         if (data?.user) {
           setUser(data.user);
-          setCompanyName(data.user.companyName || '');
+          setCompanyName('');
           setPhone(data.user.phone || '');
-          setAddressLine1(data.user.addressLine1 || '');
-          setAddressLine2(data.user.addressLine2 || '');
-          setCity(data.user.city || '');
-          setStateValue(data.user.state || '');
-          setPostalCode(data.user.postalCode || '');
-          setCountry(data.user.country || 'USA');
+          setAddressLine1(data.user.company?.addressLine1 || '');
+          setAddressLine2(data.user.company?.addressLine2 || '');
+          setCity(data.user.company?.city || '');
+          setStateValue(data.user.company?.state || '');
+          setPostalCode(data.user.company?.postalCode || '');
+          setCountry(data.user.company?.country || 'USA');
+          setWebsiteUrl(data.user.company?.website || '');
+          setClientForm((prev) => ({
+            ...prev,
+            email: prev.email || data.user.email || '',
+          }));
         }
       })
       .finally(() => setLoading(false));
   }, [router]);
+
+  useEffect(() => {
+    if (!isOwner) {
+      logoFetchController.current?.abort();
+      setLogoFetchStatus(null);
+      return;
+    }
+    if (logoFetchController.current) {
+      logoFetchController.current.abort();
+    }
+    if (!websiteUrl.trim()) {
+      setLogoFetchStatus(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      requestLogoFromWebsite(websiteUrl.trim());
+    }, 600);
+    return () => {
+      clearTimeout(timer);
+      logoFetchController.current?.abort();
+    };
+  }, [websiteUrl, isOwner]);
 
   const handleLogoChange = async (event: ChangeEvent<HTMLInputElement>) => {
     setLogoError(null);
@@ -117,12 +180,18 @@ export default function OnboardingPage() {
     event.preventDefault();
     setProfileMessage(null);
     setProfileSaving(true);
+    const canonicalCompanyName =
+      companyName.trim() ||
+      user?.companyName ||
+      user?.company?.name ||
+      'My Business';
     try {
       const canonicalName = companyName.trim() || null;
       const payload = {
         name: canonicalName,
         companyName: canonicalName,
         logoDataUrl: logoDataUrl || null,
+        website: websiteUrl.trim() || null,
         phone: phone.trim() || null,
         addressLine1: addressLine1.trim() || null,
         addressLine2: addressLine2.trim() || null,
@@ -139,6 +208,21 @@ export default function OnboardingPage() {
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || 'Failed');
+      }
+
+      if (isOwner) {
+        const companyRes = await fetch('/api/company', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: canonicalCompanyName,
+            websiteUrl: websiteUrl.trim() || null,
+          }),
+        });
+        if (!companyRes.ok) {
+          const text = await companyRes.text();
+          throw new Error(text || 'Failed to save company website');
+        }
       }
       setStep(2);
       setProfileMessage('Company info saved. Now let us add your first client.');
@@ -163,6 +247,21 @@ export default function OnboardingPage() {
           }
         : {}),
     }));
+  };
+
+  const handleClientCountryChange = (value: string) => {
+    setClientForm((prev) => ({
+      ...prev,
+      country: value,
+      state: '',
+      city: '',
+    }));
+  };
+
+  const handleCompanyCountryChange = (value: string) => {
+    setCountry(value);
+    setStateValue('');
+    setCity('');
   };
 
   const handleFinishOnboarding = async (event: FormEvent<HTMLFormElement>) => {
@@ -200,6 +299,48 @@ export default function OnboardingPage() {
       setClientMessage(error?.message || 'Failed to create your first client.');
     } finally {
       setCreatingClient(false);
+    }
+  };
+
+  async function requestLogoFromWebsite(value: string) {
+    if (!value) return;
+    logoFetchController.current?.abort();
+    const controller = new AbortController();
+    logoFetchController.current = controller;
+    setLogoFetching(true);
+    setLogoFetchStatus(null);
+    try {
+      const response = await fetch('/api/logo-fetcher', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: value }),
+        signal: controller.signal,
+      });
+      const data = await response.json();
+      if (data?.success) {
+        setLogoPreview(data.logoUrl);
+        setLogoDataUrl(data.logoUrl);
+        setLogoFetchStatus({
+          message: `Logo fetched via ${data.source ?? 'site'}.`,
+          success: true,
+          source: data.source,
+        });
+      } else {
+        setLogoFetchStatus({
+          message: data?.message ?? 'Unable to find a logo automatically.',
+          success: false,
+        });
+      }
+    } catch (error: any) {
+      if (controller.signal.aborted) return;
+      setLogoFetchStatus({
+        message: 'Unable to fetch logo right now. Try again.',
+        success: false,
+      });
+    } finally {
+      if (!controller.signal.aborted) {
+        setLogoFetching(false);
+      }
     }
   };
 
@@ -278,12 +419,27 @@ export default function OnboardingPage() {
                     placeholder="City"
                     className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
                   />
-                  <input
-                    value={stateValue}
-                    onChange={(event) => setStateValue(event.target.value)}
-                    placeholder="State"
-                    className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                  />
+                  {availableStates.length ? (
+                    <select
+                      value={stateValue}
+                      onChange={(event) => setStateValue(event.target.value)}
+                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-purple-900"
+                    >
+                      <option value="">Select state/province</option>
+                      {availableStates.map((st: string) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={stateValue}
+                      onChange={(event) => setStateValue(event.target.value)}
+                      placeholder="State"
+                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                    />
+                  )}
                   <input
                     value={postalCode}
                     onChange={(event) => setPostalCode(event.target.value)}
@@ -291,13 +447,45 @@ export default function OnboardingPage() {
                     className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
                   />
                 </div>
-                <input
+                <select
                   value={country}
-                  onChange={(event) => setCountry(event.target.value)}
-                  placeholder="Country"
-                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                />
+                  onChange={(event) => handleCompanyCountryChange(event.target.value)}
+                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-purple-900"
+                >
+                  {countryList.map((c) => (
+                    <option key={c.isoCode} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
+
+              {isOwner && (
+                <div className="space-y-1 text-sm">
+                  <label className="text-sm font-medium text-white/80 mb-1 block">Website</label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <input
+                      value={websiteUrl}
+                      onChange={(event) => setWebsiteUrl(event.target.value)}
+                      placeholder="https://example.com"
+                      className="flex-1 rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => requestLogoFromWebsite(websiteUrl.trim())}
+                      disabled={!websiteUrl.trim() || logoFetching}
+                      className="rounded-2xl border border-white/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-purple-900 transition hover:bg-white/80 disabled:opacity-60"
+                    >
+                      {logoFetching ? 'Finding logo…' : 'Fetch logo'}
+                    </button>
+                  </div>
+                  {logoFetchStatus && (
+                    <p className={`text-xs ${logoFetchStatus.success ? 'text-emerald-200' : 'text-rose-200'}`}>
+                      {logoFetchStatus.message}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1 text-sm">
                 <label className="text-sm font-medium text-white/80 mb-1 block">Logo (optional)</label>
@@ -338,7 +526,7 @@ export default function OnboardingPage() {
               onSubmit={handleFinishOnboarding}
               className="space-y-5 rounded-3xl border border-white/10 bg-white/5 p-8 text-white shadow-sm"
             >
-              <p className="text-sm text-white/80">Add your first client so you're ready to invoice once you need it.</p>
+              <p className="text-sm text-white/80">Add your first client so you&rsquo;re ready to invoice once you need it.</p>
 
               <div className="space-y-3">
                 <label className="text-xs uppercase tracking-[0.2em] text-white/70">Client info</label>
@@ -380,12 +568,27 @@ export default function OnboardingPage() {
                     placeholder="City"
                     className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
                   />
-                  <input
-                    value={clientForm.state ?? ''}
-                    onChange={(event) => handleClientChange('state', event.target.value)}
-                    placeholder="State"
-                    className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                  />
+                  {availableClientStates.length ? (
+                    <select
+                      value={clientForm.state ?? ''}
+                      onChange={(event) => handleClientChange('state', event.target.value)}
+                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-purple-900"
+                    >
+                      <option value="">Select state/province</option>
+                      {availableClientStates.map((st: string) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      value={clientForm.state ?? ''}
+                      onChange={(event) => handleClientChange('state', event.target.value)}
+                      placeholder="State"
+                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                    />
+                  )}
                   <input
                     value={clientForm.postalCode ?? ''}
                     onChange={(event) => handleClientChange('postalCode', event.target.value)}
@@ -393,12 +596,17 @@ export default function OnboardingPage() {
                     className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
                   />
                 </div>
-                <input
+                <select
                   value={clientForm.country ?? ''}
-                  onChange={(event) => handleClientChange('country', event.target.value)}
-                  placeholder="Country"
-                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
-                />
+                  onChange={(event) => handleClientCountryChange(event.target.value)}
+                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-purple-900"
+                >
+                  {countryList.map((c) => (
+                    <option key={c.isoCode} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-1 text-sm">

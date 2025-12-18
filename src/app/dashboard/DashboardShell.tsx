@@ -1,65 +1,57 @@
 'use client';
 
-import { ReactNode, useState, useEffect } from 'react';
-import { Menu } from 'lucide-react';
+import { ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { DashboardSidebar } from './DashboardSidebar';
+import { useMobileSidebar } from '@/components/MobileSidebarContext';
 
 export function DashboardShell({ children }: { children: ReactNode }) {
-  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
+  const { mobileOpen, close } = useMobileSidebar();
+  const hideSidebar = pathname?.startsWith('/dashboard/onboarding');
 
   useEffect(() => {
-    setMobileOpen(false);
-  }, [pathname]);
+    close();
+  }, [pathname, close]);
 
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="flex min-h-screen">
-        <div className="hidden md:block">
-          <DashboardSidebar />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="md:hidden border-b border-zinc-200 bg-white px-4 py-3 shadow-sm flex justify-end">
-            <button
-              type="button"
-              onClick={() => setMobileOpen(true)}
-              className="inline-flex items-center justify-center rounded-full border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-700"
-            >
-              <Menu size={18} className="mr-2" />
-              Menu
-            </button>
+        {!hideSidebar && (
+          <div className="hidden md:block">
+            <DashboardSidebar />
           </div>
+        )}
+        <div className="flex-1 min-w-0">
           <main className="mx-auto w-full max-w-6xl px-0 py-0">{children}</main>
         </div>
       </div>
-
-      {mobileOpen && (
+      {mobileOpen && !hideSidebar && (
         <div className="fixed inset-0 z-40 md:hidden">
-        <div
-          className="absolute inset-0 bg-black/40"
-          onClick={() => setMobileOpen(false)}
-        />
-        <div className="absolute inset-y-0 left-0 w-60 bg-white shadow-lg">
-          <div className="relative h-full">
-            <button
-              type="button"
-              className="absolute top-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full bg-purple-700 text-white shadow-sm"
-              onClick={() => setMobileOpen(false)}
-            >
-              <span className="sr-only">Close menu</span>
-              <svg viewBox="0 0 24 24" className="h-5 w-5">
-                <path
-                  d="M6 6l12 12M18 6L6 18"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-            <DashboardSidebar className="h-full pt-12" />
+          <div
+            className="absolute inset-0 bg-black/40"
+            onClick={close}
+          />
+          <div className="absolute inset-y-0 left-0 w-60 bg-white shadow-lg">
+            <div className="relative h-full">
+              <button
+                type="button"
+                className="absolute top-5 right-2 z-40 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-purple-700 text-purple-700 shadow-sm"
+                onClick={close}
+              >
+                <span className="sr-only">Close menu</span>
+                <svg viewBox="0 0 24 24" className="h-4 w-4">
+                  <path
+                    d="M6 6l12 12M18 6L6 18"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+              <DashboardSidebar className="h-full pt-4" />
+            </div>
           </div>
-        </div>
         </div>
       )}
     </div>

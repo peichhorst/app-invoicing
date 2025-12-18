@@ -30,10 +30,18 @@ type InvoicePDFProps = {
 };
 
 export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
+  const signedOn =
+    (invoice.status === 'SIGNED' || invoice.status === 'COMPLETED') && invoice.updatedAt
+      ? new Date(invoice.updatedAt).toLocaleDateString()
+      : null;
+  const watermarkText = signedOn
+    ? `Legally binding contract – signed on ${signedOn}`
+    : null;
+  const logoCandidate = user?.company?.logoUrl ?? user?.logoDataUrl;
   const hasValidLogo = (() => {
-    if (!user?.logoDataUrl) return false;
+    if (!logoCandidate) return false;
     try {
-      const url = new URL(user.logoDataUrl);
+      const url = new URL(logoCandidate);
       return url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'data:';
     } catch {
       return false;
@@ -58,22 +66,23 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
   const paidOn = invoice.updatedAt ? new Date(invoice.updatedAt).toLocaleDateString() : null;
 
   const fromLines = [
-    user?.companyName || 'Your Company',
+    user?.company?.name ?? user?.companyName ?? 'Your Company',
     user?.email,
     user?.phone,
-    [user?.addressLine1, user?.addressLine2].filter(Boolean).join(', '),
-    [user?.city, user?.state, user?.postalCode].filter(Boolean).join(', '),
-    user?.country,
+    [user?.company?.addressLine1, user?.company?.addressLine2].filter(Boolean).join(', '),
+    [user?.company?.city, user?.company?.state, user?.company?.postalCode].filter(Boolean).join(', '),
+    user?.company?.country ?? 'USA',
+    user?.website,
   ].filter(Boolean);
 
   const mailToTargetText = user?.mailToAddressTo?.trim();
-  const mailRecipientName = mailToTargetText || user?.companyName || user?.name;
+  const mailRecipientName = mailToTargetText || user?.company?.name || user?.companyName || user?.name;
   const mailToLines = [
     mailRecipientName,
-    user?.addressLine1,
-    user?.addressLine2,
-    [user?.city, user?.state, user?.postalCode].filter(Boolean).join(', '),
-    user?.country,
+    user?.company?.addressLine1,
+    user?.company?.addressLine2,
+    [user?.company?.city, user?.company?.state, user?.company?.postalCode].filter(Boolean).join(', '),
+    user?.company?.country ?? 'USA',
   ].filter(Boolean);
   const showMailBlock = (user?.mailToAddressEnabled ?? false) && mailToLines.length > 0;
   const mailHeading = 'Mail & Issue Check to:';
@@ -111,6 +120,30 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
   return (
     <Document>
       <Page size="A4" style={styles.page}>
+        {watermarkText && (
+          <View
+            style={{
+              position: 'absolute',
+              top: '45%',
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              opacity: 0.12,
+              transform: 'rotate(-30deg)',
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 26,
+                letterSpacing: 2,
+                fontWeight: 700,
+                color: '#2563eb',
+              }}
+            >
+              {watermarkText}
+            </Text>
+          </View>
+        )}
         <View style={styles.headerTop}>
           <View>
             <Text style={styles.title}>
@@ -119,17 +152,17 @@ export const InvoicePDF = ({ invoice, client, user }: InvoicePDFProps) => {
             <Text>Date Issued: {issuedOn || '—'}</Text>
             {isPaid && paidOn ? <Text>Paid on: {paidOn}</Text> : dueOn ? <Text>Due: {dueOn}</Text> : null}
           </View>
-          <View style={{ minWidth: 90, alignItems: 'flex-end' }}>
-            {hasValidLogo ? (
-              <Image src={user.logoDataUrl} style={{ width: 140, height: 80, objectFit: 'contain' }} />
-            ) : user?.logoDataUrl ? (
-              <Text style={{ color: '#b91c1c', fontSize: 9, textAlign: 'right' }}>
-                Logo URL invalid. Update in profile.
-              </Text>
-            ) : (
-              <Text style={{ color: '#777', fontSize: 9, textAlign: 'right' }}></Text>
-            )}
-          </View>
+        <View style={{ minWidth: 90, alignItems: 'flex-end' }}>
+          {hasValidLogo ? (
+            <Image src={logoCandidate as string} style={{ width: 140, height: 80, objectFit: 'contain' }} />
+          ) : logoCandidate ? (
+            <Text style={{ color: '#b91c1c', fontSize: 9, textAlign: 'right' }}>
+              Logo URL invalid. Update in business settings.
+            </Text>
+          ) : (
+            <Text style={{ color: '#777', fontSize: 9, textAlign: 'right' }}></Text>
+          )}
+        </View>
         </View>
 
         <View style={styles.partiesRow}>

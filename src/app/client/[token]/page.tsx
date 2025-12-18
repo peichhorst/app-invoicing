@@ -7,18 +7,15 @@ import { describePlan, ensureTrialState } from '@/lib/plan';
 
 type ClientPortalPageProps = {
   params: Promise<{ token?: string }>;
-  searchParams: { token?: string | string[] };
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-export default async function ClientPortalPage({
-  params,
-  searchParams,
-}: ClientPortalPageProps) {
-  const resolvedParams = await params;
-  const routeToken = resolvedParams?.token;
-  const queryToken = Array.isArray(searchParams.token)
-    ? searchParams.token[0]
-    : searchParams.token;
+const first = (v?: string | string[]) => (Array.isArray(v) ? v[0] : v);
+
+export default async function ClientPortalPage(props: ClientPortalPageProps) {
+  const { token: routeToken } = await props.params;
+  const sp = (await props.searchParams) ?? {};
+  const queryToken = first(sp.token);
 
   if (!routeToken && queryToken) {
     redirect(`/client/${encodeURIComponent(queryToken)}`);
@@ -38,9 +35,10 @@ export default async function ClientPortalPage({
     include: {
       client: {
         include: {
-          user: true,
+          company: { include: { owner: true } },
           invoices: {
             orderBy: { createdAt: 'desc' },
+            include: { user: true },
           },
         },
       },
@@ -55,7 +53,9 @@ export default async function ClientPortalPage({
     );
   }
 
-  const canonicalUser = await ensureTrialState(portalUser.client.user);
+  const canonicalUser = await ensureTrialState(
+    portalUser.client.invoices[0]?.user ?? portalUser.client.company.owner
+  );
   const plan = describePlan(canonicalUser);
   const hasStripeConfig = Boolean(
     canonicalUser.stripePublishableKey && canonicalUser.stripeAccountId
@@ -109,29 +109,29 @@ export default async function ClientPortalPage({
                     </div>
                     <div className="flex flex-col items-end gap-2 text-sm">
                       <span className="text-white/90">{total}</span>
-              {invoice.shortCode && (
-                <div className="flex flex-col gap-1 text-xs font-semibold">
-                  <Link
-                    href={`/p/${invoice.shortCode}/view`}
-                    className="text-white/90 underline decoration-dotted"
-                  >
-                    View details
-                  </Link>
-                    {payOnlineEnabled ? (
-                      <a
-                        href={`${appBase}/p/${invoice.shortCode}`}
-                        className="text-purple-200 underline decoration-dotted break-all"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Pay online: {`${appBase}/p/${invoice.shortCode}`}
-                      </a>
-                    ) : (
-                      <span className="text-white/50 underline decoration-dotted line-through">
-                        Pay online: {`${appBase}/p/${invoice.shortCode}`}
-                      </span>
-                    )}
-                  <Link
+                      {invoice.shortCode && (
+                        <div className="flex flex-col gap-1 text-xs font-semibold">
+                          <Link
+                            href={`/p/${invoice.shortCode}/view`}
+                            className="text-white/90 underline decoration-dotted"
+                          >
+                            View details
+                          </Link>
+                          {payOnlineEnabled ? (
+                            <a
+                              href={`${appBase}/p/${invoice.shortCode}`}
+                              className="text-purple-200 underline decoration-dotted break-all"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Pay online: {`${appBase}/p/${invoice.shortCode}`}
+                            </a>
+                          ) : (
+                            <span className="text-white/50 underline decoration-dotted line-through">
+                              Pay online: {`${appBase}/p/${invoice.shortCode}`}
+                            </span>
+                          )}
+                          <Link
                             href={`/p/${invoice.shortCode}/pdf`}
                             className="text-white/80 underline decoration-dotted"
                             target="_blank"

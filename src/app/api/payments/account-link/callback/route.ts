@@ -3,9 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
 
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.clientwave.app').replace(/\/$/, '');
 const STATE_COOKIE = 'stripe_oauth_state';
 const TOKEN_URL = 'https://connect.stripe.com/oauth/token';
 
@@ -20,7 +21,8 @@ const escapeHtml = (value: string) =>
 const renderPage = (
   message: string,
   success = false,
-  tokenData?: { stripe_user_id?: string; stripe_publishable_key?: string }
+  tokenData?: { stripe_user_id?: string; stripe_publishable_key?: string },
+  appUrl: string = APP_URL
 ) => {
   const accountId = tokenData?.stripe_user_id ?? null;
   const publishableKey = tokenData?.stripe_publishable_key ?? null;
@@ -36,7 +38,7 @@ const renderPage = (
         if (window.opener) {
           window.opener.postMessage(payload, window.location.origin);
         }
-        const profileUrl = '${APP_URL}/dashboard/profile#stripe';
+        const profileUrl = '${appUrl}/dashboard/settings#stripe';
         setTimeout(() => {
           if (window.opener) {
             window.opener.location.reload();
@@ -86,7 +88,7 @@ const renderPage = (
         <div class="panel">
           <h1>${success ? 'Connected!' : 'Stripe Connect'}</h1>
           <p>${escapeHtml(message)}</p>
-          ${success ? '<p>Closing this window now.</p>' : '<p><a href="/dashboard/profile">Return to profile</a> once you close this tab.</p>'}
+          ${success ? '<p>Closing this window now.</p>' : '<p><a href="/dashboard/settings">Return to settings</a> once you close this tab.</p>'}
         </div>
         ${script}
       </body>
@@ -96,6 +98,8 @@ const renderPage = (
 };
 
 export async function GET(request: NextRequest) {
+  const host = request.headers.get('host')?.toLowerCase() ?? '';
+  const appUrl = host.startsWith('localhost') ? 'http://localhost:3000' : APP_URL;
   const url = new URL(request.url);
   const params = url.searchParams;
   const code = params.get('code');
@@ -109,19 +113,19 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     const message = errorDescription ?? 'Stripe authentication was canceled.';
-    return renderPage(message, false);
+    return renderPage(message, false, undefined, appUrl);
   }
 
   if (!code) {
-    return renderPage('Missing authorization code from Stripe.', false);
+    return renderPage('Missing authorization code from Stripe.', false, undefined, appUrl);
   }
 
   if (!state || !storedState || state !== storedState) {
-    return renderPage('Stripe returned an invalid session state.', false);
+    return renderPage('Stripe returned an invalid session state.', false, undefined, appUrl);
   }
 
   if (!STRIPE_SECRET_KEY) {
-    return renderPage('Stripe secret key is not configured.', false);
+    return renderPage('Stripe secret key is not configured.', false, undefined, appUrl);
   }
 
   try {
@@ -140,26 +144,44 @@ export async function GET(request: NextRequest) {
     if (!tokenResponse.ok || !tokenData.stripe_user_id) {
       const message =
         tokenData.error_description ?? tokenData.error ?? 'Unable to exchange code for Stripe account.';
-      return renderPage(message, false);
+      return renderPage(message, false, undefined, appUrl);
     }
 
     const user = await getCurrentUser();
     if (!user) {
-      return renderPage('Unauthenticated session. Please sign in and try again.', false);
+      return renderPage('Unauthenticated session. Please sign in and try again.', false, undefined, appUrl);
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        stripeAccountId: tokenData.stripe_user_id,
-        stripePublishableKey: tokenData.stripe_publishable_key ?? undefined,
-      },
-    });
+    const stripeAccountId = tokenData.stripe_user_id;
+    const publishableKeyUpdate = tokenData.stripe_publishable_key ?? undefined;
+    const updates: Prisma.PrismaPromise<unknown>[] = [
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          stripeAccountId,
+          ...(publishableKeyUpdate !== undefined ? { stripePublishableKey: publishableKeyUpdate } : {}),
+        },
+      }),
+    ];
 
-    return renderPage('Stripe account linked! This window will close shortly.', true, tokenData);
+    if (user.companyId) {
+      updates.push(
+        prisma.company.update({
+          where: { id: user.companyId },
+          data: {
+            stripeAccountId,
+            ...(publishableKeyUpdate !== undefined ? { stripePublishableKey: publishableKeyUpdate } : {}),
+          },
+        }),
+      );
+    }
+
+    await prisma.$transaction(updates);
+
+    return renderPage('Stripe account linked! This window will close shortly.', true, tokenData, appUrl);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unexpected error connecting to Stripe.';
     console.error('Stripe OAuth callback failed', message);
-    return renderPage('Unable to complete the Stripe connection.', false);
+    return renderPage('Unable to complete the Stripe connection.', false, undefined, appUrl);
   }
 }

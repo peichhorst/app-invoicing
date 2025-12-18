@@ -5,6 +5,7 @@ import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
 import { generateUniqueShortCode } from '@/lib/shortcodes';
+import { clientVisibilityWhere } from '@/lib/client-scope';
 
 type IncomingItem = {
   description?: string;
@@ -42,12 +43,12 @@ export async function POST(request: Request) {
       };
     });
 
-    const client = await prisma.client.findUnique({
-      where: { id: body.clientId },
-      select: { id: true, userId: true },
+    const client = await prisma.client.findFirst({
+      where: { id: body.clientId, ...clientVisibilityWhere(currentUser) },
+      select: { id: true },
     });
 
-    if (!client || client.userId !== currentUser.id) {
+    if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
@@ -97,7 +98,11 @@ export async function POST(request: Request) {
         include: {
           client: true,
           items: true,
-          user: true,
+          user: {
+            include: {
+              company: true,
+            },
+          },
         },
       });
 
@@ -107,27 +112,39 @@ export async function POST(request: Request) {
         body.nextOccurrence &&
         body.clientId
       ) {
-        await tx.recurringInvoice.create({
-          data: {
-            clientId: client.id,
-            userId: currentUser.id,
-            title: body.notes?.trim() || 'Recurring invoice',
-            amount: new Prisma.Decimal(record.total),
-            currency: record.currency,
-            interval: body.recurringInterval,
-            dayOfMonth:
-              body.recurringInterval !== 'week' ? body.recurringDayOfMonth ?? null : null,
-            dayOfWeek:
-              body.recurringInterval === 'week' ? body.recurringDayOfWeek ?? null : null,
-            nextSendDate: new Date(body.nextOccurrence),
-            status: 'ACTIVE',
-            sendFirstNow: true,
-          },
-        });
+            const recurringInvoice = await tx.recurringInvoice.create({
+              data: {
+                clientId: client.id,
+                userId: currentUser.id,
+                title: body.notes?.trim() || 'Recurring invoice',
+                amount: new Prisma.Decimal(record.total),
+                currency: record.currency,
+                interval: body.recurringInterval,
+                dayOfMonth:
+                  body.recurringInterval !== 'week' ? body.recurringDayOfMonth ?? null : null,
+                dayOfWeek:
+                  body.recurringInterval === 'week' ? body.recurringDayOfWeek ?? null : null,
+                nextSendDate: new Date(body.nextOccurrence),
+                status: 'PENDING',
+                sendFirstNow: true,
+              },
+            });
+
+            // Link the first invoice to the recurring invoice
+            await tx.invoice.update({
+              where: { id: record.id },
+              data: { recurringParentId: recurringInvoice.id },
+            });
       }
 
       return record;
-    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
+    })) as Prisma.InvoiceGetPayload<{
+      include: {
+        client: true;
+        items: true;
+        user: { include: { company: true } };
+      };
+    }>;
 
     const dueDays =
       invoice.dueDate != null

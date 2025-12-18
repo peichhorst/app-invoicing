@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import { prisma } from '@/lib/prisma';
 import { describePlan, ensureTrialState } from '@/lib/plan';
+import type { Company } from '@prisma/client';
+import SignProposalAction from './SignProposalAction';
+import DocumentHeader from '@/components/invoicing/shared/DocumentHeader';
+import LineItemsTable from '@/components/invoicing/shared/LineItemsTable';
+import TotalsSection from '@/components/invoicing/shared/TotalsSection';
+import PaymentTermsFooter from '@/components/invoicing/shared/PaymentTermsFooter';
 
 type ViewInvoicePageProps = {
   params: Promise<{ slug?: string }>;
@@ -53,6 +59,7 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
     currency: invoice.currency ?? 'USD',
   });
   const canonicalUser = await ensureTrialState(invoice.user);
+  type InvoiceUser = typeof canonicalUser & { company?: Company | null };
   const plan = describePlan(canonicalUser);
   const hasStripeConfig = Boolean(canonicalUser.stripePublishableKey && canonicalUser.stripeAccountId);
   const alwaysPro = process.env.NEXT_PUBLIC_ALWAYS_PRO === 'true';
@@ -65,19 +72,20 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
   const paidOn = invoice.updatedAt ? new Date(invoice.updatedAt).toLocaleDateString() : null;
   const appBase = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.clientwave.app';
   const payLink = shortCode ? `${appBase}/p/${shortCode}` : `${appBase}/payment?seller=${invoice.userId}&invoice=${invoice.id}`;
-  const invoiceUser = canonicalUser;
+  const invoiceUser = canonicalUser as InvoiceUser;
   const venmoLink =
     invoiceUser?.venmoHandle && typeof invoiceUser.venmoHandle === 'string'
       ? `https://venmo.com/${invoiceUser.venmoHandle.replace(/^@/, '')}`
       : null;
   const mailToTargetText = invoiceUser?.mailToAddressTo?.trim();
-  const mailRecipientName = mailToTargetText || invoiceUser?.companyName || invoiceUser?.name || 'Invoice sender';
+  const mailRecipientName =
+    mailToTargetText || invoiceUser?.company?.name || invoiceUser?.companyName || invoiceUser?.name || 'Invoice sender';
   const mailToLines = [
     mailRecipientName,
-    invoiceUser?.addressLine1,
-    invoiceUser?.addressLine2,
-    [invoiceUser?.city, invoiceUser?.state, invoiceUser?.postalCode].filter(Boolean).join(', '),
-    invoiceUser?.country,
+    invoiceUser?.company?.addressLine1,
+    invoiceUser?.company?.addressLine2,
+    [invoiceUser?.company?.city, invoiceUser?.company?.state, invoiceUser?.company?.postalCode].filter(Boolean).join(', '),
+    invoiceUser?.company?.country ?? 'USA',
   ].filter(Boolean);
   const showMailBlock = (invoiceUser?.mailToAddressEnabled ?? false) && mailToLines.length > 0;
   const totals = {
@@ -91,167 +99,150 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
       <div className="absolute inset-0 opacity-40">
         <div className="grid-overlay" />
       </div>
-      <div className="relative w-full max-w-5xl space-y-6 rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
-        <div className="space-y-4 rounded-3xl bg-white/5 p-6 shadow-2xl shadow-black/50">
-          <div className="flex flex-col gap-3 border-b border-white/10 pb-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/60">Invoice details</p>
-              <h1 className="text-3xl font-semibold text-white">Invoice #{invoice.invoiceNumber}</h1>
-              <div className="mt-2 flex flex-wrap gap-3 text-sm text-white/70">
-                <span>Issued {issuedOn}</span>
-                <span>Due {dueOn}</span>
-                <span>Status: {invoice.status}</span>
-              </div>
-            </div>
-            <div className="space-y-1 text-sm text-white/70">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/50">Reference</p>
-              <p className="font-semibold text-white">Shortcode: {shortCode}</p>
-              {isPaid && paidOn && <p>Paid on {paidOn}</p>}
-            </div>
-          </div>
-
-          <div className="grid gap-4 rounded-2xl border border-white/10 bg-white/10 p-4 md:grid-cols-2">
-            <div className="space-y-1 text-sm">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/60">Bill from</p>
-                {[invoiceUser.companyName || 'Your company', invoiceUser.name, invoiceUser.email]
-                .filter(Boolean)
-                .map((line) => (
-                  <p key={line}>{line}</p>
-                ))}
-              {invoiceUser.phone && <p>{invoiceUser.phone}</p>}
-              {invoiceUser.addressLine1 && <p>{invoiceUser.addressLine1}</p>}
-              {invoiceUser.addressLine2 && <p>{invoiceUser.addressLine2}</p>}
-              <p className="text-white/70">
-                {[invoiceUser.city, invoiceUser.state, invoiceUser.postalCode].filter(Boolean).join(', ') ||
-                  invoiceUser.country}
+      <div className="relative w-full max-w-5xl space-y-6 rounded-3xl border border-white/10 bg-white p-8 shadow-2xl">
+        <div className="space-y-6">
+          {/* Status Badge */}
+          <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Invoice Status</p>
+              <p className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${
+                isPaid ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {invoice.status}
               </p>
             </div>
-            <div className="space-y-1 text-sm">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/60">Bill to</p>
-              <p className="text-base font-semibold text-white">{invoice.client.companyName}</p>
-              {invoice.client.contactName && <p>{invoice.client.contactName}</p>}
-              {invoice.client.email && <p>{invoice.client.email}</p>}
-              {invoice.client.phone && <p>{invoice.client.phone}</p>}
+            <div className="text-right text-sm text-gray-600">
+              <p>Shortcode: <span className="font-semibold text-gray-900">{shortCode}</span></p>
+              {isPaid && paidOn && <p className="mt-1 text-green-600">Paid on {paidOn}</p>}
             </div>
           </div>
 
-          <div className="mt-6 overflow-hidden rounded-2xl border border-white/10 bg-white/10 text-sm">
-            <table className="min-w-full text-left text-white">
-              <thead className="bg-white/5 text-xs uppercase tracking-[0.3em] text-white/60">
-                <tr>
-                  <th className="px-4 py-3 text-left">Description</th>
-                  <th className="px-4 py-3 text-right">Qty</th>
-                  <th className="px-4 py-3 text-right">Unit price</th>
-                  <th className="px-4 py-3 text-right">Line total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {invoice.items.map((item) => {
-                  const qty = Number(item.quantity) || 0;
-                  const unitPrice = Number(item.unitPrice) || 0;
-                  const lineTotal = Number(item.total ?? qty * unitPrice);
-                  return (
-                    <tr key={item.id} className="border-t border-white/10">
-                      <td className="px-4 py-3">
-                        <p className="font-semibold text-white">{item.name}</p>
-                        {item.description && <p className="text-xs text-white/60">{item.description}</p>}
-                      </td>
-                      <td className="px-4 py-3 text-right">{qty}</td>
-                      <td className="px-4 py-3 text-right">{currencyFormatter.format(unitPrice)}</td>
-                      <td className="px-4 py-3 text-right">{currencyFormatter.format(lineTotal)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {/* Document Header Component */}
+          <DocumentHeader
+            company={{
+              name: invoiceUser.company?.name || invoiceUser.companyName || 'Your Company',
+              logo: invoiceUser.company?.logoUrl || undefined,
+              address: [
+                invoiceUser.company?.addressLine1,
+                invoiceUser.company?.addressLine2,
+                [invoiceUser.company?.city, invoiceUser.company?.state, invoiceUser.company?.postalCode]
+                  .filter(Boolean)
+                  .join(', '),
+                invoiceUser.company?.country || 'USA',
+              ].filter(Boolean).join('\n'),
+              email: invoiceUser.email || undefined,
+              phone: invoiceUser.phone || undefined,
+            }}
+            client={{
+              name: invoice.client.contactName || '',
+              companyName: invoice.client.companyName,
+              email: invoice.client.email || undefined,
+              address: undefined,
+            }}
+            documentNumber={invoice.invoiceNumber}
+            documentDate={invoice.issueDate ? new Date(invoice.issueDate) : undefined}
+            dueDate={invoice.dueDate ? new Date(invoice.dueDate) : undefined}
+            documentType="invoice"
+          />
 
-          <div className="mt-6 flex flex-wrap gap-3 text-sm md:justify-end">
-            <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
-              <span className="text-white/70">Subtotal</span>
-              <span className="text-lg font-semibold text-white">{currencyFormatter.format(totals.subtotal)}</span>
-            </div>
-            <div className="flex flex-col gap-1 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-right">
-              <span className="text-white/70">Tax</span>
-              <span className="text-lg font-semibold text-white">{currencyFormatter.format(totals.tax)}</span>
-            </div>
-            <div className="flex flex-col gap-1 rounded-2xl border border-purple-500/40 bg-purple-950/40 px-4 py-3 text-right">
-              <span className="text-white/70">Total</span>
-              <span className="text-2xl font-semibold text-white">{currencyFormatter.format(totals.total)}</span>
-            </div>
-          </div>
+          {/* Line Items Table Component */}
+          <LineItemsTable
+            items={invoice.items.map((item) => ({
+              description: item.name + (item.description ? `\n${item.description}` : ''),
+              quantity: Number(item.quantity) || 0,
+              rate: Number(item.unitPrice) || 0,
+              amount: Number(item.total ?? (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)),
+            }))}
+          />
 
-          {invoice.notes && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/80">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/60">Notes</p>
-              <p className="mt-1">{invoice.notes}</p>
-            </div>
-          )}
+          {/* Totals Section Component */}
+          <TotalsSection
+            subtotal={totals.subtotal}
+            tax={totals.tax}
+            total={totals.total}
+            currency={invoice.currency ?? 'USD'}
+          />
 
-          {(payOnlineEnabled || showMailBlock || venmoLink || invoiceUser?.zelleHandle) && (
-            <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-4 text-sm text-white/80">
-              <p className="text-xs uppercase tracking-[0.3em] text-white/60">Payment</p>
+          {/* Payment Terms Footer Component */}
+          <PaymentTermsFooter
+            paymentTerms={invoice.notes || undefined}
+            bankDetails={
+              showMailBlock
+                ? {
+                    accountName: mailRecipientName,
+                    bankName: 'Mail check to',
+                  }
+                : undefined
+            }
+            documentType="invoice"
+          />
+
+          {/* Invoice-Specific Payment Methods */}
+          {(payOnlineEnabled || venmoLink || invoiceUser?.zelleHandle) && (
+            <div className="space-y-4 rounded-lg border border-purple-200 bg-purple-50 p-6">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-purple-900">
+                Payment Methods
+              </h3>
               {payOnlineEnabled ? (
-                <div className="flex flex-wrap items-center gap-2 text-white">
-                  <span className="font-semibold text-white">Pay online:</span>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-900">Pay Online:</p>
                   <a
                     href={payLink}
                     target="_blank"
                     rel="noreferrer"
-                    className="truncate text-purple-200 underline decoration-dotted"
+                    className="inline-block break-all rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
                   >
                     {payLink}
                   </a>
                 </div>
-              ) : (
-                <div className="flex flex-wrap items-center gap-2 text-white/40">
-                  <span className="font-semibold text-white/40 line-through decoration-dotted">Pay online</span>
-                  <span className="truncate">{payLink}</span>
-                </div>
-              )}
+              ) : null}
               {showMailBlock && (
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-white/60">Mail check to</p>
-                  {mailToLines.map((line) => (
-                    <p key={line}>{line}</p>
-                  ))}
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-900">Mail Check To:</p>
+                  <div className="text-sm text-gray-700">
+                    {mailToLines.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
                 </div>
               )}
               {venmoLink && (
-                <p className="text-white">
-                  Venmo: <a href={venmoLink} className="text-purple-200 underline">{venmoLink}</a>
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-900">Venmo:</p>
+                  <a href={venmoLink} className="text-sm text-purple-600 underline" target="_blank" rel="noreferrer">
+                    {venmoLink}
+                  </a>
+                </div>
               )}
               {invoiceUser?.zelleHandle && (
-                <p className="text-white">
-                  Zelle: <span className="font-semibold">{invoiceUser.zelleHandle}</span>
-                </p>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-gray-900">Zelle:</p>
+                  <p className="text-sm text-gray-700">{invoiceUser.zelleHandle}</p>
+                </div>
               )}
             </div>
           )}
 
-          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+          <SignProposalAction slug={shortCode} initialStatus={invoice.status} />
+
+          {/* Action Buttons */}
+          <div className="flex flex-wrap items-center gap-3 border-t border-gray-200 pt-6">
             {portalToken && (
               <Link
                 href={`/client/${encodeURIComponent(portalToken)}`}
-                className="rounded-full border border-white/30 px-4 py-2 text-white transition hover:border-white"
+                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
               >
-                Back to portal
+                ← Back to portal
               </Link>
             )}
-            {payOnlineEnabled ? (
+            {payOnlineEnabled && (
               <Link
                 href={`/p/${shortCode}`}
-                className="rounded-full border border-purple-300/60 px-4 py-2 text-xs font-semibold text-purple-200 transition hover:border-purple-100"
+                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-700"
               >
                 Pay online
               </Link>
-            ) : (
-              <span className="rounded-full border border-white/20 px-4 py-2 text-xs font-semibold text-white/40 line-through decoration-dotted">
-                Pay online
-              </span>
             )}
-            <p className="text-xs text-white/60">Shortcode: {shortCode}</p>
           </div>
         </div>
       </div>

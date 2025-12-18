@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { stripe } from '@/lib/stripe';
 import { sendInvoiceEmail } from '@/lib/email';
-import { generateInvoiceNumber } from '@/app/dashboard/invoices/new/actions';
+import { generateInvoiceNumber } from '@/app/dashboard/(with-shell)/invoices/new/actions';
 
 const addDays = (date: Date, days: number) => {
   const next = new Date(date);
@@ -45,7 +45,10 @@ export async function GET() {
       status: 'ACTIVE',
       nextSendDate: { lte: today },
     },
-    include: { user: true, client: true },
+    include: {
+      user: { include: { company: true } },
+      client: true,
+    },
   });
 
   let processed = 0;
@@ -61,7 +64,6 @@ export async function GET() {
           clientId: rec.clientId,
           invoiceNumber,
           title: rec.title,
-          amount: Number(rec.amount),
           currency: rec.currency,
           issueDate: now,
           dueDate,
@@ -89,7 +91,11 @@ export async function GET() {
 
     let invoice = await prisma.invoice.findUnique({
       where: { id: invoiceResult.id },
-      include: { client: true, user: true, items: true },
+      include: {
+        client: true,
+        user: { include: { company: true } },
+        items: true,
+      },
     });
 
     if (!invoice) continue;
@@ -107,9 +113,13 @@ export async function GET() {
         });
         invoice = await prisma.invoice.update({
           where: { id: invoice.id },
-          data: { status: 'PAID' },
-          include: { client: true, user: true, items: true },
-        });
+        data: { status: 'PAID' },
+        include: {
+          client: true,
+          user: { include: { company: true } },
+          items: true,
+        },
+      });
       } catch (error) {
         console.error('Recurring auto-charge failed', error);
       }

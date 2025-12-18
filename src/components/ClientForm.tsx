@@ -14,6 +14,7 @@ export type ClientFormValues = {
   postalCode: string;
   country: string;
   notes: string;
+  assignedToId?: string | null;
 };
 
 type ClientFormProps = {
@@ -22,6 +23,8 @@ type ClientFormProps = {
   onCancel: () => void;
   submitting?: boolean;
   submitLabel?: string;
+  assignableUsers?: { id: string; name: string | null; email: string | null }[];
+  canAssign?: boolean;
 };
 
 const US_STATES = [
@@ -90,9 +93,18 @@ const defaults: ClientFormValues = {
   postalCode: '',
   country: 'USA',
   notes: '',
+  assignedToId: null,
 };
 
-export function ClientForm({ initialValues, onSubmit, onCancel, submitting = false, submitLabel = 'Save Client' }: ClientFormProps) {
+export function ClientForm({
+  initialValues,
+  onSubmit,
+  onCancel,
+  submitting = false,
+  submitLabel = 'Save Client',
+  assignableUsers,
+  canAssign = false,
+}: ClientFormProps) {
   const [localSubmitting, setLocalSubmitting] = useState(false);
   const merged = { ...defaults, ...initialValues };
   const disabled = submitting || localSubmitting;
@@ -118,6 +130,7 @@ export function ClientForm({ initialValues, onSubmit, onCancel, submitting = fal
       postalCode: get('postalCode'),
       country: get('country') || 'USA',
       notes: get('notes'),
+      assignedToId: canAssign ? get('assignedToId') || null : merged.assignedToId ?? null,
     };
 
     await onSubmit(payload);
@@ -130,6 +143,25 @@ export function ClientForm({ initialValues, onSubmit, onCancel, submitting = fal
         <label className="text-sm font-medium text-zinc-700">Company Name *</label>
         <input name="companyName" defaultValue={merged.companyName} required className={inputClass} disabled={disabled} />
       </div>
+
+      {assignableUsers && assignableUsers.length > 0 && (
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-zinc-700">Assign to</label>
+          <select
+            name="assignedToId"
+            defaultValue={merged.assignedToId ?? ''}
+            className={`${inputClass} bg-white`}
+            disabled={disabled || !canAssign}
+          >
+            <option value="">Unassigned</option>
+            {assignableUsers.map((user) => (
+              <option key={user.id} value={user.id}>
+                {user.name || user.email || user.id}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1">
@@ -180,7 +212,7 @@ export function ClientForm({ initialValues, onSubmit, onCancel, submitting = fal
           ))}
         </select>
         <input
-          name="postalCode"
+          name="postalCodeZip"
           placeholder="ZIP"
           defaultValue={merged.postalCode}
           className={inputClass}

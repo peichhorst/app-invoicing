@@ -3,15 +3,16 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 
 type Mode = "login" | "register";
 
 const heroWrapper = (content: React.ReactNode) => (
-  <div className="relative flex min-h-screen items-start justify-center overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 py-16 sm:px-6 lg:px-8">
+  <div className="relative flex min-h-screen items-start justify-center overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 py-8 sm:px-6 lg:px-8">
     <div className="absolute inset-0 opacity-40">
       <div className="grid-overlay" />
     </div>
-    <div className="relative w-full max-w-4xl space-y-8 rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
+    <div className="relative w-full max-w-4xl space-y-6 rounded-3xl border border-white/10 bg-white/5 p-6 shadow-2xl backdrop-blur mt-16">
       {content}
     </div>
   </div>
@@ -19,25 +20,36 @@ const heroWrapper = (content: React.ReactNode) => (
 
 const heroCopy = (
   <div className="grid gap-8 md:grid-cols-2">
-    <div className="space-y-4">
-      <h1 className="text-3xl font-semibold uppercase tracking-[0.3em] text-purple-100">ClientWave</h1>
-      <p className="text-lg font-semibold text-purple-100">One place to manage clients, send invoices, and get paid — instantly.</p>
-      <ul className="space-y-2 text-sm text-purple-200">
-        <li>• No chasing. No spreadsheets. No stress.</li>
-        <li>• Beautiful branded invoices</li>
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <div className="rounded-fulls borders ">
+          <Image src="/favicon.svg" alt="ClientWave Icon" width={48} height={48} className="border-white h-12 w-12 rounded-full" />
+        </div>
+        <h1 className="text-3xl font-bold text-white">ClientWave</h1>
+      </div>
+      <p className="text-xl font-semibold text-purple-100 leading-tight">The all-in-one business app for freelancers and agencies.</p>
+      <p className="text-md text-white/90 leading-relaxed">ClientWave is the modern, installable app that lets you run your entire business from one place — invoicing, payments, client management, team collaboration, and more — with a beautiful, fast interface that feels like native software on your phone or desktop.</p>
+      <ul className="space-y-1 text-lg font-semibold text-purple-100">
+        <li>• 30 Day Pro Trial</li>
+        <li>• $19 / Month After Trial</li>
+        <li>• Free for 3 clients forever</li>
       </ul>
-      <p className="text-xs uppercase tracking-[0.3em] text-purple-100">30 Day Pro Trial ($19 / Month After Trial). Free for 3 clients forever</p>
     </div>
     <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-white shadow-inner shadow-black/20">
-      <p className="text-xs uppercase tracking-[0.3em] text-purple-100">PRO FEATURES</p>
+      <p className="text-xs uppercase tracking-[0.3em] text-purple-100">KEY FEATURES</p>
       <ul className="space-y-2 text-sm font-semibold">
-        <li>• Unlimited Clients</li>
-        <li>• Seamless Credit Card Online Payment Links</li>
-        <li>• Additional Payment Methods (Venmo, Zelle)</li>
-        <li>• Client Portal to Manage Invoices & Documents</li>
-        <li>• Lead capture forms & call tracking</li>
-        <li>• Recurring / Scheduled Invoices</li>
-        <li>• Branding Removed</li>
+        <li>• Professional invoicing with your branding</li>
+        <li>• Seamless credit card & alternative payment methods</li>
+        <li>• Client portal for payments & documents</li>
+        <li>• Proposals & contracts with e-signature</li>
+        <li>• Recurring billing & auto-charge</li>
+        <li>• Team management with roles & hierarchy</li>
+        <li>• Resources library for training & compliance</li>
+        <li>• Real-time notifications with chime</li>
+        <li>• Revenue & performance reporting</li>
+        <li>• Installable PWA (works like native app)</li>
+        <li>• White-label ready</li>
+        <li>• Activity tracking for compliance</li>
       </ul>
     </div>
   </div>
@@ -133,7 +145,6 @@ export default function AuthPageClient() {
         </button>
       </form>
 
-      <p className="text-center text-xs text-white/60" />
     </>,
   );
 }

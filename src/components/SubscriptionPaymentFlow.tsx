@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Elements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
+import { Stripe, loadStripe } from '@stripe/stripe-js';
 import CheckoutForm from '@/components/CheckoutForm';
 
 type SubscriptionConfig = {
@@ -11,31 +11,59 @@ type SubscriptionConfig = {
   stripeCustomerId: string | null;
   defaultPaymentMethodId: string | null;
   sellerId: string | null;
+  subscriptionPriceId?: string | null;
+  subscriptionProductId?: string | null;
+  subscriptionFallbackAmount?: number | null;
+  subscriptionPriceAmount?: number | null;
+  subscriptionPriceCurrency?: string | null;
 };
 
 const SUBSCRIPTION_PRICE_CENTS = Number(process.env.NEXT_PUBLIC_PRO_PRICE_CENTS ?? 1900);
 
 export default function SubscriptionPaymentFlow() {
   const [config, setConfig] = useState<SubscriptionConfig | null>(null);
-  const [stripePromise, setStripePromise] = useState<Promise<ReturnType<typeof loadStripe>> | null>(null);
+  const [stripePromise, setStripePromise] = useState<Promise<Stripe | null> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [priceSource, setPriceSource] = useState<{
+    source: 'stripe' | 'env';
+    priceId: string | null;
+    productId: string | null;
+    amount: number | null;
+    currency: string | null;
+  } | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const run = async () => {
       setLoading(true);
       setError(null);
+      setFormError(null);
       try {
         const res = await fetch('/api/payments/config?mode=subscription');
         if (!res.ok) throw new Error(await res.text());
         const data: SubscriptionConfig = await res.json();
         if (!data.publishableKey) throw new Error('Stripe publishable key missing');
         if (!active) return;
-        setConfig(data);
+    setConfig(data);
         setStripePromise(
           loadStripe(data.publishableKey, data.stripeAccountId ? { stripeAccount: data.stripeAccountId } : undefined)
         );
+        const priceId = data.subscriptionPriceId ?? null;
+        const productId = data.subscriptionProductId ?? null;
+        const amount =
+          data.subscriptionPriceAmount ??
+          (priceId ? null : data.subscriptionFallbackAmount ?? null);
+        const currency =
+          data.subscriptionPriceCurrency ?? (priceId ? 'usd' : null);
+        setPriceSource({
+          source: priceId ? 'stripe' : 'env',
+          priceId,
+          productId,
+          amount,
+          currency,
+        });
       } catch (err: unknown) {
         if (!active) return;
         const message = err instanceof Error ? err.message : 'Unable to load payment configuration.';
@@ -59,6 +87,7 @@ export default function SubscriptionPaymentFlow() {
     });
   };
 
+  const effectiveAmount = priceSource?.amount ?? SUBSCRIPTION_PRICE_CENTS;
   let content;
   if (loading || !stripePromise) {
     content = <p className="text-center text-zinc-500">Preparing upgrade...</p>;
@@ -71,13 +100,19 @@ export default function SubscriptionPaymentFlow() {
   } else {
     content = (
       <Elements stripe={stripePromise}>
+        {formError && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            {formError}
+          </div>
+        )}
         <CheckoutForm
-          amount={SUBSCRIPTION_PRICE_CENTS}
+          amount={effectiveAmount}
           sellerId={config.sellerId || undefined}
           stripeCustomerId={config.stripeCustomerId || undefined}
           defaultPaymentMethodId={config.defaultPaymentMethodId || undefined}
           intentEndpoint="/api/payments/create-subscription-intent"
           onSuccess={handleSuccess}
+          onError={(message) => setFormError(message)}
         />
       </Elements>
     );

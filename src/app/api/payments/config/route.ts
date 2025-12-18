@@ -2,11 +2,17 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { stripe } from '@/lib/stripe';
+
+const SUBSCRIPTION_PRICE_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 1900);
+const SUBSCRIPTION_PRICE_ID = process.env.PRO_SUBSCRIPTION_PRICE_ID || null;
+const SUBSCRIPTION_PRODUCT_ID = process.env.PRODUCT_ID || null;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const sellerId = url.searchParams.get('seller') || null;
   const invoiceId = url.searchParams.get('invoice') || null;
+  const mode = url.searchParams.get('mode') || null;
 
   let targetUser = null as any;
   let amountCents: number | null = null;
@@ -76,26 +82,70 @@ export async function GET(request: Request) {
       targetUser = await getCurrentUser();
     }
 
-    if (!targetUser?.stripePublishableKey) {
-      return NextResponse.json({ error: 'Stripe publishable key not configured for seller' }, { status: 500 });
-    }
-    if (!targetUser?.stripeAccountId) {
-      return NextResponse.json({ error: 'Stripe account not configured for seller' }, { status: 500 });
+    const platformPublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || null;
+    const platformStripeAccountId = process.env.STRIPE_ACCOUNT_ID || null;
+
+    let responsePayload: Record<string, any>;
+    if (mode === 'subscription') {
+      if (!platformPublishableKey) {
+        return NextResponse.json({ error: 'Platform publishable key not configured' }, { status: 500 });
+      }
+      responsePayload = {
+        publishableKey: platformPublishableKey,
+        stripeAccountId: platformStripeAccountId,
+        sellerId: null,
+        invoiceId: invoiceId || null,
+        amountCents,
+        invoiceStatus,
+        paidAt,
+        customerEmail,
+        customerAddress,
+        stripeCustomerId: targetUser?.stripeCustomerId || null,
+        defaultPaymentMethodId: targetUser?.defaultPaymentMethodId || null,
+      };
+    } else {
+      if (!targetUser?.stripePublishableKey) {
+        return NextResponse.json({ error: 'Stripe publishable key not configured for seller' }, { status: 500 });
+      }
+      if (!targetUser?.stripeAccountId) {
+        return NextResponse.json({ error: 'Stripe account not configured for seller' }, { status: 500 });
+      }
+      responsePayload = {
+        publishableKey: targetUser.stripePublishableKey,
+        stripeAccountId: targetUser.stripeAccountId,
+        sellerId: targetUser?.id || null,
+        invoiceId: invoiceId || null,
+        amountCents,
+        invoiceStatus,
+        paidAt,
+        customerEmail,
+        customerAddress,
+        stripeCustomerId: targetUser.stripeCustomerId || null,
+        defaultPaymentMethodId: targetUser.defaultPaymentMethodId || null,
+      };
     }
 
-    return NextResponse.json({
-      publishableKey: targetUser.stripePublishableKey,
-      stripeAccountId: targetUser.stripeAccountId,
-      sellerId: targetUser?.id || null,
-      invoiceId: invoiceId || null,
-      amountCents,
-      invoiceStatus,
-      paidAt,
-      customerEmail,
-      customerAddress,
-      stripeCustomerId: targetUser.stripeCustomerId || null,
-      defaultPaymentMethodId: targetUser.defaultPaymentMethodId || null,
-    });
+    if (mode === 'subscription') {
+      responsePayload.subscriptionPriceId = SUBSCRIPTION_PRICE_ID;
+      responsePayload.subscriptionProductId = SUBSCRIPTION_PRODUCT_ID;
+      responsePayload.subscriptionFallbackAmount = SUBSCRIPTION_PRICE_CENTS;
+      if (SUBSCRIPTION_PRICE_ID) {
+        try {
+          const price = await stripe.prices.retrieve(SUBSCRIPTION_PRICE_ID);
+          responsePayload.subscriptionPriceAmount = price.unit_amount ?? null;
+          responsePayload.subscriptionPriceCurrency = price.currency ?? null;
+        } catch (priceError) {
+          console.error('Failed to fetch subscription price', priceError);
+          responsePayload.subscriptionPriceAmount = null;
+          responsePayload.subscriptionPriceCurrency = null;
+        }
+      } else {
+        responsePayload.subscriptionPriceAmount = null;
+        responsePayload.subscriptionPriceCurrency = null;
+      }
+    }
+
+    return NextResponse.json(responsePayload);
   } catch (error: any) {
     console.error('Payments config failed', error);
     return NextResponse.json({ error: error?.message || 'Failed to load payment config' }, { status: 500 });

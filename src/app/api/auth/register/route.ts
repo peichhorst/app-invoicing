@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { createSession, hashPassword, sessionCookieOptions } from '@/lib/auth';
 import { TRIAL_LENGTH_MS } from '@/lib/plan';
 import { sendRegistrationAlert } from '@/lib/email';
+import { Role } from '@prisma/client';
 
 type RegisterPayload = {
   email?: string;
@@ -40,9 +41,23 @@ export async function POST(request: Request) {
         email,
         password: hashed,
         planTier: 'PRO_TRIAL',
+        role: Role.OWNER,
         proTrialEndsAt: trialEndsAt,
         proTrialReminderSent: false,
       },
+    });
+
+    const company = await prisma.company.create({
+      data: {
+        name: user.companyName?.trim() || `${defaultName}'s Workspace`,
+        ownerId: user.id,
+        users: { connect: { id: user.id } },
+      },
+    });
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { companyId: company.id },
     });
 
     try {

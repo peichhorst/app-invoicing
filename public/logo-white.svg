@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="380" height="80" viewBox="0 0 380 80" role="img" aria-label="ClientWave">
+  <!-- White border box around icon -->
+  <rect x="8" y="12" width="56" height="56" rx="14" stroke="#ffffff" stroke-width="4" fill="none" opacity="1"/>
+  
+  <!-- Wave lines inside the bordered box -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 32c9-7 14 7 21 0s15-3 23 4" stroke="#ffffff" stroke-width="3.5"/>
+    <path d="M16 41c9-5 14 5 21 0s15-2 23 5" stroke="#ffffff" stroke-width="3" opacity="0.8"/>
+    <path d="M16 50c9-4 14 4 21 0s15 0 23 5" stroke="#ffffff" stroke-width="2.5" opacity="0.6"/>
+  </g>
+  
+  <!-- ClientWave text with proper spacing -->
+  <text x="100" y="52" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="700" fill="#ffffff" letter-spacing="0.05em">ClientWave</text>
+</svg>

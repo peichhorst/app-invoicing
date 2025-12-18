@@ -3,9 +3,10 @@ import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
 import { prisma } from './prisma';
 import crypto from 'crypto';
+import type { Company, Position, User } from '@prisma/client';
 import { ensureTrialState } from './plan';
 
-const SESSION_COOKIE = 'session_token';
+export const SESSION_COOKIE = 'session_token';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
 export async function hashPassword(password: string) {
@@ -50,14 +51,14 @@ export async function destroySession(token?: string) {
   }
 }
 
-export async function getCurrentUser() {
+export async function getCurrentUser(): Promise<(User & { company?: Company | null; positionCustom?: Position | null }) | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
   const session = await (prisma as any).session.findUnique({
     where: { token },
-    include: { user: true },
+    include: { user: { include: { company: true, positionCustom: true } } },
   });
 
   if (!session) return null;

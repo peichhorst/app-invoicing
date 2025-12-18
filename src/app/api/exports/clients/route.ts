@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
+import { clientVisibilityWhere } from '@/lib/client-scope';
 
 function escapeCsv(value: unknown) {
   if (value === null || value === undefined) return '';
@@ -13,7 +14,7 @@ export async function GET(_request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const clients = await prisma.client.findMany({
-    where: { userId: user.id },
+    where: clientVisibilityWhere(user),
     orderBy: { companyName: 'asc' },
   });
 

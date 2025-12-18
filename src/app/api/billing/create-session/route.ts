@@ -42,8 +42,8 @@ export async function POST() {
           quantity: 1,
         },
       ],
-      success_url: `${appUrl}/dashboard/profile?upgrade=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${appUrl}/dashboard/profile?upgrade=cancelled`,
+      success_url: `${appUrl}/dashboard/settings?upgrade=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${appUrl}/dashboard/settings?upgrade=cancelled`,
       subscription_data: {
         metadata: { userId: user.id },
       },

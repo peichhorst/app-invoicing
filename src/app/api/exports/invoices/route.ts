@@ -30,10 +30,14 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const requestedFilter = url.searchParams.get('filter');
   const statuses = getStatusesForFilter(requestedFilter);
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+  const companyId = user.companyId ?? user.company?.id ?? null;
 
   const invoices = await prisma.invoice.findMany({
     where: {
-      userId: user.id,
+      ...(isOwnerOrAdmin
+        ? { user: { companyId: companyId ?? undefined } }
+        : { userId: user.id }),
       ...(statuses ? { status: { in: statuses } } : {}),
     },
     include: {

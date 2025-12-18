@@ -22,7 +22,11 @@ export async function GET(_req: Request, { params }: RouteContext) {
 
     const existing = await prisma.invoice.findUnique({
       where: { id },
-      include: { client: true, items: true, user: true },
+      include: {
+        client: true,
+        items: true,
+        user: { include: { company: true } },
+      },
     });
 
     if (!existing || existing.userId !== user.id) {
@@ -38,8 +42,14 @@ export async function GET(_req: Request, { params }: RouteContext) {
         status: existing.status === 'PAID' ? 'PAID' : 'SENT',
         shortCode,
       },
-      include: { client: true, items: true, user: true },
-    })) as Prisma.InvoiceGetPayload<{ include: { client: true; items: true; user: true } }>;
+      include: {
+        client: true,
+        items: true,
+        user: { include: { company: true } },
+      },
+    })) as Prisma.InvoiceGetPayload<{
+      include: { client: true; items: true; user: { include: { company: true } } };
+    }>;
 
     const dueDays =
       invoice.dueDate != null && invoice.issueDate != null

@@ -22,14 +22,14 @@ export async function POST(req: NextRequest) {
   let userRecord:
     | (Pick<
         import('@prisma/client').User,
-        'id' | 'email' | 'trackdriveLeadToken'
+        'id' | 'email' | 'trackdriveLeadToken' | 'companyId'
       >)
     | null = null;
 
   if (userId) {
     userRecord = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, email: true, trackdriveLeadToken: true },
+      select: { id: true, email: true, trackdriveLeadToken: true, companyId: true },
     });
   }
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (!userRecord && agentEmail) {
     userRecord = await prisma.user.findUnique({
       where: { email: agentEmail },
-      select: { id: true, email: true, trackdriveLeadToken: true },
+      select: { id: true, email: true, trackdriveLeadToken: true, companyId: true },
     });
     userId = userRecord?.id ?? userId;
   }
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   if (!userRecord && payload.email) {
     userRecord = await prisma.user.findUnique({
       where: { email: payload.email },
-      select: { id: true, email: true, trackdriveLeadToken: true },
+      select: { id: true, email: true, trackdriveLeadToken: true, companyId: true },
     });
     userId = userRecord?.id ?? userId;
   }
@@ -71,6 +71,16 @@ export async function POST(req: NextRequest) {
   }
 
   const resolvedUserEmail = userRecord.email ?? undefined;
+  const companyId = userRecord.companyId;
+  if (!companyId) {
+    await sendTrackDriveNotification('petere2103@gmail.com', {
+      ...payload,
+      status: 'error',
+      error: 'User missing company association',
+      userEmail: resolvedUserEmail,
+    });
+    return NextResponse.json({ error: 'User missing company association' }, { status: 400 });
+  }
 
   const companyField = payload.data?.company;
   const companyName = typeof companyField === 'string' ? companyField : 'TrackDrive call lead';
@@ -87,11 +97,12 @@ export async function POST(req: NextRequest) {
 
   const newClient = await prisma.client.create({
     data: {
+      companyId,
+      assignedToId: userRecord.id,
       companyName,
       contactName,
       email: payload.email,
       phone,
-      userId: userRecord.id,
       notes: notes || 'Created from TrackDrive webhook',
     },
   });
