@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Plus, X } from 'lucide-react';
-
-type ClientOption = {
-  id: string;
-  companyName: string;
-};
+import { LineItemsEditor } from '@/components/invoicing/shared/LineItemsEditor';
+import DocumentPreview from '@/components/invoicing/DocumentPreview';
+import { type ClientOption } from '@/app/dashboard/(with-shell)/invoices/new/actions';
+import { useClientOptions } from '@/components/invoicing/useClientOptions';
+import { ClientSelect } from '@/components/invoicing/ClientSelect';
+import { ClientForm, type ClientFormValues } from '@/components/ClientForm';
 
 type LineItem = {
   description: string;
@@ -16,13 +16,24 @@ type LineItem = {
   rate: number;
 };
 
-export function NewProposalForm() {
+type AssignableUserOption = { id: string; name: string | null; email: string | null };
+
+export function NewProposalForm({
+  documentType = 'PROPOSAL',
+}: {
+  documentType?: 'PROPOSAL' | 'CONTRACT';
+}) {
+  const documentLabel = documentType === 'CONTRACT' ? 'Contract' : 'Proposal';
   const router = useRouter();
-  const [clients, setClients] = useState<ClientOption[]>([]);
-  const [clientsLoading, setClientsLoading] = useState(true);
+  const { clients, loading: clientsLoading, error: clientsError } = useClientOptions();
+  const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showNewClient, setShowNewClient] = useState(false);
+  const [addingClient, setAddingClient] = useState(false);
+  const [assignableUsers, setAssignableUsers] = useState<AssignableUserOption[]>([]);
+  const [canAssignClients, setCanAssignClients] = useState(false);
 
   // Form fields
   const [clientId, setClientId] = useState('');
@@ -38,16 +49,83 @@ export function NewProposalForm() {
   const [items, setItems] = useState<LineItem[]>([
     { description: '', quantity: 1, rate: 0 },
   ]);
+  const [selectedClient, setSelectedClient] = useState<ClientOption | null>(null);
 
   useEffect(() => {
-    fetch('/api/clients')
-      .then((res) => res.json())
-      .then((data) => {
-        setClients(data);
-        setClientsLoading(false);
+    setClientOptions(clients);
+  }, [clients]);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/auth/me')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(await res.text());
+        return res.json();
       })
-      .catch(() => setClientsLoading(false));
+      .then((data) => {
+        if (!isMounted) return;
+        const role = (data?.user?.role ?? '').toUpperCase();
+        const elevated = role === 'OWNER' || role === 'ADMIN';
+        setCanAssignClients(elevated);
+        if (!elevated) return;
+        fetch('/api/company/members')
+          .then(async (res) => {
+            if (!res.ok) throw new Error(await res.text());
+            return res.json();
+          })
+          .then((payload) => {
+            if (!isMounted) return;
+            setAssignableUsers(payload.members ?? []);
+          })
+          .catch((err) => {
+            if (!isMounted) return;
+            console.error('Failed to load assignable users', err);
+            setAssignableUsers([]);
+          });
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        console.error('Failed to load current user', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
+  const handleAddClient = async (values: ClientFormValues) => {
+    setAddingClient(true);
+    setError(null);
+    try {
+      const payload = {
+        ...values,
+        assignedToId: canAssignClients ? values.assignedToId ?? null : null,
+      };
+      const res = await fetch('/api/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || 'Failed to create client');
+      }
+      const newClient = await res.json();
+      const option: ClientOption = {
+        id: newClient.id,
+        companyName: newClient.companyName ?? '',
+        contactName: newClient.contactName ?? '',
+      };
+      setClientOptions((prev) => [option, ...prev]);
+      setClientId(newClient.id);
+      setSelectedClient(option);
+      setShowNewClient(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to add client');
+    } finally {
+      setAddingClient(false);
+    }
+  };
 
   const addItem = () => {
     setItems([...items, { description: '', quantity: 1, rate: 0 }]);
@@ -115,6 +193,7 @@ export function NewProposalForm() {
           items: normalizedItems,
           total,
           status,
+          type: documentType,
         }),
       });
 
@@ -124,7 +203,9 @@ export function NewProposalForm() {
       }
 
       const result = await res.json();
-      setSuccess(`Proposal "${result.title}" ${status === 'SENT' ? 'sent' : 'saved as draft'} successfully!`);
+      setSuccess(
+        `${documentLabel} "${result.title}" ${status === 'SENT' ? 'sent' : 'saved as draft'} successfully!`,
+      );
       
       setTimeout(() => {
         router.push('/dashboard/proposals-contracts');
@@ -140,9 +221,13 @@ export function NewProposalForm() {
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-purple-600">Proposals & Contracts</p>
-          <h1 className="text-3xl font-semibold text-gray-900">Create a proposal</h1>
-          <p className="text-sm text-gray-500">Start with the essentials and finish with pricing.</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-brand-primary-600">Proposals & Contracts</p>
+          <h1 className="text-3xl font-semibold text-gray-900">Create a {documentLabel.toLowerCase()}</h1>
+          <p className="text-sm text-gray-500">
+            {documentType === 'CONTRACT'
+              ? 'Legally binding service agreement'
+              : 'Client must sign to accept'}
+          </p>
         </div>
         <Link
           href="/dashboard/proposals-contracts"
@@ -164,34 +249,45 @@ export function NewProposalForm() {
         </div>
       )}
 
-      {/* Proposal Details */}
+      {/* Document Details */}
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Proposal Details</h2>
+        <h2 className="mb-4 text-lg font-semibold text-gray-900">{documentLabel} Details</h2>
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700">Client *</label>
-            <select
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              disabled={clientsLoading}
-              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
-            >
-              <option value="">Select a client</option>
-              {clients.map((client) => (
-                <option key={client.id} value={client.id}>
-                  {client.companyName}
-                </option>
-              ))}
-            </select>
+          <div className="space-y-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+              <div className="flex-1">
+                  <ClientSelect
+                    value={clientId}
+                    onChange={(value, client) => {
+                      setClientId(value);
+                      setSelectedClient(client);
+                    }}
+                    clients={clientOptions}
+                    loading={clientsLoading}
+                    label="Client"
+                    required
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNewClient(true)}
+                  className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
+                >
+                  + New Client
+                </button>
+            </div>
+            {clientsError && <p className="text-xs text-rose-500">{clientsError}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-gray-700">Proposal Title *</label>
+            <label className="block text-sm font-semibold text-gray-700">
+              {documentLabel} Title <span className="text-rose-600">*</span>
+            </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
+              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
               placeholder="E.g. Brand refresh + marketing site"
             />
           </div>
@@ -203,7 +299,7 @@ export function NewProposalForm() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
+                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
                 placeholder="Brief overview of the proposal"
               />
             </div>
@@ -213,7 +309,7 @@ export function NewProposalForm() {
                 type="date"
                 value={validUntil}
                 onChange={(e) => setValidUntil(e.target.value)}
-                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
+                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
               />
             </div>
           </div>
@@ -224,101 +320,66 @@ export function NewProposalForm() {
               value={scope}
               onChange={(e) => setScope(e.target.value)}
               rows={5}
-              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
+              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
               placeholder="Describe scope, deliverables, and timeline highlights"
             />
           </div>
         </div>
       </div>
 
-      {/* Line Items */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Line Items</h2>
-          <button
-            type="button"
-            onClick={addItem}
-            className="flex items-center gap-1 rounded-lg border border-purple-200 px-3 py-1 text-sm font-semibold text-purple-700 transition hover:bg-purple-50"
-          >
-            <Plus className="h-4 w-4" />
-            Add line item
-          </button>
-        </div>
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.4fr),minmax(0,1fr)] lg:items-start">
+        <div className="space-y-6">
+          {/* Line Items (shared component) */}
+          <LineItemsEditor
+            items={items}
+            onAddItem={addItem}
+            onRemoveItem={removeItem}
+            onChangeItem={(index, field, value) => updateItem(index, field, value)}
+            formatCurrency={formatCurrency}
+          />
 
-        <div className="space-y-3">
-          {items.map((item, index) => (
-            <div key={index} className="flex gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="flex-1 space-y-2">
-                <input
-                  type="text"
-                  value={item.description}
-                  onChange={(e) => updateItem(index, 'description', e.target.value)}
-                  className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-100"
-                  placeholder="Description"
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    type="number"
-                    step="1"
-                    value={item.quantity}
-                    onChange={(e) => updateItem(index, 'quantity', parseFloat(e.target.value) || 0)}
-                    className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-100"
-                    placeholder="Qty"
-                  />
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={item.rate}
-                    onChange={(e) => updateItem(index, 'rate', parseFloat(e.target.value) || 0)}
-                    className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-100"
-                    placeholder="Rate"
-                  />
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-semibold text-gray-700">
-                      {formatCurrency((item.quantity || 0) * (item.rate || 0))}
-                    </span>
-                    {items.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removeItem(index)}
-                        className="text-red-600 hover:text-red-700"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-6 space-y-2 border-t border-gray-200 pt-4">
-          <div className="flex justify-end text-lg">
-            <div className="w-full max-w-xs space-y-2">
-              <div className="flex justify-between">
-                <span className="font-semibold text-gray-700">Subtotal</span>
-                <span className="font-semibold text-gray-900">{formatCurrency(calculateTotal())}</span>
-              </div>
-              <div className="flex justify-between border-t-2 border-gray-300 pt-2">
-                <span className="font-bold text-gray-900">Total</span>
-                <span className="font-bold text-purple-600">{formatCurrency(calculateTotal())}</span>
-              </div>
-            </div>
+          {/* Additional Notes */}
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-4 text-lg font-semibold text-gray-900">Additional Notes</h2>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={4}
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+              placeholder="Terms, conditions, or other information..."
+            />
           </div>
         </div>
-      </div>
 
-      {/* Additional Notes */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-lg font-semibold text-gray-900">Additional Notes</h2>
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={4}
-          className="w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
-          placeholder="Terms, conditions, or other information..."
-        />
+        <div className="mt-4 lg:mt-0">
+          <DocumentPreview
+            type={documentType === 'CONTRACT' ? 'contract' : 'proposal'}
+            company={undefined}
+            client={
+              selectedClient
+                ? {
+                    name: selectedClient.companyName,
+                    companyName: selectedClient.companyName,
+                  }
+                : undefined
+            }
+            lineItems={items.map((item) => ({
+              description: item.description,
+              quantity: Number(item.quantity) || 0,
+              rate: Number(item.rate) || 0,
+              amount: (Number(item.quantity) || 0) * (Number(item.rate) || 0),
+            }))}
+            totals={{
+              subtotal: calculateTotal(),
+              tax: 0,
+              total: calculateTotal(),
+            }}
+            documentNumber={undefined}
+            issueDate={validUntil ? new Date(validUntil) : undefined}
+            dueDate={validUntil ? new Date(validUntil) : undefined}
+            paymentTerms={notes || undefined}
+          />
+        </div>
       </div>
 
       {/* Action Buttons */}
@@ -340,6 +401,31 @@ export function NewProposalForm() {
           {saving ? 'Saving...' : 'Save & send'}
         </button>
       </div>
+
+      {showNewClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-zinc-900">Create Client</h3>
+              <button
+                type="button"
+                className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500 hover:text-zinc-700"
+                onClick={() => setShowNewClient(false)}
+              >
+                Close
+              </button>
+            </div>
+            <ClientForm
+              onSubmit={handleAddClient}
+              onCancel={() => setShowNewClient(false)}
+              submitLabel="Create client"
+              submitting={addingClient}
+              assignableUsers={assignableUsers}
+              canAssign={canAssignClients}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

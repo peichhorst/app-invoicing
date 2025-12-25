@@ -245,3 +245,4 @@ export async function getToolsSnapshot({ city, state, zip }: SnapshotParams) {
 
   return snapshot;
 }
+

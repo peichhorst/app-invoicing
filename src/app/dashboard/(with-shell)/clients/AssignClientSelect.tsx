@@ -41,7 +41,7 @@ export function AssignClientSelect({ clientId, currentAssigneeId, options }: Pro
   return (
     <div className="space-y-1">
       <select
-        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-200"
         value={value ?? ''}
         onChange={(e) => handleChange(e.target.value)}
         disabled={saving}

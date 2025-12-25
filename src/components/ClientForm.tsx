@@ -15,6 +15,7 @@ export type ClientFormValues = {
   country: string;
   notes: string;
   assignedToId?: string | null;
+  isLead: boolean;
 };
 
 type ClientFormProps = {
@@ -25,6 +26,7 @@ type ClientFormProps = {
   submitLabel?: string;
   assignableUsers?: { id: string; name: string | null; email: string | null }[];
   canAssign?: boolean;
+  allowUnassigned?: boolean;
 };
 
 const US_STATES = [
@@ -94,6 +96,7 @@ const defaults: ClientFormValues = {
   country: 'USA',
   notes: '',
   assignedToId: null,
+  isLead: false,
 };
 
 export function ClientForm({
@@ -104,6 +107,7 @@ export function ClientForm({
   submitLabel = 'Save Client',
   assignableUsers,
   canAssign = false,
+  allowUnassigned = true,
 }: ClientFormProps) {
   const [localSubmitting, setLocalSubmitting] = useState(false);
   const merged = { ...defaults, ...initialValues };
@@ -117,6 +121,7 @@ export function ClientForm({
     const formData = new FormData(e.currentTarget);
 
     const get = (key: keyof ClientFormValues) => ((formData.get(key) as string | null) ?? '').toString().trim();
+    const typeValue = (formData.get('isLead') as string | null) ?? (merged.isLead ? 'lead' : 'client');
 
     const payload: ClientFormValues = {
       companyName: get('companyName'),
@@ -131,6 +136,7 @@ export function ClientForm({
       country: get('country') || 'USA',
       notes: get('notes'),
       assignedToId: canAssign ? get('assignedToId') || null : merged.assignedToId ?? null,
+      isLead: typeValue === 'lead',
     };
 
     await onSubmit(payload);
@@ -140,8 +146,27 @@ export function ClientForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-1">
-        <label className="text-sm font-medium text-zinc-700">Company Name *</label>
-        <input name="companyName" defaultValue={merged.companyName} required className={inputClass} disabled={disabled} />
+        <label className="text-sm font-medium text-zinc-700">Type</label>
+        <select
+          name="isLead"
+          defaultValue={merged.isLead ? 'lead' : 'client'}
+          className={`${inputClass} bg-white`}
+          disabled={disabled}
+        >
+          <option value="client">Client</option>
+          <option value="lead">Lead</option>
+        </select>
+      </div>
+
+      <div className="space-y-1">
+        <label className="text-sm font-medium text-zinc-700">Company Name (optional)</label>
+        <input
+          name="companyName"
+          defaultValue={merged.companyName}
+          placeholder="Leave blank for individuals"
+          className={inputClass}
+          disabled={disabled}
+        />
       </div>
 
       {assignableUsers && assignableUsers.length > 0 && (
@@ -149,11 +174,14 @@ export function ClientForm({
           <label className="text-sm font-medium text-zinc-700">Assign to</label>
           <select
             name="assignedToId"
-            defaultValue={merged.assignedToId ?? ''}
+            defaultValue={
+              merged.assignedToId ??
+              (allowUnassigned ? '' : assignableUsers[0]?.id ?? '')
+            }
             className={`${inputClass} bg-white`}
             disabled={disabled || !canAssign}
           >
-            <option value="">Unassigned</option>
+            {allowUnassigned && <option value="">Unassigned</option>}
             {assignableUsers.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.name || user.email || user.id}
@@ -165,12 +193,25 @@ export function ClientForm({
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1">
-          <label className="text-sm font-medium text-zinc-700">Contact Name</label>
-          <input name="contactName" defaultValue={merged.contactName} className={inputClass} disabled={disabled} />
+          <label className="text-sm font-medium text-zinc-700">Contact Name *</label>
+          <input
+            name="contactName"
+            defaultValue={merged.contactName}
+            required
+            className={inputClass}
+            disabled={disabled}
+          />
         </div>
         <div className="space-y-1">
-          <label className="text-sm font-medium text-zinc-700">Email</label>
-          <input name="email" type="email" defaultValue={merged.email} className={inputClass} disabled={disabled} />
+          <label className="text-sm font-medium text-zinc-700">Email *</label>
+          <input
+            name="email"
+            type="email"
+            defaultValue={merged.email}
+            required
+            className={inputClass}
+            disabled={disabled}
+          />
         </div>
       </div>
 

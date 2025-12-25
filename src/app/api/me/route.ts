@@ -15,6 +15,7 @@ export async function GET() {
     : null;
   return NextResponse.json({
     isAdmin: role === 'ADMIN',
+    isSuperAdmin: role === 'SUPERADMIN',
     planTier: user.planTier,
     role,
     position: user.position ?? null,
@@ -30,6 +31,7 @@ export async function GET() {
           id: user.company.id,
           name: user.company.name,
           website: user.company.website ?? null,
+          logoUrl: user.company.logoUrl ?? null,
         }
       : null,
   });

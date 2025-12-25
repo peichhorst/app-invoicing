@@ -16,7 +16,7 @@ export default async function PortalRedirectPage({ searchParams }: PageProps) {
   const impersonate = getFirstParam(params.impersonate);
 
   const user = await getCurrentUser();
-  if (!user || user.role !== 'ADMIN') redirect('/dashboard');
+  if (!user || (user.role !== 'ADMIN' && user.role !== 'OWNER')) redirect('/dashboard');
 
   if (impersonate !== '1' || !clientId) redirect('/dashboard');
 
@@ -26,6 +26,10 @@ export default async function PortalRedirectPage({ searchParams }: PageProps) {
   });
 
   if (!client) redirect('/dashboard');
+
+  if (user.role === 'OWNER' && client.companyId !== user.companyId) {
+    redirect('/dashboard');
+  }
 
   let portalToken = client.portalUser?.portalToken;
   if (!portalToken) {

@@ -121,7 +121,10 @@ export async function POST(request: Request) {
                 currency: record.currency,
                 interval: body.recurringInterval,
                 dayOfMonth:
-                  body.recurringInterval !== 'week' ? body.recurringDayOfMonth ?? null : null,
+                  body.recurringInterval &&
+                  ['month', 'quarter', 'year'].includes(body.recurringInterval)
+                    ? body.recurringDayOfMonth ?? null
+                    : null,
                 dayOfWeek:
                   body.recurringInterval === 'week' ? body.recurringDayOfWeek ?? null : null,
                 nextSendDate: new Date(body.nextOccurrence),

@@ -119,9 +119,9 @@ export function InstallPromptButton() {
   };
 
   const baseClasses =
-    'fixed left-4 bottom-20 z-50 h-12 w-12 rounded-full shadow-xl shadow-indigo-200/60 border transition flex items-center justify-center';
-  const installClasses = 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50 cursor-pointer';
-  const offlineClasses = 'border-white/60 bg-white/90 text-indigo-700 hover:bg-white cursor-pointer';
+    'fixed left-4 bottom-20 z-50 h-12 w-12 rounded-full shadow-xl shadow-brand-primary-200/60 border transition flex items-center justify-center';
+  const installClasses = 'border-brand-primary-200 bg-white text-brand-primary-700 hover:bg-brand-primary-50 cursor-pointer';
+  const offlineClasses = 'border-white/60 bg-white/90 text-brand-primary-700 hover:bg-white cursor-pointer';
 
   return (
     <>
@@ -147,9 +147,9 @@ export function InstallPromptButton() {
         </svg>
       </button>
       {showToast && (
-        <div className="fixed left-4 bottom-20 z-50 max-w-sm rounded-xl border border-indigo-100 bg-white shadow-lg shadow-indigo-100/60">
+        <div className="fixed left-4 bottom-20 z-50 max-w-sm rounded-xl border border-brand-primary-100 bg-white shadow-lg shadow-brand-primary-100/60">
           <div className="flex items-start gap-3 px-4 py-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-50 text-indigo-700">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-primary-50 text-brand-primary-700">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 12l2 2 4-4" />
                 <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
@@ -162,7 +162,7 @@ export function InstallPromptButton() {
                 <button
                   type="button"
                   onClick={handleOpenOffline}
-                  className="rounded-full bg-indigo-600 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
+                  className="rounded-full bg-brand-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-sm hover:bg-brand-primary-700"
                 >
                   Open offline
                 </button>

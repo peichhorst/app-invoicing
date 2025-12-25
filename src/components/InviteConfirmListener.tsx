@@ -26,6 +26,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   const inviteCountRef = useRef<number | null>(null);
   const paidCountRef = useRef<number | null>(null);
   const messageCountRef = useRef<number | null>(null);
+  const lastMessageIdRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
   const recentKeysRef = useRef<Map<string, number>>(new Map());
   const processedCountChangesRef = useRef<Set<string>>(new Set());
@@ -48,12 +49,18 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
     });
   };
 
-  const playChimeOnce = useCallback((key: string, reverted?: boolean, soundType?: 'payment' | 'message') => {
+  const playChimeOnce = useCallback(
+    (key: string, reverted?: boolean, soundType?: 'payment' | 'message' | 'success') => {
     if (reverted) return; // no chime on revert
     if (lastChimeRef.current === key) return;
     lastChimeRef.current = key;
     try {
-      const soundFile = soundType === 'message' ? '/success-chime.mp3' : '/payment-chime.mp3';
+      const soundFile =
+        soundType === 'success'
+          ? '/success-chime.mp3'
+          : soundType === 'message'
+          ? '/success-chime.mp3'
+          : '/payment-chime.mp3';
       const audio = new Audio(soundFile);
       audio.volume = 0.7;
       audio.play().catch(() => {});
@@ -63,7 +70,14 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   }, []);
 
   const showToast = useCallback(
-    (title: string, body: string, logicalKey: string, reverted?: boolean, isMessage?: boolean) => {
+    (
+      title: string,
+      body: string,
+      logicalKey: string,
+      reverted?: boolean,
+      isMessage?: boolean,
+      soundType?: 'payment' | 'message' | 'success',
+    ) => {
       const now = Date.now();
       const bucketKey = `${logicalKey}:${reverted ? 'rev' : isMessage ? 'msg' : 'paid'}`;
       const lastTime = recentKeysRef.current.get(bucketKey);
@@ -73,7 +87,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
       recentKeysRef.current.set(bucketKey, now);
 
       const id = `${logicalKey}-${now}`;
-      playChimeOnce(id, reverted, isMessage ? 'message' : 'payment');
+      playChimeOnce(id, reverted, soundType || (isMessage ? 'message' : 'payment'));
       setToasts((prev) => [...prev, { id, logicalKey, title, body, reverted, timestamp: now, isMessage }]);
     },
     [playChimeOnce],
@@ -90,7 +104,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         const user = payload?.user || {};
         const key = `invite-${user.email || user.name || Date.now()}`;
         const body = `${user.name || 'Someone'} (${user.email || 'email hidden'}) is now confirmed.`;
-        showToast('Confirmation received', body, key, false, false);
+        showToast('Invite Confirmation', body, key, false, false, 'success');
         router.refresh();
         return;
       }
@@ -100,6 +114,9 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         if (fromId && userId && fromId === userId) {
           router.refresh();
           return;
+        }
+        if (messageId) {
+          lastMessageIdRef.current = messageId;
         }
         const key = `message-${messageId || Date.now()}`;
         const body = `${fromName || 'Someone'}: ${text || 'New message'}`;
@@ -245,7 +262,9 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
             const count = typeof data.messageCount === 'number' ? data.messageCount : null;
             if (count !== null) {
               const prev = messageCountRef.current;
-              if (prev !== null && count > prev && data.lastMessage) {
+              const lastId = data.lastMessage?.id ?? null;
+              const isNewId = lastId && lastId !== lastMessageIdRef.current;
+              if (prev !== null && count > prev && data.lastMessage && isNewId) {
                 processEvent('message-received', {
                   messageId: data.lastMessage.id,
                   fromId: data.lastMessage.fromId,
@@ -254,6 +273,9 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
                 }, count, 'polling');
               }
               messageCountRef.current = count;
+              if (lastId) {
+                lastMessageIdRef.current = lastId;
+              }
             }
           }
         } catch {
@@ -273,7 +295,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
     <div className="fixed bottom-4 right-4 z-50 space-y-3">
       {[...toasts].reverse().map((toast) => {
         const colors = toast.isMessage
-          ? { bg: 'border border-blue-200 bg-blue-50', dot: 'bg-blue-500', title: 'text-blue-800', time: 'text-blue-600', body: 'text-blue-700', button: 'text-blue-700 hover:text-blue-900' }
+          ? { bg: 'border border-brand-accent-200 bg-brand-accent-50', dot: 'bg-brand-accent-500', title: 'text-brand-accent-800', time: 'text-brand-accent-600', body: 'text-brand-accent-700', button: 'text-brand-accent-700 hover:text-brand-accent-900' }
           : toast.reverted
           ? { bg: 'border border-rose-200 bg-rose-50', dot: 'bg-rose-500', title: 'text-rose-800', time: 'text-rose-600', body: 'text-rose-700', button: 'text-rose-700 hover:text-rose-900' }
           : { bg: 'border border-emerald-200 bg-emerald-50', dot: 'bg-emerald-500', title: 'text-emerald-800', time: 'text-emerald-600', body: 'text-emerald-700', button: 'text-emerald-700 hover:text-emerald-900' };

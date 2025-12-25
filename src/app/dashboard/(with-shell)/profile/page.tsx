@@ -45,9 +45,12 @@ export default async function ProfilePage() {
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-600">Profile</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Profile</p>
           <h1 className="text-3xl font-semibold text-zinc-900">Edit Profile</h1>
           <p className="text-sm text-zinc-600">Update your personal info profile picture and signature.</p>
+        </div>
+        <div className="w-full">
+          <EnableNotificationsButton />
         </div>
         <ProfileForm
           initial={{
@@ -73,9 +76,9 @@ export default async function ProfilePage() {
           isAdmin={isAdmin}
           showPaymentAndLead={false}
           positions={positions}
+          allowSetAsAdministrator={isOwner || isAdmin}
+          initialRole={user.role}
         />
-
-        <EnableNotificationsButton />
       </div>
     </div>
   );

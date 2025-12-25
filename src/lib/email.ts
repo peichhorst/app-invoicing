@@ -3,6 +3,7 @@ import { Resend } from 'resend';
 import React from 'react';
 import type { ReactElement } from 'react';
 import { InvoicePDF } from '@/components/InvoicePDF';
+import DocumentPreview from '@/components/invoicing/DocumentPreview';
 import { renderToBuffer } from '@react-pdf/renderer';
 import { prisma } from '@/lib/prisma';
 import crypto from 'crypto';
@@ -13,7 +14,40 @@ const adminAlertEmail = process.env.REGISTRATION_ALERT_EMAIL || 'petere2103@gmai
 const emailsEnabled =
   process.env.NODE_ENV !== 'development' || process.env.ENABLE_DEV_EMAIL === 'true';
 
-async function sendEmail(payload: Parameters<typeof resend.emails.send>[0]) {
+const DEFAULT_BUTTON_COLOR = '#1d4ed8';
+const PRIMARY_COLOR_MAP: Record<string, string> = {
+  purple: '#a855f7',
+  blue: '#1d4ed8',
+  green: '#22c55e',
+  red: '#ef4444',
+};
+
+const resolveEmailButtonColor = (value?: string | null) => {
+  if (!value) {
+    return DEFAULT_BUTTON_COLOR;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return DEFAULT_BUTTON_COLOR;
+  }
+  return PRIMARY_COLOR_MAP[normalized] || value;
+};
+
+const resolveEmailButtonTextColor = (hex: string) => {
+  const cleaned = hex.replace('#', '').trim();
+  const normalized = cleaned.length === 3 ? cleaned.split('').map((char) => char + char).join('') : cleaned;
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return '#ffffff';
+  }
+  const r = parseInt(normalized.slice(0, 2), 16) / 255;
+  const g = parseInt(normalized.slice(2, 4), 16) / 255;
+  const b = parseInt(normalized.slice(4, 6), 16) / 255;
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+  return luminance > 0.55 ? '#0f172a' : '#ffffff';
+};
+
+export async function sendEmail(payload: Parameters<typeof resend.emails.send>[0]) {
   if (!emailsEnabled) {
     console.log('[Email suppressed in dev]', payload.subject || 'No subject', payload.to);
     return;
@@ -64,23 +98,27 @@ export async function sendInviteEmail({
   inviterName,
   companyName,
   confirmLink,
+  companyPrimaryColor,
 }: {
   email: string;
   temporaryPassword: string;
   inviterName?: string | null;
   companyName?: string | null;
   confirmLink?: string;
+  companyPrimaryColor?: string | null;
 }) {
   const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
   const loginUrl = new URL('/dashboard', appBase).toString();
   const inviter = inviterName ? inviterName.trim() : 'Your team admin';
   const companyLabel = companyName?.trim() || 'ClientWave';
   const link = confirmLink || loginUrl;
+  const buttonColor = resolveEmailButtonColor(companyPrimaryColor);
+  const buttonTextColor = resolveEmailButtonTextColor(buttonColor);
 
   await sendEmail({
     from: defaultFrom,
     to: [email],
-    subject: `Welcome to ${companyLabel} on ClientWave`,
+    subject: `Invitaion from ${companyLabel} on ClientWave`,
     html: `
       <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
         <h1 style="margin-bottom:12px; color:#111;">You’re invited to ClientWave</h1>
@@ -92,7 +130,12 @@ export async function sendInviteEmail({
           <strong>Temporary password:</strong> ${temporaryPassword}
         </p>
         <p>
-          <a href="${link}" style="background:#5b21b6; color:white; padding:12px 20px; border-radius:8px; text-decoration:none; display:inline-block;">Confirm your account</a>
+          <a
+            href="${link}"
+            style="background:${buttonColor}; color:${buttonTextColor}; padding:12px 20px; border-radius:8px; text-decoration:none; display:inline-block;"
+          >
+            Confirm your account
+          </a>
         </p>
         <p style="margin-top:16px; color:#777;">
                     You'll be prompted to set your own password after logging in. If you need help, reply to this email.
@@ -102,7 +145,11 @@ export async function sendInviteEmail({
   });
 }
 
-export async function sendEmailChangeVerificationEmail(newEmail: string, token: string) {
+export async function sendEmailChangeVerificationEmail(
+  newEmail: string,
+  token: string,
+  primaryColor?: string | null
+) {
   const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
   const verifyUrl = new URL('/settings/email/verify', appBase);
   verifyUrl.searchParams.set('token', token);
@@ -116,7 +163,9 @@ export async function sendEmailChangeVerificationEmail(newEmail: string, token: 
         <h1 style="color:#1b1b1b;">Verify your new email</h1>
         <p style="color:#444; margin-bottom:16px;">Click the button below to confirm you own this email address. Once verified, your ClientWave login will switch to ${newEmail}.</p>
         <p>
-          <a href="${verifyUrl.toString()}" style="background:#6366f1; color:white; padding:12px 24px; border-radius:8px; text-decoration:none; display:inline-block;">Verify new email</a>
+          <a href="${verifyUrl.toString()}" style="background:${resolveEmailButtonColor(
+            primaryColor
+          )}; color:white; padding:12px 24px; border-radius:8px; text-decoration:none; display:inline-block;">Verify new email</a>
         </p>
         <p style="margin-top:16px; color:#777;">This link expires in 1 hour. If you didn’t request this change, ignore this message.</p>
       </div>
@@ -139,7 +188,11 @@ export async function sendEmailChangedNotification(oldEmail: string, newEmail: s
     `,
   });
 }
-export async function sendMagicLoginEmail(email: string, token: string) {
+export async function sendMagicLoginEmail(
+  email: string,
+  token: string,
+  primaryColor?: string | null
+) {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
   const loginUrl = `${baseUrl}/api/auth/magic-login?token=${token}`;
 
@@ -151,10 +204,17 @@ export async function sendMagicLoginEmail(email: string, token: string) {
       <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
         <h1 style="color:#1b1b1b;">Login to your account</h1>
         <p style="color:#444; margin-bottom:24px;">Click the button below to securely log in to your account. This link will expire in 15 minutes.</p>
-        <a href="${loginUrl}" style="display:inline-block; background:#7c3aed; color:white; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:600; margin-bottom:24px;">
+        <a
+          href="${loginUrl}"
+          style="display:inline-block; background:${resolveEmailButtonColor(
+            primaryColor
+          )}; color:white; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:600; margin-bottom:24px;"
+        >
           Log in to ClientWave
         </a>
-        <p style="color:#777; font-size:14px; margin-top:24px;">Or copy this link: <a href="${loginUrl}" style="color:#7c3aed; word-break:break-all;">${loginUrl}</a></p>
+        <p style="color:#777; font-size:14px; margin-top:24px;">Or copy this link: <a href="${loginUrl}" style="color:${resolveEmailButtonColor(
+          primaryColor
+        )}; word-break:break-all;">${loginUrl}</a></p>
         <p style="margin-top:16px; color:#777; font-size:14px;">This link expires in 15 minutes. If you didn't request this login link, ignore this message.</p>
       </div>
     `,
@@ -267,7 +327,10 @@ export async function sendInvoiceEmail(
   const hasStripeCredentials = Boolean(user?.stripeAccountId && user?.stripePublishableKey);
   const onlinePaymentSection = hasStripeCredentials
     ? `<p style="margin:0 0 12px 0;">
-        <a href="${payUrl}" style="background:#6b21a8; color:white; padding:12px 24px; text-decoration:none; border-radius:8px; display:inline-block;">
+        <a
+          href="${payUrl}"
+          style="background:${resolveEmailButtonColor(user?.company?.primaryColor ?? null)}; color:white; padding:12px 24px; text-decoration:none; border-radius:8px; display:inline-block;"
+        >
           Pay Invoice Online
         </a>
       </p>`
@@ -361,6 +424,243 @@ export async function sendInvoiceEmail(
   }
 }
 
+function formatDocumentLabel(type?: string) {
+  const normalized = typeof type === 'string' ? type.toUpperCase() : '';
+  if (normalized === 'CONTRACT') return 'Contract';
+  return 'Proposal';
+}
+
+function formatDocumentLower(type?: string) {
+  return formatDocumentLabel(type).toLowerCase();
+}
+
+export async function sendProposalEmail(proposal: any, client: any, user: any) {
+  if (!client?.email) {
+    return;
+  }
+  const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
+  const proposalUrl = `${appBase}/dashboard/proposals-contracts/${proposal.id}`;
+
+  const lineItems = (JSON.parse(proposal.lineItems || '[]') as {
+    description: string;
+    quantity: number;
+    rate: number;
+    amount: number;
+  }[]).map((line) => ({
+    description: line.description,
+    quantity: Number(line.quantity) || 0,
+    rate: Number(line.rate) || 0,
+    amount: Number(line.amount) || 0,
+  }));
+  const subtotal = lineItems.reduce((sum, line) => sum + (line.amount || 0), 0);
+  const totals = {
+    subtotal,
+    total: Number(proposal.total) || subtotal,
+    currency: proposal.currency || 'USD',
+  };
+
+  const companyInfo = {
+    name: user?.company?.name || user?.companyName || 'Your Company',
+    logoUrl: user?.company?.logoUrl || undefined,
+    address:
+      [user?.company?.addressLine1, user?.company?.addressLine2]
+        .filter(Boolean)
+        .join('\n') || undefined,
+    email: user?.email || undefined,
+    phone: user?.phone || undefined,
+  };
+
+  const clientInfo = {
+    name: client.contactName || client.companyName || '',
+    companyName: client.companyName || client.contactName || '',
+    email: client.email || undefined,
+    address: [client.addressLine1, client.addressLine2].filter(Boolean).join('\n') || undefined,
+  };
+
+  const label = formatDocumentLabel(proposal.type);
+  const lower = formatDocumentLower(proposal.type);
+  const pdfElement = React.createElement(DocumentPreview as any, {
+    type: lower,
+    company: companyInfo,
+    client: clientInfo,
+    lineItems,
+    totals,
+    documentNumber: proposal.id.slice(0, 8).toUpperCase(),
+    issueDate: proposal.createdAt ? new Date(proposal.createdAt) : undefined,
+    dueDate: proposal.validUntil ? new Date(proposal.validUntil) : undefined,
+    paymentTerms: proposal.notes || 'Review and sign to move forward.',
+  });
+  const pdfBuffer = await renderToBuffer(pdfElement as any);
+  const pdfBase64 = pdfBuffer.toString('base64');
+
+  const lineItemsHtml = lineItems
+    .map(
+      (line) => `
+        <tr>
+          <td style="padding:8px 0; color:#1f2937;">${line.description}</td>
+          <td style="padding:8px 0; color:#1f2937; text-align:right;">${line.quantity}</td>
+          <td style="padding:8px 0; color:#1f2937; text-align:right;">${line.rate.toFixed(2)}</td>
+          <td style="padding:8px 0; color:#111; text-align:right; font-weight:700;">${new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: totals.currency,
+          }).format(line.amount || 0)}</td>
+        </tr>
+      `
+    )
+    .join('');
+
+  const html = `
+    <div style="font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:24px;">
+      <h1 style="color:#111; margin-bottom:12px;">${user?.company?.name || 'Your Company'} sent a ${label}</h1>
+      <p style="color:#444; margin-bottom:12px;">Hi ${client.contactName?.split(' ')[0] || 'there'},</p>
+      <p style="color:#444; margin-bottom:24px;">
+        We created a ${lower} for <strong>${proposal.title}</strong>. You can view the full details and approve it here:
+      </p>
+        <p style="margin-bottom:24px;">
+          <a
+            href="${proposalUrl}"
+            style="background:${resolveEmailButtonColor(user?.company?.primaryColor ?? null)}; color:white; padding:12px 24px; border-radius:8px; text-decoration:none; display:inline-block;"
+          >View ${lower}</a>
+        </p>
+      <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">
+        <thead>
+          <tr>
+            <th style="text-align:left; color:#6b7280; padding-bottom:8px;">Description</th>
+            <th style="text-align:right; color:#6b7280; padding-bottom:8px;">Qty</th>
+            <th style="text-align:right; color:#6b7280; padding-bottom:8px;">Rate</th>
+            <th style="text-align:right; color:#6b7280; padding-bottom:8px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${lineItemsHtml || '<tr><td colspan="4" style="color:#6b7280; padding:8px 0;">No line items yet.</td></tr>'}
+        </tbody>
+      </table>
+      <p style="color:#111; font-weight:700; margin-bottom:12px;">Total: ${new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: totals.currency,
+      }).format(totals.total)}</p>
+      ${proposal.scope ? `<p style="color:#444; margin-bottom:12px;"><strong>Scope:</strong> ${proposal.scope}</p>` : ''}
+      ${proposal.description ? `<p style="color:#444; margin-bottom:12px;"><strong>Description:</strong> ${proposal.description}</p>` : ''}
+      ${proposal.notes ? `<p style="color:#444; margin-bottom:12px;"><strong>Notes:</strong> ${proposal.notes}</p>` : ''}
+      <p style="color:#94a3b8; font-size:12px; margin-top:24px;">To finalize this ${lower}, simply sign it in ClientWave.</p>
+      <p style="margin-top:24px; font-size:11px; color:#94a3b8;">You're receiving this because you're listed as the client on this ${lower}.</p>
+    </div>
+  `;
+
+  const attachments = [
+    {
+      filename: `${label}-${proposal.id.slice(0, 8)}.pdf`,
+      content: pdfBase64,
+      contentType: 'application/pdf',
+    },
+  ];
+
+  const subject = `${label} from ${user?.company?.name || 'Your Company'}`;
+  const toRecipients = Array.from(new Set([client.email].filter(Boolean)));
+
+  await sendEmail({
+    from: defaultFrom,
+    to: toRecipients,
+    subject,
+    html,
+    attachments,
+  });
+
+  if (user?.email && user.email !== client.email) {
+    await sendEmail({
+      from: defaultFrom,
+      to: [user.email],
+      subject: `Copy: ${label} "${proposal.title}" sent to ${client.companyName || client.contactName || 'client'}`,
+      html: `<div style="font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:24px;">
+        <p style="margin-bottom:12px;">${label} "${proposal.title}" was sent to ${client.companyName || client.contactName || 'client'}.</p>
+        <p style="margin-bottom:12px;">Link: <a href="${proposalUrl}" style="color:#4f46e5;">View ${lower}</a></p>
+      </div>`,
+      attachments,
+    });
+  }
+}
+
+export async function sendProposalSentNotification(proposal: any, client: any, user: any) {
+  if (!client?.email) return;
+  const proposalUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app'}/p/${proposal.id}/view`;
+  const companyName = user?.company?.name || user?.companyName || 'Your Company';
+  const label = formatDocumentLabel(proposal.type);
+  const lower = formatDocumentLower(proposal.type);
+  await sendEmail({
+    from: defaultFrom,
+    to: [client.email],
+    subject: `${label} sent from ${companyName}`,
+    html: `
+      <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
+        <h1 style="color:#111; margin-bottom:12px;">${label} sent</h1>
+        <p style="margin-bottom:12px; color:#444;">${companyName} just sent you a ${lower} titled <strong>${proposal.title}</strong>.</p>
+        <a
+          href="${proposalUrl}"
+          style="display:inline-block; margin-bottom:16px; padding:12px 24px; background:${resolveEmailButtonColor(
+            user?.company?.primaryColor ?? null
+          )}; color:white; text-decoration:none; border-radius:8px; font-weight:600;"
+        >View ${lower}</a>
+        <p style="margin:0; color:#1f2937;">Total: <strong>${new Intl.NumberFormat('en-US', { style: 'currency', currency: proposal.currency || 'USD' }).format(Number(proposal.total) || 0)}</strong></p>
+      </div>
+    `,
+  });
+}
+
+export async function sendProposalViewedNotification(proposal: any, user: any) {
+  if (!user?.email) return;
+  const label = formatDocumentLabel(proposal.type);
+  const lower = formatDocumentLower(proposal.type);
+  await sendEmail({
+    from: defaultFrom,
+    to: [user.email],
+    subject: `${label} viewed: ${proposal.title}`,
+    html: `
+      <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
+        <h1 style="color:#111; margin-bottom:12px;">${label} viewed</h1>
+        <p style="margin-bottom:12px; color:#444;">Your ${lower} "${proposal.title}" was opened by ${proposal.client?.companyName || proposal.client?.contactName || 'a client'}.</p>
+        <p style="margin:0; color:#1f2937;">Status: ${proposal.status}</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendProposalSignedNotification(proposal: any, client: any, user: any) {
+  const recipients = Array.from(new Set([client?.email, user?.email].filter(Boolean) as string[]));
+  if (!recipients.length) return;
+  const label = formatDocumentLabel(proposal.type);
+  const lower = formatDocumentLower(proposal.type);
+  await sendEmail({
+    from: defaultFrom,
+    to: recipients,
+    subject: `${label} signed: ${proposal.title}`,
+    html: `
+      <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
+        <h1 style="color:#111; margin-bottom:12px;">${label} signed</h1>
+        <p style="margin-bottom:12px; color:#444;">${proposal.client?.companyName || proposal.client?.contactName || 'A client'} signed the ${lower}.</p>
+        <p style="margin:0; color:#1f2937;">Total: <strong>${new Intl.NumberFormat('en-US', { style: 'currency', currency: proposal.currency || 'USD' }).format(Number(proposal.total) || 0)}</strong></p>
+      </div>
+    `,
+  });
+}
+
+export async function sendProposalCompletedNotification(proposal: any, client: any, user: any) {
+  if (!client?.email) return;
+  const label = formatDocumentLabel(proposal.type);
+  const lower = formatDocumentLower(proposal.type);
+  await sendEmail({
+    from: defaultFrom,
+    to: [client.email],
+    subject: `${label} completed: ${proposal.title}`,
+    html: `
+      <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
+        <h1 style="color:#111; margin-bottom:12px;">${label} completed</h1>
+        <p style="margin-bottom:12px; color:#444;">Your ${lower} "${proposal.title}" has been marked complete.</p>
+        <p style="margin:0; color:#1f2937;">An invoice is on the way to finalize payment.</p>
+      </div>
+    `,
+  });
+}
+
 export async function sendContractSignedEmail(invoice: any, client: any, user: any) {
   if (!user?.email) return;
   const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
@@ -411,7 +711,10 @@ export async function sendPasswordResetEmail(email: string, token: string) {
         <h1 style="margin-bottom:16px;color:#1a1a1a;">Password reset requested</h1>
         <p style="margin-bottom:16px;color:#444;">Click the button below to set a new password for your ClientWave account. This link expires in one hour.</p>
         <p>
-          <a href="${resetUrl.toString()}" style="background:#6366f1;color:white;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;">Reset password</a>
+          <a
+            href="${resetUrl.toString()}"
+            style="background:${resolveEmailButtonColor()};color:white;padding:12px 20px;border-radius:8px;text-decoration:none;display:inline-block;"
+          >Reset password</a>
         </p>
         <p style="margin-top:20px;color:#777;">If you didn’t request this change, just ignore this email.</p>
       </div>

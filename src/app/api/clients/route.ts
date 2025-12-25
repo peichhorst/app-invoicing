@@ -7,7 +7,7 @@ import { describePlan } from '@/lib/plan';
 import { clientVisibilityWhere } from '@/lib/client-scope';
 
 type ClientPayload = {
-  companyName: string;
+  companyName?: string;
   contactName?: string;
   email?: string;
   phone?: string;
@@ -19,6 +19,7 @@ type ClientPayload = {
   country?: string;
   notes?: string;
   assignedToId?: string | null;
+  isLead?: boolean;
 };
 
 export async function POST(request: Request) {
@@ -45,13 +46,23 @@ export async function POST(request: Request) {
       );
     }
 
+    const contactName = body.contactName?.trim() ?? '';
+    const email = body.email?.trim() ?? '';
+    if (!contactName) {
+      return NextResponse.json({ error: 'Contact name is required.' }, { status: 400 });
+    }
+    if (!email) {
+      return NextResponse.json({ error: 'Email is required.' }, { status: 400 });
+    }
+
+    // Default assignment: whoever is creating the client.
+    // Owners/Admins can reassign to another team member; if no valid assignee is provided, keep it on the creator.
     let assignedToId: string | null = user.id;
+    const isLead = typeof body.isLead === 'boolean' ? body.isLead : true;
     if (user.role === 'OWNER' || user.role === 'ADMIN') {
       if (Object.prototype.hasOwnProperty.call(body, 'assignedToId')) {
         const requested = body.assignedToId as string | null | undefined;
-        if (!requested) {
-          assignedToId = null;
-        } else {
+        if (requested) {
           const target = await prisma.user.findFirst({
             where: { id: requested, companyId },
             select: { id: true },
@@ -67,9 +78,9 @@ export async function POST(request: Request) {
       data: {
         companyId,
         assignedToId,
-        companyName: body.companyName,
-        contactName: body.contactName ?? null,
-        email: body.email ?? null,
+        companyName: body.companyName?.trim() || null,
+        contactName,
+        email,
         phone: body.phone ?? null,
         addressLine1: body.addressLine1 ?? null,
         addressLine2: body.addressLine2 ?? null,
@@ -78,6 +89,7 @@ export async function POST(request: Request) {
         postalCode: body.postalCode ?? null,
         country: body.country ?? 'USA',
         notes: body.notes ?? null,
+        isLead,
       },
     });
 

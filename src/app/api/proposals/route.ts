@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { ProposalStatus } from '@prisma/client';
 import { clientVisibilityWhere } from '@/lib/client-scope';
+import { sendEmail } from '@/lib/email';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,6 +23,7 @@ export async function POST(request: NextRequest) {
       items,
       total,
       status = 'DRAFT',
+      type: rawType,
     } = body;
 
     if (!clientId || !title || !items || items.length === 0) {
@@ -41,6 +43,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Create proposal
+    const normalizedType =
+      rawType && typeof rawType === 'string' && rawType.toUpperCase() === 'CONTRACT'
+        ? 'CONTRACT'
+        : 'PROPOSAL';
+
     const proposal = await prisma.proposal.create({
       data: {
         userId: user.id,
@@ -51,18 +58,20 @@ export async function POST(request: NextRequest) {
         validUntil: validUntil ? new Date(validUntil) : null,
         notes: notes || null,
         total,
-        lineItems: JSON.stringify(items),
+      lineItems: JSON.stringify(items),
         status,
-      },
+        type: normalizedType,
+    },
       include: {
         client: true,
       },
     });
 
-    // If status is SENT, you might want to send an email here
-    // if (status === 'SENT') {
-    //   await sendProposalEmail(proposal, client);
-    // }
+    if (status === 'SENT') {
+      notifyClientAboutProposal(proposal, proposal.client, user).catch((err) => {
+        console.error('Failed to send proposal email', err);
+      });
+    }
 
     return NextResponse.json(proposal);
   } catch (error) {
@@ -73,6 +82,47 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+async function notifyClientAboutProposal(proposal: any, client: any, user: any) {
+  if (!client?.email) return;
+  const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
+  const proposalLink = `${appBase}/p/${proposal.id}/view`;
+  const rawItems = JSON.parse(proposal.lineItems || '[]');
+  const parsedItems = Array.isArray(rawItems) ? rawItems : [];
+  const subtotal = parsedItems.reduce((sum, item) => sum + (Number(item?.amount) || 0), 0);
+  const totals = {
+    subtotal,
+    total: Number(proposal.total) || subtotal,
+    currency: proposal.currency || 'USD',
+  };
+  const formattedTotal = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: totals.currency,
+  }).format(totals.total);
+  const companyName = user?.company?.name || user?.companyName || 'Your Company';
+  const docLabel = proposal.type === 'CONTRACT' ? 'contract' : 'proposal';
+  const docTitle = proposal.type === 'CONTRACT' ? 'Contract' : 'Proposal';
+
+  const html = `
+    <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:24px;">
+      <h1 style="color:#111; margin-bottom:12px;">New ${docLabel} from ${companyName}</h1>
+      <p style="margin-bottom:12px; color:#444;">Title: <strong>${proposal.title}</strong></p>
+      <p style="margin-bottom:12px; color:#111;">Total: <strong>${formattedTotal}</strong></p>
+      <a href="${proposalLink}" style="display:inline-block; margin-bottom:16px; padding:12px 24px; background:#4f46e5; color:white; text-decoration:none; border-radius:8px; font-weight:600;">
+        View & Sign ${docTitle}
+      </a>
+      <p style="margin:0; color:#1f2937;">${proposal.notes || 'Review and sign to lock in the details.'}</p>
+    </div>
+  `;
+
+  await sendEmail({
+    from: process.env.RESEND_FROM || 'invoices@858webdesign.com',
+    to: [client.email],
+    subject: `New ${docLabel} from ${companyName}`,
+    html,
+  });
+}
+
 
 export async function GET(request: NextRequest) {
   try {

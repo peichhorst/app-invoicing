@@ -1,36 +1,53 @@
 import React from 'react';
+import type { DocumentType } from './DocumentHeader';
 
 interface PaymentTermsFooterProps {
   paymentTerms?: string;
   notes?: string;
+  dueDate?: Date;
   bankDetails?: {
     accountName?: string;
     accountNumber?: string;
     routingNumber?: string;
     bankName?: string;
   };
-  documentType?: 'invoice' | 'proposal';
+  documentType?: DocumentType;
+  showThankYou?: boolean;
 }
 
 export default function PaymentTermsFooter({
   paymentTerms,
   notes,
+  dueDate,
   bankDetails,
   documentType = 'invoice',
+  showThankYou = true,
 }: PaymentTermsFooterProps) {
-  const defaultTerms = documentType === 'invoice' 
-    ? 'Payment due within 30 days' 
-    : 'This proposal is valid for 30 days from the date above';
+  const dueDateLabel = dueDate
+    ? new Date(dueDate).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      })
+    : null;
+  const defaultTerms =
+    documentType === 'invoice'
+      ? `Payment due${dueDateLabel ? ` ${dueDateLabel}` : ''}`
+      : documentType === 'proposal'
+        ? 'This proposal is valid for 30 days from the date above'
+        : '';
 
   return (
     <div className="space-y-6 border-t border-gray-200 pt-6">
       {/* Payment Terms */}
-      <div>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
-          {documentType === 'invoice' ? 'Payment Terms' : 'Terms'}
-        </h3>
-        <p className="text-sm text-gray-600">{paymentTerms || defaultTerms}</p>
-      </div>
+      {(paymentTerms || defaultTerms) && (
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+            {documentType === 'invoice' ? 'Payment Terms' : 'Terms'}
+          </h3>
+          <p className="text-sm text-gray-600">{paymentTerms || defaultTerms}</p>
+        </div>
+      )}
 
       {/* Bank Details */}
       {bankDetails && (
@@ -78,11 +95,13 @@ export default function PaymentTermsFooter({
       )}
 
       {/* Thank You */}
-      <div className="text-center pt-4">
-        <p className="text-sm font-medium text-gray-500">
-          Thank you for your business!
-        </p>
-      </div>
+      {showThankYou && (
+        <div className="text-center pt-4">
+          <p className="text-sm font-medium text-gray-500">
+            Thank you for your business!
+          </p>
+        </div>
+      )}
     </div>
   );
 }

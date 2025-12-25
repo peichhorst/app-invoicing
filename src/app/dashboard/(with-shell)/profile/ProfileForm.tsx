@@ -1,6 +1,6 @@
-﻿'use client';
+'use client';
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState, useTransition, type PointerEvent as ReactPointerEvent, type TouchEvent as ReactTouchEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { StripeConnectGuide } from '@/components/StripeConnectGuide';
@@ -31,6 +31,11 @@ type ProfileFormProps = {
   showPaymentAndLead?: boolean;
   showProfileDetails?: boolean;
   positions?: { id: string; name: string }[];
+  onSaveSuccess?: () => void;
+  skipRedirect?: boolean;
+  simplePositionInput?: boolean;
+  allowSetAsAdministrator?: boolean;
+  initialRole?: string | null;
 };
 
 export function ProfileForm({
@@ -41,6 +46,11 @@ export function ProfileForm({
   showPaymentAndLead = true,
   showProfileDetails = true,
   positions: initialPositions = [],
+  onSaveSuccess,
+  skipRedirect = false,
+  simplePositionInput = false,
+  allowSetAsAdministrator = false,
+  initialRole = null,
 }: ProfileFormProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
@@ -59,9 +69,8 @@ export function ProfileForm({
   const [zelleHandleValue, setZelleHandleValue] = useState(initial.zelleHandle ?? '');
   const defaultMailTo = initial.mailToAddressEnabled ?? !initial.mailToAddressTo;
   const [mailToAddressEnabled, setMailToAddressEnabled] = useState(defaultMailTo);
-  const looksLikeEmail = (value?: string | null) => Boolean(value && value.includes('@'));
-  const sanitizedName = looksLikeEmail(initial.name) ? '' : initial.name ?? '';
-  const [companyNameValue, setCompanyNameValue] = useState(initial.companyName ?? '');
+  const fallbackName = initial.name?.trim() ?? '';
+  const [companyNameValue, setCompanyNameValue] = useState(initial.companyName ?? fallbackName);
   const getInitialPayableOption = (): 'same' | 'custom' => {
     if (!initial.mailToAddressTo) return 'same';
     if (initial.companyName && initial.mailToAddressTo === initial.companyName) return 'same';
@@ -101,6 +110,7 @@ export function ProfileForm({
   const inputClass =
     'w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-500 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10';
   const disabledInputClass = `${inputClass} bg-zinc-100 text-zinc-500 placeholder:text-zinc-400 cursor-not-allowed`;
+  const showAdminToggle = allowSetAsAdministrator && initialRole !== 'OWNER';
   const leadSectionDisabled = !canAcceptPayments || !isOwner;
   const leadFieldsetClass = `space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-4${
     leadSectionDisabled ? ' opacity-80' : ''
@@ -144,6 +154,12 @@ export function ProfileForm({
     const encodedQrLink = encodeURIComponent(venmoLink);
     return `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodedQrLink}`;
   }, [venmoLink]);
+
+  const [setAsAdministrator, setSetAsAdministrator] = useState(initialRole === 'ADMIN');
+
+  useEffect(() => {
+    setSetAsAdministrator(initialRole === 'ADMIN');
+  }, [initialRole]);
 
   useEffect(() => {
     if (!paymentDisabled) return;
@@ -234,14 +250,21 @@ export function ProfileForm({
   const [positionsError, setPositionsError] = useState<string | null>(null);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [positionSelection, setPositionSelection] = useState<string>(initial.positionId ?? '');
-  const [customPositionName, setCustomPositionName] = useState('');
-  const isOtherSelected = positionSelection === '__other';
+  const [customPositionName, setCustomPositionName] = useState(
+    simplePositionInput
+      ? initialPositions.find((p) => p.id === initial.positionId)?.name ?? 'Owner'
+      : initial.positionId
+      ? ''
+      : initialPositions.find((p) => p.id === initial.positionId)?.name ?? ''
+  );
+  const isOtherSelected = !simplePositionInput && positionSelection === '__other';
 
   useEffect(() => {
     setPositions(initialPositions);
   }, [initialPositions]);
 
   useEffect(() => {
+    if (simplePositionInput) return;
     if (!isOwner) return;
     let active = true;
     const fetchPositions = async () => {
@@ -271,7 +294,7 @@ export function ProfileForm({
       active = false;
       window.removeEventListener('positions-updated', refreshHandler);
     };
-  }, [initialPositions, isOwner]);
+  }, [initialPositions, isOwner, simplePositionInput]);
 
   const handleRemoveProfileImage = () => {
     setLogoDataUrl('');
@@ -385,43 +408,70 @@ export function ProfileForm({
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const payload = Object.fromEntries(form.entries()) as Record<string, string>;
-    const canonicalName = companyNameValue.trim() || (looksLikeEmail(initial.name) ? '' : initial.name?.trim() || '');
+    const canonicalName = companyNameValue.trim() || fallbackName;
     payload.name = canonicalName;
     payload.companyName = canonicalName;
     payload.trackdriveLeadToken = leadTokenValue.trim();
     payload.trackdriveLeadEnabled = leadTokenEnabled ? 'true' : 'false';
     payload.signatureDataUrl = signatureDataUrl ?? '';
+    payload.setAsAdministrator = setAsAdministrator ? 'true' : 'false';
 
     startTransition(async () => {
       setMessage(null);
       let resolvedPositionId = positionSelection;
       if (isOwner) {
-        if (isOtherSelected) {
-          const trimmed = customPositionName.trim();
-          if (!trimmed) {
-            setMessage('Enter a position name.');
-            return;
-          }
-          try {
-            const res = await fetch('/api/positions', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ name: trimmed }),
-            });
-            if (!res.ok) {
-              const txt = await res.text();
-              setMessage(txt || 'Unable to create position.');
+        if (simplePositionInput) {
+          const trimmed = (customPositionName || 'Owner').trim();
+          if (!resolvedPositionId) {
+            try {
+              const res = await fetch('/api/positions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmed || 'Owner' }),
+              });
+              if (!res.ok) {
+                const txt = await res.text();
+                setMessage(txt || 'Unable to create position.');
+                return;
+              }
+              const created = (await res.json()) as { id: string; name: string };
+              resolvedPositionId = created.id;
+              setPositions((prev) => [...prev, created]);
+              setPositionSelection(created.id);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Unable to create position.';
+              setMessage(msg);
               return;
             }
-            const created = (await res.json()) as { id: string; name: string };
-            resolvedPositionId = created.id;
-            setPositions((prev) => [...prev, created]);
-            setPositionSelection(created.id);
-            setCustomPositionName('');
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Unable to create position.';
-            setMessage(msg);
-            return;
+          }
+        } else {
+          if (isOtherSelected) {
+            const trimmed = customPositionName.trim();
+            if (!trimmed) {
+              setMessage('Enter a position name.');
+              return;
+            }
+            try {
+              const res = await fetch('/api/positions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmed }),
+              });
+              if (!res.ok) {
+                const txt = await res.text();
+                setMessage(txt || 'Unable to create position.');
+                return;
+              }
+              const created = (await res.json()) as { id: string; name: string };
+              resolvedPositionId = created.id;
+              setPositions((prev) => [...prev, created]);
+              setPositionSelection(created.id);
+              setCustomPositionName('');
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Unable to create position.';
+              setMessage(msg);
+              return;
+            }
           }
         }
         payload.positionId = resolvedPositionId || '';
@@ -434,7 +484,14 @@ export function ProfileForm({
       });
       if (res.ok) {
         router.refresh();
-        window.location.assign('/dashboard');
+        if (onSaveSuccess) {
+          onSaveSuccess();
+        }
+        if (!skipRedirect) {
+          window.location.assign('/dashboard');
+        } else {
+          setMessage('Profile updated.');
+        }
       } else {
         const txt = await res.text();
         setMessage(txt || 'Update failed');
@@ -482,25 +539,56 @@ export function ProfileForm({
     void requestStripeLink(endpoint);
   };
 
+  const buildPointerEventFromTouch = (
+    touch: Touch,
+    currentTarget: HTMLCanvasElement
+  ): ReactPointerEvent<HTMLCanvasElement> =>
+    ({
+      pointerId: touch.identifier,
+      clientX: touch.clientX,
+      clientY: touch.clientY,
+      currentTarget,
+      preventDefault: () => {},
+    } as unknown as ReactPointerEvent<HTMLCanvasElement>);
+
+  const handleSignatureTouchStart = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    handleSignaturePointerDown(buildPointerEventFromTouch(touch as unknown as Touch, event.currentTarget));
+  };
+
+  const handleSignatureTouchMove = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    event.preventDefault();
+    handleSignaturePointerMove(buildPointerEventFromTouch(touch as unknown as Touch, event.currentTarget));
+  };
+
+  const handleSignatureTouchEnd = (event: ReactTouchEvent<HTMLCanvasElement>) => {
+    const touch = event.changedTouches[0];
+    if (!touch) return;
+    event.preventDefault();
+    handleSignaturePointerUp(buildPointerEventFromTouch(touch as unknown as Touch, event.currentTarget));
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+    <form onSubmit={handleSubmit} className=" p-0 ">
       {showProfileDetails && (
-      <section className="space-y-6 rounded-2xl border border-zinc-200 bg-white/70 p-6 shadow-sm">
+      <section className="space-y-6 rounded-2xl border border-zinc-200 bg-white/70 p-6 mb-2 shadow-sm">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Profile Details</p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-zinc-700">Name</label>
+            <label className="text-sm font-medium text-zinc-700">Your Name</label>
             <input
-              name="companyName"
+              name="name"
               value={companyNameValue}
               onChange={(event) => setCompanyNameValue(event.target.value)}
-              placeholder={'John Smith'}
               className={inputClass}
             />
-            <p className="text-xs text-zinc-500">Enter individual&rsquo;s full name</p>
           </div>
           <div className="space-y-1">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:gap-4">
@@ -519,7 +607,7 @@ export function ProfileForm({
                         className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-white text-xs font-bold text-zinc-600 shadow"
                         aria-label="Remove profile image"
                       >
-                        ×
+                        X
                       </button>
                     </>
                   ) : (
@@ -531,7 +619,7 @@ export function ProfileForm({
               </div>
               <div className="flex-1 space-y-2">
                 <label className="block text-sm font-medium text-zinc-700">Profile Picture</label>
-                <label className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700 cursor-pointer">
+                <label className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 cursor-pointer">
                   Upload
                   <input
                     type="file"
@@ -551,57 +639,77 @@ export function ProfileForm({
 
         {isOwner && (
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-1">
-              <label className="text-sm font-medium text-zinc-700">Position</label>
-              <select
-                name="positionId"
-                value={positionSelection}
-                onChange={(event) => setPositionSelection(event.target.value)}
-                className={inputClass}
-              >
-                <option value="">Select position</option>
-                {positions.map((pos) => (
-                  <option key={pos.id} value={pos.id}>
-                    {pos.name}
-                  </option>
-                ))}
-                <option value="__other">Other (add new)</option>
-              </select>
-              {positionsLoading && <p className="text-xs text-zinc-500">Loading positions...</p>}
-              {positionsError && <p className="text-xs text-rose-600">{positionsError}</p>}
-              <p className="text-xs text-zinc-500">Choose from your team positions or add a new one.</p>
-            </div>
-            {isOtherSelected && (
-              <div className="space-y-1">
-                <label className="text-sm font-medium text-zinc-700">New position name</label>
+            {simplePositionInput ? (
+              <div className="space-y-1 md:col-span-2">
+                <label className="text-sm font-medium text-zinc-700">Position</label>
                 <input
                   type="text"
                   value={customPositionName}
                   onChange={(event) => setCustomPositionName(event.target.value)}
-                  placeholder="e.g. Owner, CEO, Managing Director"
                   className={inputClass}
                 />
-                <p className="text-xs text-zinc-500">We will add this position and set it for you.</p>
+                <p className="text-xs text-zinc-500">Default is owner change as needed.</p>
               </div>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <label className="text-sm font-medium text-zinc-700">Position</label>
+                  <select
+                    name="positionId"
+                    value={positionSelection}
+                    onChange={(event) => setPositionSelection(event.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="">Select position</option>
+                    {positions.map((pos) => (
+                      <option key={pos.id} value={pos.id}>
+                        {pos.name}
+                      </option>
+                    ))}
+                    <option value="__other">Other (add new)</option>
+                  </select>
+                  {positionsLoading && <p className="text-xs text-zinc-500">Loading positions...</p>}
+                  {positionsError && <p className="text-xs text-rose-600">{positionsError}</p>}
+                  <p className="text-xs text-zinc-500">Choose from your team positions or add a new one.</p>
+                </div>
+                {isOtherSelected && (
+                  <div className="space-y-1">
+                    <label className="text-sm font-medium text-zinc-700">New position name</label>
+                    <input
+                      type="text"
+                      value={customPositionName}
+                      onChange={(event) => setCustomPositionName(event.target.value)}
+                      placeholder="e.g. Owner, CEO, Managing Director"
+                      className={inputClass}
+                    />
+                    <p className="text-xs text-zinc-500">We will add this position and set it for you.</p>
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
 
         <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4 shadow-sm">
+      <div className="space-y-3">
+        <p className="text-sm font-medium text-zinc-700">Signature (for documents)</p>
+        {showSignatureEditor ? (
           <div className="space-y-3">
-            <p className="text-sm font-medium text-zinc-700">Signature (for documents)</p>
-            {showSignatureEditor ? (
-              <div className="space-y-3">
-                <canvas
-                  ref={signatureCanvasRef}
-                  width={320}
-                  height={140}
-                  className="h-36 w-full rounded-xl border border-zinc-300 bg-white shadow-sm"
-                  onPointerDown={handleSignaturePointerDown}
-                  onPointerMove={handleSignaturePointerMove}
-                  onPointerUp={handleSignaturePointerUp}
-                  onPointerLeave={handleSignaturePointerUp}
-                />
+            <canvas
+              ref={signatureCanvasRef}
+              width={320}
+              height={140}
+              className="h-36 w-full rounded-xl border border-zinc-300 bg-white shadow-sm"
+              onPointerDown={handleSignaturePointerDown}
+              onPointerMove={handleSignaturePointerMove}
+              onPointerUp={handleSignaturePointerUp}
+              onPointerLeave={handleSignaturePointerUp}
+              onTouchStart={handleSignatureTouchStart}
+              onTouchMove={handleSignatureTouchMove}
+              onTouchEnd={handleSignatureTouchEnd}
+              onTouchCancel={handleSignatureTouchEnd}
+              style={{ touchAction: 'none' }}
+            />
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -614,7 +722,7 @@ export function ProfileForm({
                     type="button"
                     disabled={isSignatureSaving}
                     onClick={handleSaveSignature}
-                    className="rounded-lg bg-purple-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-purple-700 disabled:opacity-60"
+                    className="rounded-lg bg-brand-primary-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-brand-primary-700 disabled:opacity-60"
                   >
                     {isSignatureSaving ? 'Saving...' : 'Save signature'}
                   </button>
@@ -663,7 +771,7 @@ export function ProfileForm({
           <button
             type="button"
             onClick={() => setShowEmailUpdateSection((prev) => !prev)}
-            className="text-sm font-medium text-zinc-700  transition hover:text-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-600/30"
+            className="text-sm font-medium text-zinc-700  transition hover:text-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-600/30"
             aria-expanded={showEmailUpdateSection}
           >
             Email (Click here to change)
@@ -686,7 +794,7 @@ export function ProfileForm({
                 value={newEmailValue}
                 onChange={(event) => setNewEmailValue(event.target.value)}
                 placeholder="new@email.com"
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-100 sm:max-w-sm"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-100 sm:max-w-sm"
               />
               <button
                 type="button"
@@ -701,7 +809,7 @@ export function ProfileForm({
                     }
                   });
                 }}
-                className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:opacity-60"
+                className="rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:opacity-60"
               >
                 {isEmailPending ? 'Sending...' : 'Request verification'}
               </button>
@@ -720,7 +828,7 @@ export function ProfileForm({
         <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Payment Details </p>
       </div>
       {!isOwner && (
-        <div className="rounded-lg border border-purple-100 bg-purple-50/80 p-3 text-xs text-purple-700">
+        <div className="rounded-lg border border-brand-primary-100 bg-brand-primary-50/80 p-3 text-xs text-brand-primary-700">
           Only the workspace owner can manage payment details. Contact an owner to update these fields.
         </div>
       )}
@@ -738,12 +846,12 @@ export function ProfileForm({
                 value="true"
                 checked={mailToAddressEnabled}
                 onChange={(event) => setMailToAddressEnabled(event.target.checked)}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               Send Check to Address
             </label>
             {!canAcceptPayments && (
-              <p className="text-xs text-purple-700">
+              <p className="text-xs text-brand-primary-700">
                 <strong>PRO FEATURES</strong>
               </p>
             )}
@@ -764,7 +872,7 @@ export function ProfileForm({
                           setPayableOption('same');
                           setCustomPayableValue('');
                         }}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                        className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                       />
                     
                       Company / Personal Name 
@@ -778,7 +886,7 @@ export function ProfileForm({
                         value="custom"
                         checked={payableOption === 'custom'}
                         onChange={() => setPayableOption('custom')}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                        className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                       />
                       Custom name
                     </label>
@@ -793,9 +901,21 @@ export function ProfileForm({
                       />
                     )}
                   </div>
-                </div>
-              </div>
-            )}
+          </div>
+        </div>
+      )}
+
+        {showAdminToggle && (
+          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.3em] text-zinc-500">
+            <input
+              type="checkbox"
+              checked={setAsAdministrator}
+              onChange={(event) => setSetAsAdministrator(event.target.checked)}
+              className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+            />
+            <span>Set as Administrator</span>
+          </div>
+        )}
             <input type="hidden" name="mailToAddressTo" value={mailToAddressEnabled ? computedMailToValue : ''} />
           </div>
           <div
@@ -808,7 +928,7 @@ export function ProfileForm({
                 checked={useVenmo}
                 onChange={(e) => setUseVenmo(e.target.checked)}
                 disabled={paymentDisabled}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               Venmo
             </label>
@@ -835,7 +955,7 @@ export function ProfileForm({
                 checked={useZelle}
                 onChange={(e) => setUseZelle(e.target.checked)}
                 disabled={paymentDisabled}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               Zelle
             </label>
@@ -860,7 +980,7 @@ export function ProfileForm({
                 checked={useCustomStripe}
                 onChange={(e) => setUseCustomStripe(e.target.checked)}
                 disabled={paymentDisabled}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               Online Payment (Requires Stripe Account)
             </label>
@@ -872,7 +992,7 @@ export function ProfileForm({
               >
                 {!(stripeAccountIdValue && stripePublishableKeyValue) && <StripeConnectGuide />}
                 {stripeAccountIdValue && stripePublishableKeyValue && (
-                  <div className="rounded-xl border border-emerald-400 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+                  <div className="rounded-xl border border-emerald-300 bg-emerald-50/80 p-4 text-sm font-semibold text-emerald-900">
                     <p className="text-xs uppercase tracking-[0.3em] text-emerald-600 font-semibold">Stripe connected</p>
                   </div>
                 )}
@@ -909,7 +1029,7 @@ export function ProfileForm({
                         : handleStripeLink('/api/payments/account-link')
                     }
                     disabled={paymentDisabled}
-                    className="w-full rounded-full border border-purple-600 bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-purple-200 disabled:bg-purple-200"
+                    className="w-full rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-brand-primary-200 disabled:bg-brand-primary-200"
                   >
                     {stripeAccountIdValue && stripePublishableKeyValue ? 'Disconnect Stripe' : 'Connect Stripe Automatically'}
                   </button>
@@ -932,7 +1052,7 @@ export function ProfileForm({
           {paymentDisabled && (
             <Link
               href="/dashboard/settings?upgrade=1"
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-purple-600 bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 cursor-pointer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 cursor-pointer"
             >
               Upgrade to ClientWave Pro
             </Link>
@@ -947,11 +1067,11 @@ export function ProfileForm({
       <fieldset className={leadFieldsetClass} aria-disabled={leadSectionDisabled}>
         <legend className="text-sm font-semibold text-zinc-900">Options</legend>
           {leadSectionDisabled && (
-            <div className="rounded-lg border border-dashed border-purple-300 bg-purple-50/80 p-3 text-xs text-purple-700">
+            <div className="rounded-lg border border-dashed border-brand-primary-300 bg-brand-primary-50/80 p-3 text-xs text-brand-primary-700">
               Lead capture is a <strong>ClientWave Pro</strong> feature and only the workspace owner can enable it. Upgrade to unlock TrackDrive syncing and keep owner privileges active.
               <Link
                 href="/dashboard/settings?upgrade=1"
-                className="ml-2 inline-flex items-center text-purple-700 underline hover:text-purple-600"
+                className="ml-2 inline-flex items-center text-brand-primary-700 underline hover:text-brand-primary-600"
               >
                 Upgrade now
               </Link>
@@ -964,7 +1084,7 @@ export function ProfileForm({
                 checked={leadTokenEnabled}
                 onChange={(event) => setLeadTokenEnabled(event.target.checked)}
                 disabled={leadSectionDisabled}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               TrackDrive
             </label>

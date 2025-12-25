@@ -18,6 +18,7 @@ export function EnableNotificationsButton() {
   const [status, setStatus] = useState<'idle' | 'working' | 'enabled' | 'denied' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'enable' | 'disable' | null>(null);
 
   useEffect(() => {
     const detect = async () => {
@@ -77,6 +78,8 @@ export function EnableNotificationsButton() {
       const reason = err instanceof Error ? err.message : 'Failed to enable notifications';
       setStatus('error');
       setMessage(reason);
+    } finally {
+      setPendingAction(null);
     }
   };
 
@@ -87,6 +90,8 @@ export function EnableNotificationsButton() {
       setStatus('error');
       return;
     }
+    setPendingAction('disable');
+    setStatus('working');
     try {
       const reg = await navigator.serviceWorker.ready;
       const sub = await reg.pushManager.getSubscription();
@@ -108,25 +113,25 @@ export function EnableNotificationsButton() {
       const reason = err instanceof Error ? err.message : 'Failed to disable notifications';
       setStatus('error');
       setMessage(reason);
+    } finally {
+      setPendingAction(null);
     }
   };
 
-  const label =
-    status === 'working'
-      ? 'Enabling…'
-      : status === 'enabled'
-      ? 'Disable'
+  const showDisable = status === 'enabled' || pendingAction === 'disable';
+  const enableLabel =
+    status === 'working' && pendingAction === 'enable'
+      ? 'Enabling...'
       : status === 'denied'
       ? 'Request again'
       : 'Enable notifications';
-
-  const showDisable = status === 'enabled';
+  const disableLabel = status === 'working' && pendingAction === 'disable' ? 'Disabling...' : 'Disable';
 
   return (
     <div className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-600">Notifications</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Notifications</p>
           <p className="text-sm text-zinc-600">
             {status === 'enabled' ? 'Notifications on' : 'Get payment and invite alerts with sound.'}
           </p>
@@ -135,19 +140,19 @@ export function EnableNotificationsButton() {
           <button
             type="button"
             onClick={handleDisable}
-            disabled={false}
+            disabled={status === 'working'}
             className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-sm font-semibold text-rose-700 shadow-sm transition hover:bg-rose-50 disabled:opacity-60"
           >
-            Disable
+            {disableLabel}
           </button>
         ) : (
           <button
             type="button"
             onClick={handleEnable}
             disabled={status === 'working'}
-            className="rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 disabled:opacity-60"
+            className="rounded-full border border-brand-secondary-200 bg-white px-3 py-1.5 text-sm font-semibold text-brand-secondary-700 shadow-sm transition hover:bg-brand-secondary-50 disabled:opacity-60"
           >
-            {label}
+            {enableLabel}
           </button>
         )}
       </div>

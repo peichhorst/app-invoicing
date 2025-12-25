@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { ChevronUp, ChevronDown, Plus, Trash2 } from 'lucide-react';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 
 type Position = {
   id: string;
@@ -16,6 +17,7 @@ export function PositionManager() {
   const [newPositionName, setNewPositionName] = useState('');
   const [adding, setAdding] = useState(false);
   const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Position | null>(null);
 
   useEffect(() => {
     fetchPositions();
@@ -116,8 +118,6 @@ export function PositionManager() {
   };
 
   const deletePosition = async (positionId: string) => {
-    if (!confirm('Are you sure you want to delete this position?')) return;
-
     try {
       const response = await fetch(`/api/positions/${positionId}`, {
         method: 'DELETE',
@@ -172,13 +172,13 @@ export function PositionManager() {
           value={newPositionName}
           onChange={(e) => setNewPositionName(e.target.value)}
           placeholder="Enter position name"
-          className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+          className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-500/20"
           onKeyPress={(e) => e.key === 'Enter' && addPosition()}
         />
         <button
           onClick={addPosition}
           disabled={adding || !newPositionName.trim()}
-          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-100"
+          className="flex items-center gap-2 rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-primary-700 disabled:opacity-100"
         >
           <Plus size={16} />
           {adding ? 'Adding...' : 'Add'}
@@ -195,7 +195,7 @@ export function PositionManager() {
           <div
             key={position.id}
             className={`relative flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 p-3 cursor-grab active:cursor-grabbing transition-all duration-250 ${
-              draggingId === position.id ? 'border-purple-200 shadow-xl ring-2 ring-purple-200/60' : ''
+              draggingId === position.id ? 'border-brand-primary-200 shadow-xl ring-2 ring-brand-primary-200/60' : ''
             }`}
             draggable
             onDragStart={(e) => {
@@ -255,7 +255,7 @@ export function PositionManager() {
               </button>
               {position.isCustom && (
                 <button
-                  onClick={() => deletePosition(position.id)}
+                  onClick={() => setDeleteTarget(position)}
                   className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600"
                   title="Delete position"
                 >
@@ -272,6 +272,19 @@ export function PositionManager() {
           </div>
         )}
       </div>
+      <ConfirmationModal
+        isOpen={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (deleteTarget) {
+            deletePosition(deleteTarget.id);
+          }
+        }}
+        title="Delete position?"
+        message={`Delete ${deleteTarget?.name ?? 'this position'}? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </div>
   );
 }

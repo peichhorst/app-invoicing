@@ -8,8 +8,9 @@ datasource db {
 
 enum Role {
   USER
-  ADMIN
-  OWNER
+  ADMIN // new: company-level manager (no billing)
+  OWNER // paying customer, full company + billing
+  SUPERADMIN // platform-wide (you only)
 }
 
 enum ProposalStatus {
@@ -19,6 +20,11 @@ enum ProposalStatus {
   SIGNED
   COMPLETED
   DECLINED
+}
+
+enum ProposalType {
+  PROPOSAL
+  CONTRACT
 }
 
 enum CompanyPosition {
@@ -33,124 +39,126 @@ enum CompanyPosition {
 }
 
 model User {
-  id                   String    @id @default(cuid())
-  name                 String
-  email                String    @unique
-  password             String
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  companyName          String?
-  logoDataUrl          String?
-  signatureDataUrl     String?
-  phone                String?
-  website              String?
-  planTier             String    @default("FREE")
-  role                 Role      @default(USER)
-  position             CompanyPosition?
-  positionId           String?
-  positionCustom       Position? @relation("PositionCustom", fields: [positionId], references: [id])
-  reportsToId          String?
-  reportsTo            User?     @relation("ReportsTo", fields: [reportsToId], references: [id])
-  managedUsers         User[]    @relation("ReportsTo")
-  companyId            String?
-  company              Company?  @relation("CompanyMembers", fields: [companyId], references: [id], onDelete: Cascade)
-  ownedCompany         Company?  @relation("CompanyOwner")
-  mailToAddressEnabled Boolean   @default(false)
-  mailToAddressTo      String?
-  stripeAccountId      String?
-  stripePublishableKey String?
-  venmoHandle          String?
-  zelleHandle          String?
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?   @unique
-  trackdriveLeadToken  String?
-  trackdriveLeadEnabled Boolean  @default(false)
-  proTrialEndsAt       DateTime? @map("pro_trial_ends_at")
-  proTrialReminderSent Boolean   @default(false)
-  defaultPaymentMethodId String?
-  subscriptionCancelAt DateTime?
-  isConfirmed          Boolean   @default(false)
-  inviteToken          String?
-  inviteTokenExpires   DateTime?
-  emailChangeTokens    EmailChangeToken[]
-  assignedClients      Client[]  @relation("ClientAssignments")
-  invoices             Invoice[]
-  recurringInvoices    RecurringInvoice[]
-  Session              Session[]
-  passwordResetTokens  PasswordResetToken[]
-  proposals            Proposal[]
-  pushSubscriptions    PushSubscription[]
-  sentMessages         Message[] @relation("SentMessages")
-  readMessages         Message[] @relation("ReadMessages")
+  id                      String                   @id @default(cuid())
+  name                    String
+  email                   String                   @unique
+  password                String
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  companyName             String?
+  logoDataUrl             String?
+  signatureDataUrl        String?
+  phone                   String?
+  website                 String?
+  planTier                String                   @default("FREE")
+  role                    Role                     @default(USER)
+  position                CompanyPosition?
+  positionId              String?
+  positionCustom          Position?                @relation("PositionCustom", fields: [positionId], references: [id])
+  reportsToId             String?
+  reportsTo               User?                    @relation("ReportsTo", fields: [reportsToId], references: [id])
+  managedUsers            User[]                   @relation("ReportsTo")
+  companyId               String?
+  company                 Company?                 @relation("CompanyMembers", fields: [companyId], references: [id], onDelete: Cascade)
+  ownedCompany            Company?                 @relation("CompanyOwner")
+  mailToAddressEnabled    Boolean                  @default(false)
+  mailToAddressTo         String?
+  stripeAccountId         String?
+  stripePublishableKey    String?
+  venmoHandle             String?
+  zelleHandle             String?
+  stripeCustomerId        String?                  @unique
+  stripeSubscriptionId    String?                  @unique
+  trackdriveLeadToken     String?
+  trackdriveLeadEnabled   Boolean                  @default(false)
+  proTrialEndsAt          DateTime?                @map("pro_trial_ends_at")
+  proTrialReminderSent    Boolean                  @default(false)
+  defaultPaymentMethodId  String?
+  subscriptionCancelAt    DateTime?
+  isConfirmed             Boolean                  @default(false)
+  inviteToken             String?
+  inviteTokenExpires      DateTime?
+  emailChangeTokens       EmailChangeToken[]
+  assignedClients         Client[]                 @relation("ClientAssignments")
+  invoices                Invoice[]
+  recurringInvoices       RecurringInvoice[]
+  Session                 Session[]
+  passwordResetTokens     PasswordResetToken[]
+  proposals               Proposal[]
+  pushSubscriptions       PushSubscription[]
+  sentMessages            Message[]                @relation("SentMessages")
+  readMessages            Message[]                @relation("ReadMessages")
+  resourceAcknowledgments ResourceAcknowledgment[]
+  availabilities          Availability[]
+  bookings                Booking[]
 }
 
-
 model Client {
-  id           String            @id @default(cuid())
-  companyId    String
-  company      Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  assignedToId String?
-  assignedTo   User?             @relation("ClientAssignments", fields: [assignedToId], references: [id])
-  companyName  String
-  contactName  String?
-  email        String?
-  phone        String?
-  addressLine1 String?
-  addressLine2 String?
-  city         String?
-  state        String?
-  postalCode   String?
-  country      String?
-  notes        String?
-  isLead       Boolean           @default(true)
-  archived     Boolean           @default(false)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  portalUser   ClientPortalUser?
-  invoices     Invoice[]
+  id                String             @id @default(cuid())
+  companyId         String
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedToId      String?
+  assignedTo        User?              @relation("ClientAssignments", fields: [assignedToId], references: [id])
+  companyName       String?
+  contactName       String?
+  email             String?
+  phone             String?
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  postalCode        String?
+  country           String?
+  notes             String?
+  isLead            Boolean            @default(true)
+  archived          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  portalUser        ClientPortalUser?
+  invoices          Invoice[]
   recurringInvoices RecurringInvoice[]
-  proposals    Proposal[]
+  proposals         Proposal[]
 
   @@index([companyId])
   @@index([assignedToId])
 }
 
 model Invoice {
-  id                 String        @id @default(cuid())
-  userId             String
-  clientId           String
-  invoiceNumber      String
-  title              String?
-  status             InvoiceStatus @default(DRAFT)
-  issueDate          DateTime
-  dueDate            DateTime?
-  currency           String        @default("USD")
-  subTotal           Float         @default(0)
-  taxRate            Float         @default(0)
-  taxAmount          Float         @default(0)
-  total              Float         @default(0)
-  sentCount          Int           @default(0)
-  shortCode          String?       @unique
-  lastReminderSentAt DateTime?
-  notes              String?
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
-  client             Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items              InvoiceItem[]
-  recurring          Boolean       @default(false)
-  recurringInterval  String?
+  id                  String            @id @default(cuid())
+  userId              String
+  clientId            String
+  invoiceNumber       String
+  title               String?
+  status              InvoiceStatus     @default(DRAFT)
+  issueDate           DateTime
+  dueDate             DateTime?
+  currency            String            @default("USD")
+  subTotal            Float             @default(0)
+  taxRate             Float             @default(0)
+  taxAmount           Float             @default(0)
+  total               Float             @default(0)
+  sentCount           Int               @default(0)
+  shortCode           String?           @unique
+  lastReminderSentAt  DateTime?
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  client              Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items               InvoiceItem[]
+  recurring           Boolean           @default(false)
+  recurringInterval   String?
   recurringDayOfMonth Int?
   recurringDayOfWeek  Int?
-  nextOccurrence     DateTime?
-  parentInvoiceId    String?
-  parentInvoice      Invoice?      @relation("RecurringSeries", fields: [parentInvoiceId], references: [id])
-  childInvoices      Invoice[]     @relation("RecurringSeries")
-  recurringParentId  String?
-  recurringParent    RecurringInvoice? @relation("RecurringInvoiceGenerated", fields: [recurringParentId], references: [id])
-  proposalId         String?  @unique
-  proposal           Proposal? @relation("InvoiceProposalOrigin", fields: [proposalId], references: [id])
-  convertedProposal  Proposal? @relation("ProposalInvoiceConversion")
+  nextOccurrence      DateTime?
+  parentInvoiceId     String?
+  parentInvoice       Invoice?          @relation("RecurringSeries", fields: [parentInvoiceId], references: [id])
+  childInvoices       Invoice[]         @relation("RecurringSeries")
+  recurringParentId   String?
+  recurringParent     RecurringInvoice? @relation("RecurringInvoiceGenerated", fields: [recurringParentId], references: [id])
+  proposalId          String?           @unique
+  proposal            Proposal?         @relation("InvoiceProposalOrigin", fields: [proposalId], references: [id])
+  convertedProposal   Proposal?         @relation("ProposalInvoiceConversion")
 
   @@unique([userId, invoiceNumber])
   @@index([userId])
@@ -204,19 +212,22 @@ model Proposal {
   clientId      String
   title         String
   description   String?
-  scope         String?        // rich text or JSON for detailed scope
+  scope         String? // rich text or JSON for detailed scope
   status        ProposalStatus @default(DRAFT)
+  type          ProposalType   @default(PROPOSAL)
   total         Decimal
   currency      String         @default("USD")
-  lineItems     Json           // array of { description, quantity, rate, amount }
+  lineItems     Json // array of { description, quantity, rate, amount }
   notes         String?
   validUntil    DateTime?
-  signedAt      DateTime?      // when client signed
-  signedById    String?        // client user who signed
-  completedAt   DateTime?      // when work was marked complete
+  taxRate       Float? // optional tax rate (%)
+  signedAt      DateTime? // when client signed
+  signedById    String? // client user who signed
+  signatureUrl  String?
+  completedAt   DateTime? // when work was marked complete
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
-  invoiceId     String?        @unique  // link to generated invoice
+  invoiceId     String?        @unique // link to generated invoice
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   invoice       Invoice?       @relation("ProposalInvoiceConversion", fields: [invoiceId], references: [id])
@@ -251,13 +262,13 @@ model MagicLink {
 }
 
 model PushSubscription {
-  endpoint   String   @id
-  userId     String?
-  companyId  String?
-  p256dh     String?
-  auth       String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @default(now()) @updatedAt
+  endpoint  String   @id
+  userId    String?
+  companyId String?
+  p256dh    String?
+  auth      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 
   user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
@@ -290,38 +301,39 @@ model PasswordResetToken {
 }
 
 model Company {
-  id           String   @id @default(cuid())
-  name         String   @default("My Business")
-  logoUrl      String?
-  website      String?
-  email        String?
-  phone        String?
-  stripeAccountId      String?
-  stripePublishableKey String?
-  venmoHandle          String?
-  zelleHandle          String?
-  mailToAddressEnabled Boolean  @default(false)
-  mailToAddressTo      String?
-  trackdriveLeadToken  String?
-  trackdriveLeadEnabled Boolean @default(false)
-  addressLine1 String?
-  addressLine2 String?
-  city         String?
-  state        String?
-  postalCode   String?
-  country      String?  @default("USA")
-  primaryColor String   @default("#6D28D9")
-  isOnboarded  Boolean  @default(false)
-  ownerId      String?  @unique
-  owner        User?    @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  users        User[]   @relation("CompanyMembers")
-  clients      Client[]
-  positions    Position[]
-  resources    Resource[]
-  messages     Message[]
-  pushSubscriptions PushSubscription[]
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String             @id @default(cuid())
+  name                  String             @default("My Business")
+  logoUrl               String?
+  website               String?
+  email                 String?
+  phone                 String?
+  stripeAccountId       String?
+  stripePublishableKey  String?
+  venmoHandle           String?
+  zelleHandle           String?
+  mailToAddressEnabled  Boolean            @default(false)
+  mailToAddressTo       String?
+  trackdriveLeadToken   String?
+  trackdriveLeadEnabled Boolean            @default(false)
+  addressLine1          String?
+  addressLine2          String?
+  city                  String?
+  state                 String?
+  postalCode            String?
+  country               String?            @default("USA")
+  primaryColor          String             @default("#1d4ed8")
+  useHeaderLogo         Boolean            @default(false)
+  isOnboarded           Boolean            @default(false)
+  ownerId               String?            @unique
+  owner                 User?              @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  users                 User[]             @relation("CompanyMembers")
+  clients               Client[]
+  positions             Position[]
+  resources             Resource[]
+  messages              Message[]
+  pushSubscriptions     PushSubscription[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 }
 
 model Position {
@@ -340,18 +352,63 @@ model Position {
 }
 
 model Resource {
-  id                 String   @id @default(cuid())
-  companyId          String
-  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  title              String
-  url                String
-  description        String?
-  visibleToRoles     Role[]   @default([])
-  visibleToPositions String[] @default([])
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                     String                   @id @default(cuid())
+  companyId              String
+  company                Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title                  String
+  url                    String
+  description            String?
+  visibleToRoles         Role[]                   @default([])
+  visibleToPositions     String[]                 @default([])
+  requiresAcknowledgment Boolean                  @default(false)
+  acknowledgedBy         String[]                 @default([])
+  acknowledgments        ResourceAcknowledgment[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
   @@index([companyId])
+  @@index([requiresAcknowledgment])
+}
+
+model ResourceAcknowledgment {
+  id             String   @id @default(cuid())
+  resourceId     String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+  resource       Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@unique([resourceId, userId])
+}
+
+model Availability {
+  id        String   @id @default(cuid())
+  userId    String
+  dayOfWeek Int      // 0 = Sunday, 6 = Saturday
+  startTime String   // e.g., "09:00"
+  endTime   String   // e.g., "17:00"
+  duration  Int      @default(30) // minutes per slot
+  buffer    Int      @default(0)  // minutes between slots
+  isActive  Boolean  @default(true)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  userId      String
+  clientName  String
+  clientEmail String
+  startTime   DateTime
+  endTime     DateTime
+  notes       String?
+  status      String   @default("CONFIRMED")
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([startTime])
 }
 
 model Message {
@@ -366,9 +423,14 @@ model Message {
   toRoles      Role[]   @default([])
   toPositions  String[] @default([])
   toUserIds    String[] @default([])
+  contextType  String?
+  contextId    String?
+  participants String[] @default([])
+  parentId     String?
   sentAt       DateTime @default(now())
   readBy       User[]   @relation("ReadMessages")
 
+  @@index([contextType, contextId])
   @@index([companyId])
   @@index([fromId])
 }

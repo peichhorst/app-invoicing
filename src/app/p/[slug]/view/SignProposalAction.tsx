@@ -5,17 +5,22 @@ import { useEffect, useMemo, useState } from 'react';
 type SignProposalActionProps = {
   slug: string;
   initialStatus: string;
+  signableStatuses?: string[];
 };
 
-const SIGNABLE_STATUSES = ['VIEWED'];
+const DEFAULT_SIGNABLE_STATUSES = ['VIEWED'];
 
-export default function SignProposalAction({ slug, initialStatus }: SignProposalActionProps) {
+export default function SignProposalAction({
+  slug,
+  initialStatus,
+  signableStatuses = DEFAULT_SIGNABLE_STATUSES,
+}: SignProposalActionProps) {
   const [status, setStatus] = useState(initialStatus);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
 
-  const canSign = SIGNABLE_STATUSES.includes(status);
+  const canSign = signableStatuses.includes(status);
 
   const handleSign = async () => {
     if (!canSign) return;
@@ -63,7 +68,7 @@ export default function SignProposalAction({ slug, initialStatus }: SignProposal
   }
 
   return (
-    <div className="relative mt-6 space-y-3 rounded-2xl border border-white/10 bg-purple-950/20 p-5 text-center text-white/90 overflow-hidden">
+    <div className="relative mt-6 space-y-3 rounded-2xl border border-white/10 bg-brand-primary-950/20 p-5 text-center text-white/90 overflow-hidden">
       {showConfetti && (
         <div className="confetti-overlay" aria-hidden="true">
           {confettiPieces.map((piece) => (
@@ -119,7 +124,7 @@ export default function SignProposalAction({ slug, initialStatus }: SignProposal
             type="button"
             onClick={handleSign}
             disabled={loading}
-            className="mt-2 inline-flex items-center justify-center rounded-full border border-white/40 bg-white px-5 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-purple-900 shadow-sm transition hover:bg-purple-100 disabled:opacity-60"
+            className="mt-2 inline-flex items-center justify-center rounded-full border border-white/40 bg-white px-5 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-900 shadow-sm transition hover:bg-brand-primary-100 disabled:opacity-60"
           >
             {loading ? 'Signing…' : 'Sign proposal'}
           </button>

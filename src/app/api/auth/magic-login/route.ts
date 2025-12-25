@@ -24,11 +24,6 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/login?error=invalid_token', request.url));
     }
 
-    // Check if already used
-    if (magicLink.used) {
-      return NextResponse.redirect(new URL('/login?error=token_used', request.url));
-    }
-
     // Check if expired
     if (magicLink.expiresAt < new Date()) {
       await prisma.magicLink.delete({ where: { token } });
@@ -44,12 +39,6 @@ export async function GET(request: Request) {
       await prisma.magicLink.delete({ where: { token } });
       return NextResponse.redirect(new URL('/login?error=user_not_found', request.url));
     }
-
-    // Mark magic link as used
-    await prisma.magicLink.update({
-      where: { token },
-      data: { used: true },
-    });
 
     // Create session
     const { token: sessionToken, expiresAt } = await createSession(user.id);

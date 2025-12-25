@@ -53,6 +53,20 @@ export type ReportingScope = {
   includeCompany?: boolean;
 };
 
+export type UserTotal = {
+  userId: string;
+  name?: string | null;
+  email?: string | null;
+  total: number;
+};
+
+export type ClientTotal = {
+  clientId: string;
+  name?: string | null;
+  contactName?: string | null;
+  total: number;
+};
+
 const ensureMonth = (value?: number | null, fallback?: number) => {
   if (typeof value !== 'number' || Number.isNaN(value)) {
     return fallback ?? 1;
@@ -344,4 +358,107 @@ export async function getReportingSummary(scope: ReportingScope, filters: Report
       total: toArray(totalMap),
     },
   };
+}
+
+export async function getPerUserTotals(scope: ReportingScope, filters: ReportingFilters): Promise<UserTotal[]> {
+  if (!scope.includeCompany || !scope.companyId) return [];
+  const userIds = await resolveReportingUserIds(scope);
+  if (!userIds.length) return [];
+  const now = new Date();
+  const year = filters.year || now.getFullYear();
+  const month = ensureMonth(filters.month, now.getMonth() + 1);
+  const rawStatus = filters.status && filters.status !== 'ALL' ? filters.status : undefined;
+  const statusFilter: InvoiceStatus | undefined =
+    rawStatus && invoiceStatusSet.has(rawStatus as InvoiceStatus) ? (rawStatus as InvoiceStatus) : undefined;
+  const period = filters.period || 'monthly';
+
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 1);
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+  const periodStart = period === 'yearly' ? yearStart : monthStart;
+  const periodEnd = period === 'yearly' ? yearEnd : monthEnd;
+
+  const rows = await prisma.invoice.groupBy({
+    by: ['userId'],
+    where: {
+      userId: { in: userIds },
+      issueDate: {
+        gte: periodStart,
+        lt: periodEnd,
+      },
+      ...(statusFilter ? { status: statusFilter } : {}),
+    },
+    _sum: { total: true },
+  });
+
+  const users = await prisma.user.findMany({
+    where: { id: { in: userIds } },
+    select: { id: true, name: true, email: true },
+  });
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  return rows
+    .map((row) => {
+      const user = userMap.get(row.userId);
+      return {
+        userId: row.userId,
+        name: user?.name ?? null,
+        email: user?.email ?? null,
+        total: Number(row._sum.total ?? 0),
+      };
+    })
+    .sort((a, b) => b.total - a.total);
+}
+
+export async function getPerClientTotals(scope: ReportingScope, filters: ReportingFilters): Promise<ClientTotal[]> {
+  const userIds = await resolveReportingUserIds(scope);
+  if (!userIds.length) return [];
+  const now = new Date();
+  const year = filters.year || now.getFullYear();
+  const month = ensureMonth(filters.month, now.getMonth() + 1);
+  const rawStatus = filters.status && filters.status !== 'ALL' ? filters.status : undefined;
+  const statusFilter: InvoiceStatus | undefined =
+    rawStatus && invoiceStatusSet.has(rawStatus as InvoiceStatus) ? (rawStatus as InvoiceStatus) : undefined;
+  const period = filters.period || 'monthly';
+
+  const monthStart = new Date(year, month - 1, 1);
+  const monthEnd = new Date(year, month, 1);
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+  const periodStart = period === 'yearly' ? yearStart : monthStart;
+  const periodEnd = period === 'yearly' ? yearEnd : monthEnd;
+
+  const rows = await prisma.invoice.groupBy({
+    by: ['clientId'],
+    where: {
+      userId: userIds.length === 1 ? userIds[0] : { in: userIds },
+      issueDate: {
+        gte: periodStart,
+        lt: periodEnd,
+      },
+      status: statusFilter || 'PAID',
+    },
+    _sum: { total: true },
+  });
+
+  const clientIds = rows.map((r) => r.clientId).filter(Boolean) as string[];
+  const clients = await prisma.client.findMany({
+    where: { id: { in: clientIds } },
+    select: { id: true, companyName: true, contactName: true },
+  });
+  const clientMap = new Map(clients.map((c) => [c.id, c]));
+
+  return rows
+    .map((row, idx) => {
+      const id = row.clientId ?? `unassigned-${idx}`;
+      const client = row.clientId ? clientMap.get(row.clientId) : null;
+      return {
+        clientId: id,
+        name: client?.companyName ?? (row.clientId ? null : 'Unassigned'),
+        contactName: client?.contactName ?? null,
+        total: Number(row._sum.total ?? 0),
+      };
+    })
+    .sort((a, b) => b.total - a.total);
 }

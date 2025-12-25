@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { Role } from '@prisma/client';
 import { sendMessageEmail } from '@/lib/email';
 
 export async function POST(request: Request) {
@@ -15,9 +14,10 @@ export async function POST(request: Request) {
       text?: string;
       fileUrl?: string | null;
       toAll?: boolean;
-      toRoles?: Role[];
       toPositions?: string[];
       toUserIds?: string[];
+      contextType?: 'CLIENT' | 'INVOICE' | 'PROPOSAL' | 'GENERAL';
+      contextId?: string;
     };
 
     const text = body.text?.trim();
@@ -25,9 +25,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Message text is required' }, { status: 400 });
     }
 
-    const toRoles = Array.isArray(body.toRoles)
-      ? body.toRoles.filter((r): r is Role => Object.values(Role).includes(r))
-      : [];
     const toPositions = Array.isArray(body.toPositions)
       ? body.toPositions.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
       : [];
@@ -35,24 +32,8 @@ export async function POST(request: Request) {
       ? body.toUserIds.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
       : [];
 
-    const message = await prisma.message.create({
-      data: {
-        companyId: user.companyId,
-        fromId: user.id,
-        text,
-        fileUrl: body.fileUrl?.trim() || null,
-        toAll: Boolean(body.toAll),
-        toRoles,
-        toPositions,
-        toUserIds,
-      },
-      include: {
-        from: { select: { name: true, email: true } },
-      },
-    });
-
     // Resolve recipients
-    const targetIds = new Set<string>();
+    const targetIds = new Set<string>([user.id]);
     if (body.toAll) {
       const all = await prisma.user.findMany({
         where: { companyId: user.companyId },
@@ -60,13 +41,6 @@ export async function POST(request: Request) {
       });
       all.forEach((u) => targetIds.add(u.id));
     } else {
-      if (toRoles.length > 0) {
-        const byRoles = await prisma.user.findMany({
-          where: { companyId: user.companyId, role: { in: toRoles } },
-          select: { id: true },
-        });
-        byRoles.forEach((u) => targetIds.add(u.id));
-      }
       if (toPositions.length > 0) {
         const byPos = await prisma.user.findMany({
           where: { companyId: user.companyId, positionId: { in: toPositions } },
@@ -78,6 +52,27 @@ export async function POST(request: Request) {
         toUserIds.forEach((id) => targetIds.add(id));
       }
     }
+
+    const participants = Array.from(targetIds);
+
+    const message = await prisma.message.create({
+      data: {
+        companyId: user.companyId,
+        fromId: user.id,
+        text,
+        fileUrl: body.fileUrl?.trim() || null,
+        toAll: Boolean(body.toAll),
+        toRoles: [],
+        toPositions,
+        toUserIds,
+        participants,
+        contextType: body.contextType || null,
+        contextId: body.contextId?.trim() || null,
+      },
+      include: {
+        from: { select: { name: true, email: true } },
+      },
+    });
 
     // Fetch recipient details and send emails
     if (targetIds.size) {

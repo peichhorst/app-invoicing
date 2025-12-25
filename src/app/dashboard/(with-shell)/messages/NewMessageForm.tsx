@@ -1,20 +1,34 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Role } from '@prisma/client';
-
 type Position = { id: string; name: string };
-type Member = { id: string; name?: string | null; email: string; role: Role };
+type Member = { id: string; name?: string | null; email: string };
 
-const roleOptions: Role[] = ['OWNER', 'ADMIN', 'USER'];
+type NewMessageFormProps = {
+  currentUserId: string;
+  contextType?: 'CLIENT' | 'INVOICE' | 'PROPOSAL' | 'GENERAL';
+  contextId?: string;
+  placeholder?: string;
+  replyAuthorId?: string | null;
+  replyParticipantIds?: string[];
+  forceReplyButtons?: boolean;
+};
 
-export function NewMessageForm({ userRole }: { userRole: Role }) {
+export function NewMessageForm({
+  currentUserId,
+  contextType,
+  contextId,
+  placeholder = 'Write your update...',
+  replyAuthorId,
+  replyParticipantIds = [],
+  forceReplyButtons = false,
+}: NewMessageFormProps) {
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
-  const [toAll, setToAll] = useState(true);
-  const [roles, setRoles] = useState<Set<Role>>(new Set());
+  const [toAll, setToAll] = useState(false);
+  const [internalNote, setInternalNote] = useState(false);
   const [positions, setPositions] = useState<Set<string>>(new Set());
   const [users, setUsers] = useState<Set<string>>(new Set());
   const [positionsList, setPositionsList] = useState<Position[]>([]);
@@ -40,6 +54,42 @@ export function NewMessageForm({ userRole }: { userRole: Role }) {
     };
     void load();
   }, []);
+
+  const memberById = new Map(members.map((member) => [member.id, member]));
+  const mentionForId = (id: string) => {
+    const member = memberById.get(id);
+    const label = member?.name?.trim() || member?.email?.trim();
+    return label ? `@${label}` : null;
+  };
+
+  const replyIds = replyAuthorId ? [replyAuthorId] : [];
+  const replyAllIds = Array.from(
+    new Set(
+      [...replyParticipantIds, ...(replyAuthorId ? [replyAuthorId] : [])].filter(
+        (id) => id && id !== currentUserId,
+      ),
+    ),
+  );
+
+  const shouldShowReply = replyIds.length > 0;
+  const shouldShowReplyAll = replyAllIds.length > 1;
+  const showReplyButtons = forceReplyButtons || shouldShowReply || shouldShowReplyAll;
+
+  const buildMentions = (ids: string[]) =>
+    ids.map((id) => mentionForId(id) || `@user-${id.slice(0, 6)}`);
+
+  const applyMentions = (ids: string[]) => {
+    const mentions = buildMentions(ids);
+    if (!mentions.length) return;
+    setText((prev) => {
+      const current = prev.trim();
+      const existing = current.toLowerCase();
+      const filtered = mentions.filter((mention) => !existing.includes(mention.toLowerCase()));
+      if (!filtered.length) return prev;
+      const prefix = filtered.join(' ');
+      return current ? `${prefix} ${current}` : `${prefix} `;
+    });
+  };
 
   const handleFileUpload = async () => {
     if (!file) return null;
@@ -74,16 +124,20 @@ export function NewMessageForm({ userRole }: { userRole: Role }) {
       }
     }
     try {
+      const isInternalOnly = internalNote;
+      const recipientPositions = isInternalOnly ? [] : Array.from(positions);
+      const recipientUsers = isInternalOnly ? [currentUserId] : Array.from(users);
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           text,
           fileUrl: uploadedUrl,
-          toAll,
-          toRoles: Array.from(roles),
-          toPositions: Array.from(positions),
-          toUserIds: Array.from(users),
+          toAll: isInternalOnly ? false : toAll,
+          toPositions: recipientPositions,
+          toUserIds: recipientUsers,
+          contextType,
+          contextId,
         }),
       });
       if (!res.ok) {
@@ -115,8 +169,8 @@ export function NewMessageForm({ userRole }: { userRole: Role }) {
       setText('');
       setFile(null);
       setFileUrl(null);
-      setToAll(true);
-      setRoles(new Set());
+      setToAll(false);
+      setInternalNote(false);
       setPositions(new Set());
       setUsers(new Set());
       setShowToast(true);
@@ -137,30 +191,138 @@ export function NewMessageForm({ userRole }: { userRole: Role }) {
     });
   };
 
+  const selectableMembers = members.filter((member) => member.id !== currentUserId);
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-600">New message</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600">New message</p>
           <p className="text-sm text-zinc-600">Send to your team with optional targeting.</p>
         </div>
-        <button
-          type="submit"
-          disabled={loading || !text.trim()}
-          className="rounded-full bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:opacity-60"
-        >
-          {loading ? 'Sending...' : 'Send'}
-        </button>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-zinc-100 bg-zinc-50 pb-4 pl-4 pr-4">
+        <div className="space-y-2">
+          <span className="text-sm font-semibold text-zinc-800">Recipients</span>
+          <div className="flex flex-col items-start gap-2 text-sm font-semibold text-zinc-700">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={toAll}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setToAll(next);
+                  if (next) setInternalNote(false);
+                }}
+                disabled={internalNote}
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+              />
+              Announcement (All Team Members)
+            </label>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={internalNote}
+                onChange={(e) => {
+                  const next = e.target.checked;
+                  setInternalNote(next);
+                  if (next) {
+                    setToAll(false);
+                    setPositions(new Set());
+                    setUsers(new Set());
+                  }
+                }}
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+              />
+              Internal Note (Only you)
+            </label>
+          </div>
+        </div>
+        {!toAll && !internalNote && (
+          <div className="space-y-2">
+            {/* Positions - Available to all users */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500 pb-1">Positions</p>
+              {positionsList.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {positionsList.map((pos) => (
+                    <label key={pos.id} className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700">
+                      <input
+                        type="checkbox"
+                        checked={positions.has(pos.id)}
+                        onChange={() => toggleSet(pos.id, setPositions)}
+                        className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+                      />
+                      {pos.name}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-500 italic">No positions available</p>
+              )}
+            </div>
+            {/* Specific people - Available to all users */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500 pb-1">Specific people</p>
+              {selectableMembers.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectableMembers.map((m) => (
+                    <label key={m.id} className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700">
+                      <input
+                        type="checkbox"
+                        checked={users.has(m.id)}
+                        onChange={() => toggleSet(m.id, setUsers)}
+                        className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+                      />
+                      {m.name || m.email}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-500 italic">No team members available</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">
         <label className="text-sm font-semibold text-zinc-800">Message</label>
+        {showReplyButtons && (
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => applyMentions(replyIds)}
+              disabled={!replyIds.length}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${
+                replyIds.length
+                  ? 'border-zinc-200 bg-white text-zinc-600 hover:text-brand-primary-700'
+                  : 'cursor-not-allowed border-zinc-100 bg-zinc-50 text-zinc-400'
+              }`}
+            >
+              Reply
+            </button>
+            <button
+              type="button"
+              onClick={() => applyMentions(replyAllIds)}
+              disabled={!shouldShowReplyAll}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${
+                shouldShowReplyAll
+                  ? 'border-zinc-200 bg-white text-zinc-600 hover:text-brand-primary-700'
+                  : 'cursor-not-allowed border-zinc-100 bg-zinc-50 text-zinc-400'
+              }`}
+            >
+              Reply All
+            </button>
+          </div>
+        )}
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={4}
           className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-          placeholder="Write your update..."
+          placeholder={placeholder}
         />
       </div>
 
@@ -175,84 +337,14 @@ export function NewMessageForm({ userRole }: { userRole: Role }) {
         {fileUrl && <p className="text-xs text-emerald-700">Uploaded</p>}
       </div>
 
-      <div className="space-y-3 rounded-xl border border-zinc-100 bg-zinc-50 p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-zinc-800">Recipients</span>
-          <label className="flex items-center gap-2 text-sm font-semibold text-zinc-700">
-            <input
-              type="checkbox"
-              checked={toAll}
-              onChange={(e) => setToAll(e.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
-            />
-            All team members
-          </label>
-        </div>
-        {!toAll && (
-          <div className="space-y-3">
-            {/* Roles - Only for OWNER/ADMIN */}
-            {(userRole === 'OWNER' || userRole === 'ADMIN') && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Roles</p>
-                <div className="flex flex-wrap gap-2">
-                  {roleOptions.map((role) => (
-                    <label key={role} className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700">
-                      <input
-                        type="checkbox"
-                        checked={roles.has(role)}
-                        onChange={() => toggleSet(role, setRoles)}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      {role}
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Positions - Available to all users */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Positions</p>
-              {positionsList.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {positionsList.map((pos) => (
-                    <label key={pos.id} className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700">
-                      <input
-                        type="checkbox"
-                        checked={positions.has(pos.id)}
-                        onChange={() => toggleSet(pos.id, setPositions)}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      {pos.name}
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500 italic">No positions available</p>
-              )}
-            </div>
-            {/* Specific people - Available to all users */}
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500">Specific people</p>
-              {members.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {members.map((m) => (
-                    <label key={m.id} className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-700">
-                      <input
-                        type="checkbox"
-                        checked={users.has(m.id)}
-                        onChange={() => toggleSet(m.id, setUsers)}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
-                      />
-                      {m.name || m.email} <span className="text-xs text-zinc-500">({m.role})</span>
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-zinc-500 italic">No team members available</p>
-              )}
-            </div>
-          </div>
-        )}
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={loading || !text.trim()}
+          className="rounded-full bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:opacity-60"
+        >
+          {loading ? 'Sending...' : 'Send'}
+        </button>
       </div>
 
       {message && <p className="text-sm text-emerald-700">{message}</p>}

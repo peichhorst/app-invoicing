@@ -133,7 +133,7 @@ export default function ToolSnapshotPanel({
     <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
       <div className="flex flex-col gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500">Live Snapshot</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-500">Live Snapshot</p>
           <h2 className="text-lg font-semibold text-zinc-900">Look up area data</h2>
           <p className="text-sm text-zinc-500">
             Enter a city and state (ZIP optional) to read taxes, weather, air quality, and key population data in one go.
@@ -148,7 +148,7 @@ export default function ToolSnapshotPanel({
                 name="state"
                 value={form.state}
                 onChange={handleInputChange}
-                className="mt-1 max-w-[220px] rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm outline-none transition focus:border-purple-400"
+                className="mt-1 max-w-[220px] rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm outline-none transition focus:border-brand-primary-400"
                 required
               >
                 {STATE_OPTIONS.map((stateOption) => (
@@ -164,7 +164,7 @@ export default function ToolSnapshotPanel({
                 name="city"
                 value={form.city}
                 onChange={handleInputChange}
-                className="mt-1 max-w-[220px] rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm outline-none transition focus:border-purple-400"
+                className="mt-1 max-w-[220px] rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm outline-none transition focus:border-brand-primary-400"
                 placeholder=""
                 required
               />
@@ -176,13 +176,13 @@ export default function ToolSnapshotPanel({
                   name="zip"
                   value={form.zip}
                   onChange={handleInputChange}
-                  className="flex-1 min-w-[120px] max-w-[180px] rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm outline-none transition focus:border-purple-400"
+                  className="flex-1 min-w-[120px] max-w-[180px] rounded-xl border border-zinc-200 px-3 py-2 text-sm font-semibold text-zinc-900 shadow-sm outline-none transition focus:border-brand-primary-400"
                   placeholder=""
                 />
                 <button
                   type="submit"
                   disabled={!canSubmit || loading}
-                  className="flex-none inline-flex items-center justify-center rounded-2xl border border-purple-500 bg-purple-600 px-5 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex-none inline-flex items-center justify-center rounded-2xl border border-brand-primary-500 bg-brand-primary-600 px-5 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white transition hover:bg-brand-primary-700 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Loading...' : 'Explore'}
                 </button>
@@ -206,8 +206,8 @@ export default function ToolSnapshotPanel({
                 : 'Snapshot ready'}
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <article className="rounded-2xl border border-zinc-100 bg-purple-50/30 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500 mb-2">Summary</p>
+              <article className="rounded-2xl border border-zinc-100 bg-brand-primary-50/30 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-500 mb-2">Summary</p>
                 <h3 className="text-lg font-semibold text-zinc-900">
                   {snapshot.city?.name ?? snapshot.search?.city}, {snapshot.city?.state ?? snapshot.search?.state}
                 </h3>
@@ -230,7 +230,7 @@ export default function ToolSnapshotPanel({
               </article>
 
               <article className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500">Taxes</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-500">Taxes</p>
                 <div className="mt-3 space-y-3 text-sm text-zinc-700">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-400">State sales tax</p>
@@ -271,15 +271,15 @@ export default function ToolSnapshotPanel({
             <div className="grid gap-4 md:grid-cols-2">
               <article className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500">Weather</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-500">Weather</p>
                   <div className="inline-flex rounded-full border border-zinc-200 bg-white shadow-sm">
                     <button
                       type="button"
                       onClick={() => setUseFahrenheit(true)}
                       className={`px-3 py-1 text-xs font-semibold transition ${
                         useFahrenheit
-                          ? 'rounded-l-full bg-purple-600 text-white'
-                          : 'bg-transparent text-zinc-500 hover:text-purple-600'
+                          ? 'rounded-l-full bg-brand-primary-600 text-white'
+                          : 'bg-transparent text-zinc-500 hover:text-brand-primary-600'
                       }`}
                     >
                       °F
@@ -289,8 +289,8 @@ export default function ToolSnapshotPanel({
                       onClick={() => setUseFahrenheit(false)}
                       className={`px-3 py-1 text-xs font-semibold transition ${
                         !useFahrenheit
-                          ? 'rounded-r-full bg-purple-600 text-white'
-                          : 'bg-transparent text-zinc-500 hover:text-purple-600'
+                          ? 'rounded-r-full bg-brand-primary-600 text-white'
+                          : 'bg-transparent text-zinc-500 hover:text-brand-primary-600'
                       }`}
                     >
                       °C
@@ -313,7 +313,7 @@ export default function ToolSnapshotPanel({
               </article>
 
               <article className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500">Air quality</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-500">Air quality</p>
                 {snapshot.airQuality ? (
                   <div className="mt-3 text-sm text-zinc-700">
                     <div className="flex items-baseline gap-2 text-3xl font-semibold text-zinc-900">
@@ -347,7 +347,7 @@ export default function ToolSnapshotPanel({
 
             <div className="mt-4">
               <article className="rounded-2xl border border-zinc-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-500">Local news</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-500">Local news</p>
                 <div className="mt-3 space-y-3 text-sm text-zinc-600">
                   {snapshot.news && snapshot.news.length > 0 ? (
                     snapshot.news.map((article) => (
@@ -357,12 +357,12 @@ export default function ToolSnapshotPanel({
                             href={article.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-sm font-semibold text-purple-700 hover:underline"
+                            className="text-sm font-semibold text-brand-primary-700 hover:underline"
                           >
                             {article.title}
                           </a>
                         ) : (
-                          <p className="text-sm font-semibold text-purple-700">{article.title}</p>
+                          <p className="text-sm font-semibold text-brand-primary-700">{article.title}</p>
                         )}
                         {article.source && (
                           <p className="text-xs text-zinc-500">Source: {article.source}</p>

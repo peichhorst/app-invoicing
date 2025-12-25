@@ -1,6 +1,7 @@
+// src/app/dashboard/recurring/page.tsx
 import Link from 'next/link';
-import { Download } from 'lucide-react';
-import { prisma } from '@lib/prisma';
+import { Download, Plus } from 'lucide-react';
+import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { RecurringActions, type RecurringStatus } from '@/components/RecurringActions';
 
@@ -28,6 +29,7 @@ export default async function RecurringPage() {
   if (!user) {
     return <div className="p-6 text-sm text-red-600">Unauthorized</div>;
   }
+
   const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
   const companyId = user.companyId ?? user.company?.id ?? null;
 
@@ -48,7 +50,7 @@ export default async function RecurringPage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6 sm:px-8">
+    <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -58,140 +60,197 @@ export default async function RecurringPage() {
         </div>
 
         {recurringInvoices.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-purple-200 bg-white/60 p-8 text-center shadow-sm">
+          <div className="rounded-2xl border border-dashed border-brand-primary-200 bg-white/60 p-8 text-center shadow-sm">
             <p className="text-lg font-semibold text-gray-900">No recurring invoices yet</p>
             <p className="mt-2 text-sm text-gray-500">Create a recurring invoice to automatically bill your clients.</p>
             <div className="mt-6">
               <Link
                 href="/dashboard/invoices/new?recurring=true"
-                className="inline-flex items-center rounded-full border border-purple-500 bg-white px-4 py-2 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50"
+                className="inline-flex items-center gap-2 rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
               >
-                + New recurring invoice
+                <Plus className="h-4 w-4" />
+                New recurring invoice
               </Link>
             </div>
           </div>
         ) : (
           <>
-            <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-zinc-200 border border-zinc-200">
-                  <thead className="bg-zinc-50">
+            {/* Mobile Card View */}
+            <div className="space-y-4 md:hidden">
+              {recurringInvoices.map((invoice, index) => (
+                <div key={invoice.id} className="rounded-lg border bg-white p-4 shadow-sm">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <p className="font-medium text-gray-900">{invoice.title}</p>
+                      <p className="text-sm text-gray-600">{invoice.client?.companyName}</p>
+                    </div>
+                    <span className="text-lg font-bold">
+                      {formatCurrency(invoice.amount.toString(), invoice.currency ?? 'USD')}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm text-gray-600 mb-4">
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Frequency</p>
+                      <p>{frequencyLabels[invoice.interval] ?? invoice.interval}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Next send</p>
+                      <p>
+                        {invoice.nextSendDate.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Status</p>
+                      <span
+                        className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                          badgeStyles[invoice.status as keyof typeof badgeStyles] ?? badgeStyles.ACTIVE
+                        }`}
+                      >
+                        {invoice.status}
+                        {invoice.status === 'ACTIVE' && ` (${invoice._count.invoices})`}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase text-gray-500">Invoices sent</p>
+                      <p>{invoice._count.invoices}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <RecurringActions
+                      recurringId={invoice.id}
+                      status={invoice.status as RecurringStatus}
+                      invoiceCount={invoice._count.invoices}
+                      invoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                      latestInvoiceId={invoice.invoices[0]?.id ?? undefined}
+                      latestInvoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden md:block rounded-2xl border border-zinc-200 bg-white shadow-sm">
+              <div className="relative max-h-[70vh] overflow-x-auto overflow-y-auto">
+                <table className="w-full min-w-[800px] divide-y divide-zinc-200">
+                  <thead className="sticky top-0 z-10 bg-zinc-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Title / Client
-                      </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Title / Client
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
                       ID
                     </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Frequency
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Next send
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Subscription
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Latest Invoice
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
-                        Actions
-                      </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Amount
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Frequency
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Next send
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Subscription
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Latest Invoice
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+                      Actions
+                    </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
-                    {recurringInvoices.map((invoice, index) => (
-                      <tr key={invoice.id}>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <div className="text-sm font-semibold text-gray-900">{invoice.title}</div>
-                          <div className="text-xs text-zinc-500">{invoice.client?.companyName}</div>
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">#{index + 1}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {formatCurrency(invoice.amount.toString(), invoice.currency ?? 'USD')}
-                        </td>
-                        <td className="px-6 py-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                          {frequencyLabels[invoice.interval] ?? invoice.interval}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-700">
-                          {invoice.nextSendDate.toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </td>
-                        <td className="px-6 py-4">
-                          {(() => {
-                            const normalizedStatus =
-                              invoice.status === 'PAID' ? 'ACTIVE' : (invoice.status as keyof typeof badgeStyles);
-                            return (
-                              <span
-                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                                  badgeStyles[normalizedStatus] ?? badgeStyles.ACTIVE
-                                }`}
-                              >
-                                {normalizedStatus}
-                                {normalizedStatus === 'ACTIVE' && ` (${invoice._count.invoices})`}
-                              </span>
-                            );
-                          })()}
-                        </td>
-                        <td className="px-6 py-4">
-                          {invoice.invoices[0] ? (
-                            <div className="flex flex-col items-center gap-1">
-                              <span
-                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                                  invoice.invoices[0].status === 'PAID'
-                                    ? 'bg-emerald-50 text-emerald-700'
-                                    : invoice.invoices[0].status === 'SENT'
-                                    ? 'bg-blue-50 text-blue-700'
-                                    : invoice.invoices[0].status === 'OVERDUE'
-                                    ? 'bg-red-50 text-red-700'
-                                    : 'bg-zinc-50 text-zinc-600'
-                                }`}
-                              >
-                                {invoice.invoices[0].status}
-                              </span>
-                              <span className="text-xs text-zinc-500">
-                                {invoice.invoices[0].issueDate.toLocaleDateString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                })}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-zinc-400">None</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <RecurringActions
-                            recurringId={invoice.id}
-                            status={invoice.status as RecurringStatus}
-                            invoiceCount={invoice._count.invoices}
-                            invoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
-                            latestInvoiceId={invoice.invoices[0]?.id ?? undefined}
-                            latestInvoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                  {recurringInvoices.map((invoice, index) => (
+                    <tr key={invoice.id} className="hover:bg-zinc-50">
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="text-sm font-semibold text-gray-900">{invoice.title}</div>
+                        <div className="text-xs text-zinc-500">{invoice.client?.companyName}</div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">#{index + 1}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        {formatCurrency(invoice.amount.toString(), invoice.currency ?? 'USD')}
+                      </td>
+                      <td className="px-6 py-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
+                        {frequencyLabels[invoice.interval] ?? invoice.interval}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-zinc-700">
+                        {invoice.nextSendDate.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                            badgeStyles[invoice.status as keyof typeof badgeStyles] ?? badgeStyles.ACTIVE
+                          }`}
+                        >
+                          {invoice.status}
+                          {invoice.status === 'ACTIVE' && ` (${invoice._count.invoices})`}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {invoice.invoices[0] ? (
+                          <div className="flex flex-col items-center gap-1">
+                            <span
+                              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                                invoice.invoices[0].status === 'PAID'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : invoice.invoices[0].status === 'SENT'
+                                  ? 'bg-brand-accent-50 text-brand-accent-700'
+                                  : invoice.invoices[0].status === 'OVERDUE'
+                                  ? 'bg-red-50 text-red-700'
+                                  : 'bg-zinc-50 text-zinc-600'
+                              }`}
+                            >
+                              {invoice.invoices[0].status}
+                            </span>
+                            <span className="text-xs text-zinc-500">
+                              {invoice.invoices[0].issueDate.toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-zinc-400">None</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <RecurringActions
+                          recurringId={invoice.id}
+                          status={invoice.status as RecurringStatus}
+                          invoiceCount={invoice._count.invoices}
+                          invoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                          latestInvoiceId={invoice.invoices[0]?.id ?? undefined}
+                          latestInvoiceNumber={invoice.invoices[0]?.invoiceNumber ?? undefined}
+                        />
+                      </td>
+                    </tr>
+                  ))}
                   </tbody>
                 </table>
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3">
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-4">
               <a
                 href="/api/exports/recurring-invoices"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-800 shadow-sm transition hover:border-zinc-300 hover:bg-white"
               >
-                <Download className="h-4 w-4" aria-hidden="true" />
+                <Download className="h-4 w-4" />
                 Export recurring invoices
               </a>
               <Link

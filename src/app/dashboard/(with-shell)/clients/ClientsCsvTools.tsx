@@ -77,7 +77,7 @@ export default function ClientsCsvTools({ slotsRemaining, canImport }: ClientsCs
   const importDisabled = !canImport;
 
   return (
-    <div className="space-y-2 rounded-xl border border-dashed border-gray-200 bg-white p-4">
+    <div className="space-y-2 rounded-xl border border-dashed border-gray-200 bg-white p-4 mt-8">
       <p className="text-xs uppercase tracking-[0.3em] text-gray-500">CSV batch upload</p>
       <div className="flex flex-wrap gap-3">
          <p className="text-xs text-gray-500">
@@ -96,7 +96,7 @@ export default function ClientsCsvTools({ slotsRemaining, canImport }: ClientsCs
           type="button"
           onClick={handleImportClick}
           disabled={importDisabled || isImporting}
-          className="inline-flex items-center justify-center rounded-lg border border-purple-600 bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:border-purple-200 disabled:bg-purple-200 disabled:text-purple-400"
+          className="inline-flex items-center justify-center rounded-lg border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:border-brand-primary-200 disabled:bg-brand-primary-200 disabled:text-brand-primary-400"
         >
           {isImporting ? 'Importing…' : 'Import clients CSV'}
         </button>

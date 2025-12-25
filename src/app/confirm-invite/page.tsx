@@ -33,7 +33,7 @@ export default function ConfirmInvite() {
         }
         router.refresh();
         setTimeout(() => {
-          router.replace('/dashboard');
+          router.replace('/dashboard/onboarding?mode=invite');
         }, 150);
       } else {
         alert('Invalid or expired link');
@@ -44,8 +44,13 @@ export default function ConfirmInvite() {
   }, [token, router]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <p className="text-lg">Confirming your invite...</p>
+    <div className="flex min-h-screen items-center justify-center px-4">
+      <div className="flex flex-col items-center gap-4">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/20 border-t-white"></div>
+        <p className="text-sm font-semibold tracking-[0.3em] text-white/90 uppercase">
+          Confirming invite
+        </p>
+      </div>
     </div>
   );
 }

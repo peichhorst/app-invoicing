@@ -26,7 +26,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
   if (!user) {
     redirect('/');
   }
-  if (user.role !== 'OWNER') {
+  if (user.role !== 'OWNER' && user.role !== 'SUPERADMIN') {
     redirect('/dashboard');
   }
   const plan = describePlan(user);
@@ -50,7 +50,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           key={companySettingsKey}
           initialName={user.company?.name ?? user.companyName}
           initialWebsite={user.company?.website ?? null}
-          initialLogoUrl={user.company?.logoUrl ?? user.logoDataUrl ?? null}
+          initialLogoUrl={user.company?.logoUrl ?? null}
           initialPhone={user.company?.phone ?? null}
           initialEmail={user.company?.email ?? null}
           initialStripeAccountId={user.company?.stripeAccountId ?? null}
@@ -70,6 +70,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
             country: user.company?.country ?? null,
           }}
           role={user.role}
+          initialPrimaryColor={user.company?.primaryColor ?? undefined}
+          initialUseHeaderLogo={user.company?.useHeaderLogo ?? false}
         />
       </div>
     </div>

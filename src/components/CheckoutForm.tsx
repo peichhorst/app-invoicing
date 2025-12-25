@@ -241,7 +241,7 @@ export default function CheckoutForm({
   };
 
   const renderStateSelect = (value: string, onChange: (value: string) => void) => {
-    const selectClass = `${inputClass} bg-purple-700/40 text-white`;
+    const selectClass = `${inputClass} bg-brand-primary-700/40 text-white`;
     return (
       <select
         className={selectClass}
@@ -368,7 +368,7 @@ export default function CheckoutForm({
                     type="checkbox"
                     checked={saveCard}
                     onChange={(e) => setSaveCard(e.target.checked)}
-                    className="h-4 w-4 rounded border-white/60 text-purple-600 focus:ring-purple-500"
+                    className="h-4 w-4 rounded border-white/60 text-brand-primary-600 focus:ring-brand-primary-500"
                   />
                   <span>
                     Save card for automatic recurring payments{" "}
@@ -382,7 +382,7 @@ export default function CheckoutForm({
               <button
                 type="submit"
                 disabled={loading || calculating || !clientSecret || !cardComplete}
-                className="w-full rounded-lg bg-white px-4 py-3 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-white/90 cursor-pointer disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-purple-400"
+                className="w-full rounded-lg bg-white px-4 py-3 text-sm font-semibold text-brand-primary-700 shadow-sm transition hover:bg-white/90 cursor-pointer disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-brand-primary-400"
               >
                 {loading ? "Processing..." : "Pay Now"}
               </button>

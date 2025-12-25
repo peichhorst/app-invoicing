@@ -1,8 +1,8 @@
 export function StripeConnectGuide() {
   return (
-    <section className="w-full rounded-2xl border border-purple-200 bg-gradient-to-br from-purple-100/80 via-purple-50 to-purple-100 p-6 shadow-lg shadow-purple-100">
+    <section className="w-full rounded-2xl border border-brand-primary-200 bg-gradient-to-br from-brand-primary-100/80 via-brand-primary-50 to-brand-primary-100 p-6 shadow-lg shadow-brand-primary-100">
       <div className="space-y-3">
-         <p className="text-xs uppercase tracking-[0.4em] text-purple-600">
+         <p className="text-xs uppercase tracking-[0.4em] text-brand-primary-600">
           Keep your payments pro:
           <br />
           fast payouts, clean compliance, no extra fees
@@ -14,14 +14,14 @@ export function StripeConnectGuide() {
           <br />
        
         </p>
-        <div className="rounded-xl border border-purple-200 bg-white/80 p-3 text-[0.7rem] text-purple-700">
+        <div className="rounded-xl border border-brand-primary-200 bg-white/80 p-3 text-[0.7rem] text-brand-primary-700">
           <p className="font-semibold">Key Info:</p>
           <ul className="mt-1 space-y-1 list-disc pl-4">
             <li>Standard Stripe rate: 2.9% + 30¢ per transaction</li>
             <li>Payouts: 2 business days to your bank (instant +1% anytime)</li>
             <li>Stripe handles all tax forms &amp; compliance automatically</li>
             <li>No SSN or approval delay needed to start</li>
-            <li>Your $19/mo stays 100% yours — Stripe only takes the card fee</li>
+            <li>Your $9.99/mo stays 100% yours — Stripe only takes the card fee</li>
           </ul>
         </div>
         <p className="text-sm text-zinc-700 font-semibold">How to Connect Stripe (2 steps — 30 seconds)</p>

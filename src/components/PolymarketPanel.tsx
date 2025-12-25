@@ -55,14 +55,14 @@ export default async function PolymarketPanel() {
             >
               <div className="flex items-baseline justify-between gap-4">
                 <a
-                  className="text-sm font-semibold text-zinc-900 hover:text-purple-600 transition-colors"
+                  className="text-sm font-semibold text-zinc-900 hover:text-brand-primary-600 transition-colors"
                   href={`https://polymarket.com/event/${entry.slug ?? entry.id}`}
                   target="_blank"
                   rel="noreferrer"
                 >
                   {entry.question}
                 </a>
-                <span className="text-xs font-bold uppercase tracking-[0.4em] text-purple-600">
+                <span className="text-xs font-bold uppercase tracking-[0.4em] text-brand-primary-600">
                   {entry.tags?.join(', ') || 'economy'}
                 </span>
               </div>
@@ -130,7 +130,7 @@ export default async function PolymarketPanel() {
                 href="https://polymarket.com/economy"
                 target="_blank"
                 rel="noreferrer"
-                className="inline-block rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                className="inline-block rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-primary-700"
               >
                 View on Polymarket →
               </a>

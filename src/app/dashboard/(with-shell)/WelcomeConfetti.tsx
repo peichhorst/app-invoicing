@@ -15,7 +15,7 @@ type Piece = {
 };
 
 // Deterministic pattern so it looks consistent each visit (no random flicker/hydration risk)
-// Purple-700: 263° | Indigo-700: 243° | Blue-700: 213°
+// brand-primary-700: 263° | brand-secondary-700: 243° | brand-accent-700: 213°
 const gradientHues = [263, 243, 213];
 
 const buildPieces = () =>
@@ -70,7 +70,7 @@ export function WelcomeConfetti() {
               backgroundColor: `hsl(${piece.hue}deg 85% 60%)`,
               height: `${piece.size}px`,
               width: `${piece.size}px`,
-              animation: `confetti-fall ${piece.duration}ms linear ${piece.delay}ms infinite`,
+              animation: `confetti-fall ${piece.duration}ms linear ${piece.delay}ms forwards`,
               '--rotate': `${piece.rotation}deg`,
               '--drift': `${piece.drift}px`,
             } as CSSProperties

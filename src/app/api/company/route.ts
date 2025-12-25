@@ -27,6 +27,8 @@ type CompanyPayload = {
   trackdriveLeadToken?: string | null;
   trackdriveLeadEnabled?: boolean | null;
   completeOnboarding?: boolean;
+  primaryColor?: string | null;
+  useHeaderLogo?: boolean | null;
 };
 
 const sanitizeWebsite = (value?: string | null) => {
@@ -48,7 +50,7 @@ export async function GET() {
   }
   const companyId = user.companyId;
   if (!companyId) {
-    return NextResponse.json({ error: 'Company not found' }, { status: 404 });
+    return NextResponse.json({ company: null });
   }
   const company = await prisma.company.findUnique({
     where: { id: companyId },
@@ -64,12 +66,12 @@ export async function PUT(request: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Only owners or admins may update the company name' }, { status: 403 });
+  if (user.role !== 'OWNER' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+    return NextResponse.json({ error: 'Only owners, admins, or superadmins may update the company name' }, { status: 403 });
   }
-  const companyId = user.companyId;
+  let companyId = user.companyId;
   if (!companyId) {
-    return NextResponse.json({ error: 'Owner does not belong to a company' }, { status: 404 });
+    // leave until we know body
   }
 
   let body: CompanyPayload;
@@ -79,7 +81,27 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
   }
 
-  const name = body.name?.trim();
+  let name = body.name?.trim() || user.companyName?.trim();
+  if (!companyId) {
+    if (!name) {
+      return NextResponse.json({ error: 'Company name is required to create your workspace' }, { status: 400 });
+    }
+    const createdCompany = await prisma.company.create({
+      data: {
+        name,
+        ownerId: user.id,
+      },
+    });
+    companyId = createdCompany.id;
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { companyId: createdCompany.id },
+    });
+  }
+  if (!companyId) {
+    return NextResponse.json({ error: 'Owner does not belong to a company' }, { status: 404 });
+  }
+
 
   const existing = await prisma.company.findUnique({
     where: { id: companyId },
@@ -96,10 +118,23 @@ export async function PUT(request: Request) {
     name: normalizedName.trim(),
   };
 
-  const canUpdateWebsite = user.role === 'OWNER' || user.role === 'ADMIN';
+  // Now it's safe to access body
+  if (body.primaryColor !== undefined) {
+    // DB column is non-nullable, so use empty string to represent "cleared"
+    if (body.primaryColor === null) {
+      data.primaryColor = '';
+    } else {
+      const sanitized = sanitizeText(body.primaryColor);
+      if (sanitized !== null) {
+        data.primaryColor = sanitized;
+      }
+    }
+  }
+
+  const canUpdateWebsite = user.role === 'OWNER' || user.role === 'ADMIN' || user.role === 'SUPERADMIN';
   if (!canUpdateWebsite && body.websiteUrl !== undefined) {
     return NextResponse.json(
-      { error: 'Only owners or admins may update the website' },
+      { error: 'Only owners, admins, or superadmins may update the website' },
       { status: 403 },
     );
   }
@@ -159,52 +194,111 @@ export async function PUT(request: Request) {
   if (body.trackdriveLeadEnabled !== undefined) {
     data.trackdriveLeadEnabled = Boolean(body.trackdriveLeadEnabled);
   }
+  if (body.useHeaderLogo !== undefined) {
+    data.useHeaderLogo = Boolean(body.useHeaderLogo);
+  }
   if (body.completeOnboarding) {
     data.isOnboarded = true;
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
-    const company = await tx.company.update({
-      where: { id: companyId },
-      data,
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const company = await tx.company.update({
+        where: { id: companyId },
+        data,
+      });
+
+      const userName = body.userName === undefined ? undefined : sanitizeText(body.userName);
+      if (userName) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { name: userName },
+        });
+      }
+
+      const userPositionName = sanitizeText(body.userPositionName) ?? 'Owner';
+      if (userPositionName) {
+        const lastPosition = await tx.position.findFirst({
+          where: { companyId },
+          orderBy: { order: 'desc' },
+        });
+        const nextOrder = (lastPosition?.order ?? 0) + 1;
+        const position = await tx.position.upsert({
+          where: { companyId_name: { companyId, name: userPositionName } },
+          create: {
+            companyId,
+            name: userPositionName,
+            order: nextOrder,
+            isCustom: true,
+          },
+          update: {},
+        });
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            positionId: position.id,
+            position: null,
+          },
+        });
+      }
+
+      return company;
     });
-
-    const userName = body.userName === undefined ? undefined : sanitizeText(body.userName);
-    if (userName) {
-      await tx.user.update({
-        where: { id: user.id },
-        data: { name: userName },
-      });
+    return NextResponse.json({ company: updated });
+  } catch (error) {
+    // Print full error details for debugging
+    console.error('API /api/company error:', error);
+    let details = {};
+    if (error && typeof error === 'object') {
+      details = {
+        ...(error as any),
+        stack: (error as any).stack,
+        code: (error as any).code,
+      };
     }
+    return NextResponse.json({ error: error instanceof Error ? error.message : String(error), details }, { status: 500 });
+  }
+}
 
-    const userPositionName = sanitizeText(body.userPositionName) ?? 'Owner';
-    if (userPositionName) {
-      const lastPosition = await tx.position.findFirst({
-        where: { companyId },
-        orderBy: { order: 'desc' },
-      });
-      const nextOrder = (lastPosition?.order ?? 0) + 1;
-      const position = await tx.position.upsert({
-        where: { companyId_name: { companyId, name: userPositionName } },
-        create: {
-          companyId,
-          name: userPositionName,
-          order: nextOrder,
-          isCustom: true,
-        },
-        update: {},
-      });
-      await tx.user.update({
-        where: { id: user.id },
-        data: {
-          positionId: position.id,
-          position: null,
-        },
-      });
-    }
+export async function POST(request: Request) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== 'SUPERADMIN') {
+    return NextResponse.json({ error: 'Only superadmins may create companies' }, { status: 403 });
+  }
 
-    return company;
-  });
+  type CreatePayload = {
+    name?: string | null;
+    websiteUrl?: string | null;
+    phone?: string | null;
+    email?: string | null;
+  };
 
-  return NextResponse.json({ company: updated });
+  let body: CreatePayload;
+  try {
+    body = (await request.json()) as CreatePayload;
+  } catch {
+    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+  }
+
+  const name = body.name?.trim();
+  if (!name) {
+    return NextResponse.json({ error: 'Company name is required' }, { status: 400 });
+  }
+
+  try {
+    const created = await prisma.company.create({
+      data: {
+        name,
+        website: body.websiteUrl?.trim() || null,
+        phone: body.phone?.trim() || null,
+        email: body.email?.trim() || null,
+      },
+    });
+    return NextResponse.json({ company: created });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unable to create company' },
+      { status: 500 },
+    );
+  }
 }

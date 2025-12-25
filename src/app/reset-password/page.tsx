@@ -73,7 +73,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-start justify-center bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 py-12 pt-16">
+    <div className="flex min-h-screen items-start justify-center bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 py-12 pt-16">
       <div className="w-full max-w-md space-y-6 rounded-3xl bg-white/90 p-8 shadow-xl">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-600">ClientWave</p>
@@ -92,13 +92,13 @@ export default function ResetPasswordPage() {
                 type="password"
                 minLength={8}
                 required
-                className="w-full rounded-2xl border border-zinc-200 px-4 py-2 text-sm text-zinc-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                className="w-full rounded-2xl border border-zinc-200 px-4 py-2 text-sm text-zinc-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-200"
               />
             </div>
             <button
               type="submit"
               disabled={isPending}
-              className="w-full rounded-2xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-purple-500 disabled:opacity-60"
+              className="w-full rounded-2xl bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-brand-primary-500 disabled:opacity-60"
             >
               {isPending ? 'Resetting…' : 'Reset password'}
             </button>
@@ -111,13 +111,13 @@ export default function ResetPasswordPage() {
                 name="email"
                 type="email"
                 required
-                className="w-full rounded-2xl border border-zinc-200 px-4 py-2 text-sm text-zinc-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-200"
+                className="w-full rounded-2xl border border-zinc-200 px-4 py-2 text-sm text-zinc-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-200"
               />
             </div>
             <button
               type="submit"
               disabled={isPending}
-              className="w-full rounded-2xl bg-purple-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-purple-500 disabled:opacity-60"
+              className="w-full rounded-2xl bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-brand-primary-500 disabled:opacity-60"
             >
               {isPending ? 'Sending…' : 'Send reset link'}
             </button>
@@ -128,7 +128,7 @@ export default function ResetPasswordPage() {
         {error && <p className="text-sm text-rose-500">{error}</p>}
 
         <p className="text-center text-xs text-zinc-500">
-          <Link href="/" className="font-semibold text-purple-600 underline underline-offset-4">
+          <Link href="/" className="font-semibold text-brand-primary-600 underline underline-offset-4">
             Back to login
           </Link>
         </p>

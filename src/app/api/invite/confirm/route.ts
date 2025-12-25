@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     const { token: sessionToken } = await createSession(user.id);
 
-    revalidatePath('/owner/team');
+    revalidatePath('/dashboard/team');
     revalidatePath('/dashboard');
     revalidatePath('/dashboard/admin/users');
 

@@ -131,7 +131,7 @@ export default function RevenueByLocationPanel({ snapshot }: Props) {
   // If no city, show minimal state
   if (!highlight) {
     return (
-      <section className="rounded-3xl border border-zinc-100 bg-gradient-to-br from-purple-600/10 to-white p-6 shadow-lg">
+      <section className="rounded-3xl border border-zinc-100 bg-gradient-to-br from-brand-primary-600/10 to-white p-6 shadow-lg">
         <p className="text-sm text-zinc-500">Select a city to see revenue breakdown</p>
       </section>
     );
@@ -163,7 +163,7 @@ export default function RevenueByLocationPanel({ snapshot }: Props) {
   };
 
   return (
-    <section className="rounded-3xl border border-zinc-100 bg-gradient-to-br from-purple-600/10 to-white p-6 shadow-lg">
+    <section className="rounded-3xl border border-zinc-100 bg-gradient-to-br from-brand-primary-600/10 to-white p-6 shadow-lg">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-[0.4em] text-zinc-400">
@@ -185,7 +185,7 @@ export default function RevenueByLocationPanel({ snapshot }: Props) {
 
       <div className="mt-8 flex flex-col gap-8 lg:gap-12">
         {/* Full-width Map */}
-        <div className="relative w-full overflow-hidden rounded-2xl bg-gradient-to-b from-blue-50 to-purple-50 shadow-2xl">
+        <div className="relative w-full overflow-hidden rounded-2xl bg-gradient-to-b from-brand-accent-50 to-brand-primary-50 shadow-2xl">
           <svg
             viewBox={isSingleCity ? '0 0 550 350' : '0 0 550 300'}
             className="h-auto w-full"
@@ -279,7 +279,7 @@ export default function RevenueByLocationPanel({ snapshot }: Props) {
                   {currencyFormatter.format(loc.revenue)}
                 </p>
               </div>
-              <span className="text-lg font-bold text-purple-700">
+              <span className="text-lg font-bold text-brand-primary-700">
                 {Math.round((loc.revenue / totalRevenue) * 100)}%
               </span>
             </div>

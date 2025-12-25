@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState, useTransi
 import { normalizeStateValue } from '@/lib/states';
 import { useRouter } from 'next/navigation';
 import { Country, State, City } from 'country-state-city';
+import { HexColorPicker } from 'react-colorful';
 
 // Google Maps API types
 declare global {
@@ -50,6 +51,9 @@ type CompanySettingsProps = {
     country?: string | null;
   };
   role?: string | null;
+  initialPrimaryColor?: string | null;
+  initialUseHeaderLogo?: boolean | null;
+  hidePersonalFields?: boolean;
 };
 
 type Option = { label: string; value: string };
@@ -134,27 +138,149 @@ function SearchableSelect({
     </div>
   );
 }
+  // (removed incomplete destructuring block)
+export default function CompanySettings(props: CompanySettingsProps) {
+  const {
+    initialName,
+    initialWebsite,
+    initialLogoUrl,
+    initialPhone,
+    initialEmail,
+    initialUserName,
+    initialPositionName,
+    initialStripeAccountId,
+    initialStripePublishableKey,
+    initialVenmoHandle,
+    initialZelleHandle,
+    initialMailToAddressEnabled,
+    initialMailToAddressTo,
+    initialTrackdriveToken,
+    initialTrackdriveEnabled,
+    onboardingMode = false,
+    initialAddress,
+    role,
+    initialPrimaryColor,
+    initialUseHeaderLogo,
+    hidePersonalFields = false,
+  } = props;
 
-export default function CompanySettings({
-  initialName,
-  initialWebsite,
-  initialLogoUrl,
-  initialPhone,
-  initialEmail,
-  initialUserName,
-  initialPositionName,
-  initialStripeAccountId,
-  initialStripePublishableKey,
-  initialVenmoHandle,
-  initialZelleHandle,
-  initialMailToAddressEnabled,
-  initialMailToAddressTo,
-  initialTrackdriveToken,
-  initialTrackdriveEnabled,
-  onboardingMode = false,
-  initialAddress,
-  role,
-}: CompanySettingsProps) {
+      const sanitizeInitialPrimary = (value?: string | null) => {
+        const normalized = (value || '').toLowerCase();
+        return normalized === '#6d28d9' ? '' : value || '';
+      };
+      const sanitizedInitialPrimary = sanitizeInitialPrimary(initialPrimaryColor);
+      // Accent color state (DB/default only; no cross-user localStorage)
+      const [accentColor, setAccentColor] = useState<string>(sanitizedInitialPrimary);
+      const [useHeaderLogo, setUseHeaderLogo] = useState(Boolean(initialUseHeaderLogo));
+      const userEditedAccentRef = useRef(false);
+      const [showColorPicker, setShowColorPicker] = useState(false);
+      const colorPickerRef = useRef<HTMLDivElement | null>(null);
+
+      useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const initialPrimary = sanitizeInitialPrimary(props.initialPrimaryColor);
+        const colorVars = [50,100,200,300,400,500,600,700,800,900,950];
+        const overrideShades = [500, 600, 700];
+
+        // If user cleared the color, immediately apply default palette
+        if (accentColor === '') {
+          colorVars.forEach((shade) => {
+            document.documentElement.style.setProperty(`--color-brand-accent-${shade}`, defaultPalette[shade]);
+            document.documentElement.style.setProperty(`--color-brand-primary-${shade}`, defaultPalette[shade]);
+          });
+          const contrast = computeContrast(defaultPalette[500]);
+          document.documentElement.style.setProperty('--color-brand-contrast', contrast);
+          window.dispatchEvent(new CustomEvent('accent-color-updated', { detail: defaultPalette[500] }));
+          return;
+        }
+
+        const colorToApply = accentColor || initialPrimary;
+        if (!colorToApply) return;
+
+        colorVars.forEach((shade) => {
+          const base = defaultPalette[shade];
+          const value = overrideShades.includes(shade) ? colorToApply : base;
+          document.documentElement.style.setProperty(`--color-brand-accent-${shade}`, value);
+          document.documentElement.style.setProperty(`--color-brand-primary-${shade}`, value);
+        });
+
+        const contrast = computeContrast(colorToApply);
+        document.documentElement.style.setProperty('--color-brand-contrast', contrast);
+        window.dispatchEvent(new CustomEvent('accent-color-updated', { detail: colorToApply }));
+      }, [accentColor, props.initialPrimaryColor, props.role]);
+
+      useEffect(() => {
+        if (!showColorPicker) return;
+        const handleOutside = (event: MouseEvent) => {
+          if (!colorPickerRef.current) return;
+          if (!colorPickerRef.current.contains(event.target as Node)) {
+            setShowColorPicker(false);
+          }
+        };
+        document.addEventListener('mousedown', handleOutside);
+        return () => document.removeEventListener('mousedown', handleOutside);
+      }, [showColorPicker]);
+
+      const handleHeaderLogoToggle = (value: boolean) => {
+        setUseHeaderLogo(value);
+      };
+
+      const defaultPalette: Record<number, string> = {
+        50: '#eff6ff',
+        100: 'transparent',
+        200: '#bfdbfe',
+        300: '#93c5fd',
+        400: '#60a5fa',
+        500: '#1d4ed8',
+        600: '#2563eb',
+        700: '#1d4ed8',
+        800: '#1e40af',
+        900: '#1e3a8a',
+        950: '#172554',
+      };
+
+      const computeContrast = (hex?: string | null) => {
+        if (!hex) return '#0f172a';
+        const cleaned = hex.replace('#', '');
+        if (cleaned.length !== 6) return '#0f172a';
+        const r = parseInt(cleaned.slice(0, 2), 16) / 255;
+        const g = parseInt(cleaned.slice(2, 4), 16) / 255;
+        const b = parseInt(cleaned.slice(4, 6), 16) / 255;
+        const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+        const [R, G, B] = [r, g, b].map(toLinear);
+        const luminance = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+        return luminance > 0.5 ? '#0f172a' : '#ffffff';
+      };
+
+      // After save, update all accent and primary color variables for global design
+      const updateAllAccentColors = (color: string | Record<number, string>) => {
+        if (typeof window !== 'undefined') {
+          const colorVars = [50,100,200,300,400,500,600,700,800,900,950];
+          const overrideShades = [500, 600, 700];
+          const isEmptyString = typeof color === 'string' && !color.trim();
+          const palette = isEmptyString || !color ? defaultPalette : color;
+          const baseColor = typeof palette === 'string' ? palette : palette[500] ?? defaultPalette[500];
+          const contrast = computeContrast(baseColor);
+          const logoText = contrast === '#ffffff' ? baseColor : contrast;
+          colorVars.forEach(shade => {
+            const base = typeof palette === 'string' ? defaultPalette[shade] : palette[shade] ?? defaultPalette[shade];
+            const value = typeof palette === 'string' && overrideShades.includes(shade) ? palette : base;
+            document.documentElement.style.setProperty(`--color-brand-accent-${shade}`, value);
+            document.documentElement.style.setProperty(`--color-brand-primary-${shade}`, value);
+          });
+          document.documentElement.style.setProperty('--color-brand-contrast', contrast);
+          document.documentElement.style.setProperty('--color-brand-logo-text', logoText);
+        }
+      };
+
+      const resetPrimaryColor = () => {
+        userEditedAccentRef.current = false;
+        setAccentColor('');
+        setShowColorPicker(false);
+        updateAllAccentColors(defaultPalette);
+        window.dispatchEvent(new CustomEvent('accent-color-updated', { detail: defaultPalette[500] }));
+      };
   const router = useRouter();
   const effectiveInitialName = onboardingMode ? '' : initialName ?? '';
   const effectiveInitialEmail = initialEmail ?? '';
@@ -240,11 +366,24 @@ export default function CompanySettings({
   const [hydrated, setHydrated] = useState(false);
   const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
 
+  useEffect(() => {
+    setUseHeaderLogo(Boolean(initialUseHeaderLogo));
+  }, [initialUseHeaderLogo]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const enabled = Boolean(useHeaderLogo);
+    const currentLogo = enabled ? (companyLogoUrl?.trim() || normalizedInitialLogo) : '';
+    window.dispatchEvent(new CustomEvent('company-logo-toggle', { detail: enabled }));
+    window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: currentLogo || '' }));
+  }, [useHeaderLogo, companyLogoUrl, normalizedInitialLogo]);
+
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [personalName, setPersonalName] = useState(normalizedUserName);
   const [positionName, setPositionName] = useState(normalizedPositionName);
+  const showPersonalFields = onboardingMode && !hidePersonalFields;
 
   const roleLabel = (role ?? 'USER').toUpperCase();
   const isOwner = roleLabel === 'OWNER';
@@ -255,8 +394,8 @@ export default function CompanySettings({
   const normalizedWebsite = initialWebsite?.trim() ?? '';
   const nameDirty = companyInput.trim().length > 0 && companyInput.trim() !== normalizedInitialName;
   const websiteDirty = websiteInput.trim() !== normalizedWebsite;
-  const personalNameDirty = onboardingMode && personalName.trim() !== normalizedUserName;
-  const positionDirty = onboardingMode && positionName.trim() !== normalizedPositionName;
+  const personalNameDirty = showPersonalFields && personalName.trim() !== normalizedUserName;
+  const positionDirty = showPersonalFields && positionName.trim() !== normalizedPositionName;
   const phoneDirty = companyPhone.trim() !== normalizedInitialPhone;
   const emailDirty = companyEmail.trim() !== normalizedInitialEmail;
   const addressDirty =
@@ -267,6 +406,7 @@ export default function CompanySettings({
     postalCode.trim() !== normalizedInitialAddress.postalCode ||
     country.trim() !== normalizedInitialAddress.country;
   const logoDirty = companyLogoUrl.trim() !== normalizedInitialLogo;
+  const accentDirty = accentColor !== sanitizedInitialPrimary;
   const stripeDirty =
     stripeAccountIdValue.trim() !== normalizedStripeAccountId ||
     stripePublishableKeyValue.trim() !== normalizedStripePublishableKey ||
@@ -287,8 +427,9 @@ export default function CompanySettings({
       websiteDirty ||
       phoneDirty ||
       emailDirty ||
-      addressDirty ||
-      logoDirty ||
+    addressDirty ||
+    logoDirty ||
+    accentDirty ||
       stripeDirty ||
       venmoDirty ||
       zelleDirty ||
@@ -297,8 +438,8 @@ export default function CompanySettings({
       personalNameDirty ||
       positionDirty,
   );
-  // Always disabled until hydrated, then check canSubmit and isPending
-  const disabled = !hydrated || !canSubmit || isPending;
+  // Only disable button if not hydrated or pending
+  const disabled = !hydrated || isPending;
   const buttonLabel = isPending ? 'Saving...' : 'Save changes';
   const description = onboardingMode
     ? 'Fill in these details so your workspace can start sending invoices.'
@@ -336,6 +477,14 @@ export default function CompanySettings({
       }
       const data = await res.json();
       setCompanyLogoUrl(data.secureUrl);
+      // Notify AppHeader about the new logo URL
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: data.secureUrl }));
+        // If header logo is enabled, immediately update the header with the new logo
+        if (useHeaderLogo) {
+          window.dispatchEvent(new CustomEvent('company-logo-toggle', { detail: true }));
+        }
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Upload failed.';
       setLogoError(message);
@@ -358,13 +507,13 @@ export default function CompanySettings({
       setMessage(null);
 
       try {
-        const payload: Record<string, unknown> = {
-          name: trimmed,
-          websiteUrl: websiteInput.trim() || null,
-          phone: companyPhone.trim() || null,
-          email: companyEmail.trim() || null,
-          userName: onboardingMode ? personalName.trim() || null : undefined,
-          userPositionName: onboardingMode ? positionName.trim() || 'Owner' : undefined,
+          const payload: Record<string, unknown> = {
+            name: trimmed,
+            websiteUrl: websiteInput.trim() || null,
+            phone: companyPhone.trim() || null,
+            email: companyEmail.trim() || null,
+          userName: showPersonalFields ? personalName.trim() || null : undefined,
+          userPositionName: showPersonalFields ? positionName.trim() || 'Owner' : undefined,
           logoUrl: companyLogoUrl.trim() || null,
           addressLine1: addressLine1.trim() || null,
           addressLine2: addressLine2.trim() || null,
@@ -380,6 +529,8 @@ export default function CompanySettings({
           mailToAddressTo: mailToAddressEnabled ? computedMailToValue : null,
           trackdriveLeadToken: leadTokenEnabled ? leadTokenValue.trim() || null : null,
           trackdriveLeadEnabled: leadTokenEnabled,
+          primaryColor: accentColor || null,
+          useHeaderLogo,
         };
         if (onboardingMode) {
           payload.completeOnboarding = true;
@@ -392,7 +543,7 @@ export default function CompanySettings({
           body: JSON.stringify(payload),
         });
         const bodyText = await res.text();
-        let responsePayload: { error?: string } | null = null;
+        let responsePayload: { error?: string; details?: any } | null = null;
         if (bodyText) {
           try {
             responsePayload = JSON.parse(bodyText);
@@ -401,35 +552,30 @@ export default function CompanySettings({
           }
         }
         if (!res.ok) {
-          const reason =
-            typeof responsePayload?.error === 'string'
-              ? responsePayload.error
-              : 'Unable to update company information.';
-          setError(reason);
+          let errorMsg = typeof responsePayload?.error === 'string' ? responsePayload.error : 'Unable to update company information.';
+          if (responsePayload?.details) {
+            errorMsg += '\nDetails: ' + (typeof responsePayload.details === 'object' ? JSON.stringify(responsePayload.details, null, 2) : String(responsePayload.details));
+          }
+          setError(errorMsg);
+          setMessage(null);
           return;
         }
         setCompanyInput(trimmed);
-        setMessage(onboardingMode ? 'Business settings saved. Redirecting...' : 'Business settings saved.');
-        if (onboardingMode) {
-          window.location.href = '/dashboard';
-        } else {
-          router.refresh();
-        }
+        setMessage('Business settings saved.');
+        setError(null);
+        // After save, update all accent color variables for global design (fallback to defaults when cleared)
+        updateAllAccentColors(accentColor || defaultPalette);
+        // After save, redirect to dashboard (both onboarding and settings page)
+        window.location.href = '/dashboard';
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'Request failed.';
         setError(reason);
+        setMessage(null);
       }
     });
   };
 
-  if (!hasCompanyAccess) {
-    return (
-      <section className="space-y-2 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Business Details</p>
-        <p className="text-sm text-zinc-600">Only owners or admins can manage business settings.</p>
-      </section>
-    );
-  }
+ 
 
   const paymentDisabled = !isOwner;
   const paymentLabelClass = paymentDisabled
@@ -722,16 +868,19 @@ export default function CompanySettings({
     void requestStripeLink(endpoint);
   };
 
-  return (
-    <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Business Details</p>
-        <p className="text-sm text-zinc-500">{description}</p>
-      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <section className="space-y-4 rounded-2xl border border-zinc-200 bg-white/70 p-6 shadow-sm">
-          {onboardingMode ? (
+
+
+
+  return (
+ <section className="space-y-6 rounded-2xl border border-zinc-200 bg-white/70 p-6 mb-2 shadow-sm">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Business Details</p>
+        </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4 company-settings-form">
+        <section className="space-y-4 rounded-2xl  bg-white/70 p-0">
+          {showPersonalFields ? (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1">
                 <label className="text-sm font-semibold text-zinc-700">Your Name</label>
@@ -749,7 +898,10 @@ export default function CompanySettings({
                 <input
                   name="Company"
                   value={companyInput}
-                  onChange={(event) => setCompanyInput(event.target.value)}
+                  onChange={(event) => {
+                    setCompanyInput(event.target.value);
+                    if (error) setError(null);
+                  }}
                   className={inputClass}
                 />
                 <p className="text-xs text-zinc-500">This name will show up on invoices, documents, and your workspace.</p>
@@ -761,63 +913,15 @@ export default function CompanySettings({
               <input
                 name="Company"
                 value={companyInput}
-                onChange={(event) => setCompanyInput(event.target.value)}
+                onChange={(event) => {
+                  setCompanyInput(event.target.value);
+                  if (error) setError(null);
+                }}
                 className={inputClass}
               />
               <p className="text-xs text-zinc-500">This name will show up on invoices, documents, and your workspace.</p>
             </div>
           )}
-          
-          <div className="grid items-start gap-4 md:grid-cols-[1fr_auto]">
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-zinc-700">Website URL</label>
-              <input
-                name="website"
-                value={websiteInput}
-                onChange={(event) => setWebsiteInput(event.target.value)}
-                placeholder="https://example.com"
-                className={inputClass}
-              />
-              <p className="text-xs text-zinc-500">Add your website.</p>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-sm font-semibold text-zinc-700">Business Logo</label>
-              <div className="flex items-center gap-4 mt-1">
-                <div className="relative h-20 w-20 rounded-xl border border-zinc-300 bg-white shadow-sm">
-                  {companyLogoUrl ? (
-                    <>
-                      <img src={companyLogoUrl} alt="company logo" className="h-full w-full object-contain rounded-xl" />
-                      <button
-                        type="button"
-                        onClick={() => setCompanyLogoUrl('')}
-                        className="absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 text-white shadow-md hover:bg-purple-700 transition-colors"
-                        title="Remove logo"
-                      >
-                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                      </button>
-                    </>
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center text-zinc-400">No logo</div>
-                  )}
-                </div>
-                <label className="inline-flex items-center justify-center rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:border-zinc-400 cursor-pointer">
-                  Upload logo
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    disabled={uploadingLogo}
-                    onChange={handleLogoChange}
-                  />
-                </label>
-              </div>
-              {uploadingLogo && <p className="text-xs text-zinc-500">Uploading logo...</p>}
-              {logoError && <p className="text-xs text-rose-500">{logoError}</p>}
-            </div>
-          </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
@@ -842,7 +946,7 @@ export default function CompanySettings({
             </div>
           </div>
 
-          {onboardingMode && (
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1">
               <label className="text-sm font-semibold text-zinc-700">Your Position</label>
               <input
@@ -861,7 +965,147 @@ export default function CompanySettings({
               </datalist>
               <p className="text-xs text-zinc-500">Default is Owner. Change it if you prefer a different title.</p>
             </div>
-          )}
+            <div className="space-y-1">
+              <label className="text-sm font-semibold text-zinc-700">Website URL</label>
+              <input
+                name="website"
+                value={websiteInput}
+                onChange={(event) => setWebsiteInput(event.target.value)}
+                placeholder="https://example.com"
+                className={inputClass}
+              />
+              <p className="text-xs text-zinc-500">Add your website.</p>
+            </div>
+          </div>
+          
+          <div className="space-y-3">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-semibold text-zinc-700">Business Logo</label>
+                <div className="flex items-center gap-4 mt-1">
+                  <div className="relative h-20 w-20 rounded-xl border border-zinc-300 bg-white shadow-sm">
+                    {companyLogoUrl ? (
+                      <>
+                        <img src={companyLogoUrl} alt="company logo" className="h-full w-full object-contain rounded-xl" />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCompanyLogoUrl('');
+                            handleHeaderLogoToggle(false);
+                            // Clear the stored logo URL in AppHeader
+                            if (typeof window !== 'undefined') {
+                              window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: '' }));
+                            }
+                          }}
+                          className="absolute -top-1.5 -right-1.5 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary-600 text-white shadow-md hover:bg-brand-primary-700 transition-colors"
+                          title="Remove logo"
+                        >
+                          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-zinc-400">No logo</div>
+                    )}
+                  </div>
+                  <label className="inline-flex items-center justify-center rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold text-zinc-700 transition hover:border-zinc-400 cursor-pointer">
+                    Upload logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploadingLogo}
+                      onChange={handleLogoChange}
+                    />
+                  </label>
+                </div>
+                {uploadingLogo && <p className="text-xs text-zinc-500">Uploading logo...</p>}
+                {logoError && <p className="text-xs text-rose-500">{logoError}</p>}
+              </div>
+
+              <div>
+                {/* Primary Brand Color Picker */}
+                <label className="text-sm font-semibold text-zinc-700">Primary Brand / Theme Color</label>
+                <div className="flex items-center gap-3 mt-1">
+                  <div className="relative inline-flex">
+                    <button
+                      type="button"
+                      onClick={() => setShowColorPicker((prev) => !prev)}
+                      className="h-8 w-8 rounded-full border border-zinc-300 shadow-sm transition hover:border-zinc-400"
+                      style={{ backgroundColor: accentColor || 'transparent' }}
+                      aria-label="Pick primary brand color"
+                    />
+                    {(accentColor || '').length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          resetPrimaryColor();
+                        }}
+                        className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-[10px] font-bold text-zinc-600 shadow-md ring-1 ring-zinc-300 hover:bg-zinc-100"
+                        title="Reset color"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                  <span className="text-xs text-zinc-500">{accentColor || 'Not set'}</span>
+                </div>
+                {showColorPicker && (
+                  <div
+                    ref={colorPickerRef}
+                    className="absolute z-50 mt-3 rounded-2xl border border-zinc-200 bg-white p-3 shadow-2xl"
+                  >
+                    <HexColorPicker
+                      color={accentColor || '#1d4ed8'}
+                      onChange={(c) => {
+                        userEditedAccentRef.current = true;
+                        setAccentColor(c);
+                        updateAllAccentColors(c);
+                      }}
+                    />
+                    <div className="mt-3 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={accentColor}
+                        onChange={(e) => {
+                          userEditedAccentRef.current = true;
+                          const next = e.target.value;
+                          setAccentColor(next);
+                          updateAllAccentColors(next);
+                        }}
+                        className="w-28 rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-800 shadow-sm focus:border-brand-primary-400 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+                        aria-label="Hex color"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowColorPicker(false)}
+                        className="ml-auto rounded-full border border-zinc-300 px-3 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-zinc-500 mt-1">This color is used for highlights and accent UI elements.</p>
+              </div>
+            </div>
+
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                id="use-header-logo"
+                type="checkbox"
+                checked={useHeaderLogo}
+                onChange={(e) => handleHeaderLogoToggle(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+              />
+              <label htmlFor="use-header-logo" className="text-sm font-semibold text-zinc-700">
+                Use company logo in header
+              </label>
+            </div>
+          </div>
 
           <div className="space-y-1">
             <label className="text-sm font-semibold text-zinc-700">Business Address</label>
@@ -870,6 +1114,7 @@ export default function CompanySettings({
                 {/* Google Places Autocomplete Input */}
                 <div className="space-y-2">
                   <input
+                    name="address1"
                     ref={autocompleteInputRef}
                     value={autocompleteInput}
                     onChange={(e) => setAutocompleteInput(e.target.value)}
@@ -880,7 +1125,7 @@ export default function CompanySettings({
                     type="button"
                     onClick={handleUseMyLocation}
                     disabled={loadingLocation}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-primary-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {loadingLocation ? (
                       <>
@@ -908,6 +1153,7 @@ export default function CompanySettings({
 
                 {/* Street Address - Shows first */}
                 <input
+                  name="address1"
                   value={addressLine1}
                   onChange={(event) => setAddressLine1(event.target.value)}
                   placeholder="Street address"
@@ -918,6 +1164,7 @@ export default function CompanySettings({
                 {addressLine1 && (
                   <>
                     <input
+                      name="address2"
                       value={addressLine2}
                       onChange={(event) => setAddressLine2(event.target.value)}
                       placeholder="Apt, suite, etc. (optional)"
@@ -927,12 +1174,14 @@ export default function CompanySettings({
                     {/* City, State, Postal Code */}
                     <div className="grid grid-cols-2 gap-2">
                       <input
+                        name="city"
                         value={city}
                         onChange={(event) => setCity(event.target.value)}
                         placeholder="City"
                         className={inputClass}
                       />
                       <input
+                        name="zip"
                         value={postalCode}
                         onChange={(event) => setPostalCode(event.target.value)}
                         placeholder="ZIP / Postal code"
@@ -978,14 +1227,14 @@ export default function CompanySettings({
                   <button
                     type="button"
                     onClick={() => setMapMode('roadmap')}
-                    className={`rounded-full px-2 py-1 ${mapMode === 'roadmap' ? 'bg-purple-100 text-purple-700' : ''}`}
+                    className={`rounded-full px-2 py-1 ${mapMode === 'roadmap' ? 'bg-brand-primary-700 text-white' : ''}`}
                   >
                     Map
                   </button>
                   <button
                     type="button"
                     onClick={() => setMapMode('satellite')}
-                    className={`rounded-full px-2 py-1 ${mapMode === 'satellite' ? 'bg-purple-100 text-purple-700' : ''}`}
+                    className={`rounded-full px-2 py-1 ${mapMode === 'satellite' ? 'bg-brand-primary-700 text-white' : ''}`}
                   >
                     Satellite
                   </button>
@@ -994,12 +1243,12 @@ export default function CompanySettings({
                   <iframe
                     title="Address map preview"
                     src={`https://www.google.com/maps?q=${encodeURIComponent(addressQuery)}&t=${mapMode === 'satellite' ? 'k' : 'm'}&output=embed`}
-                    className="h-56 w-full rounded-lg border-0"
+                    className="h-72 w-full rounded-lg border-0"
                     loading="lazy"
                     referrerPolicy="no-referrer-when-downgrade"
                   />
                 ) : (
-                  <div className="flex h-64 items-center justify-center text-xs text-zinc-500">
+                  <div className="flex h-72 items-center justify-center text-xs text-zinc-500">
                     Enter an address to preview the map.
                   </div>
                 )}
@@ -1014,7 +1263,7 @@ export default function CompanySettings({
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Payment Details</p>
           </div>
           {!isOwner && (
-            <div className="rounded-lg border border-purple-100 bg-purple-50/80 p-3 text-xs text-purple-700">
+            <div className="rounded-lg border border-brand-primary-100 bg-brand-primary-50/80 p-3 text-xs text-brand-primary-700">
               Only the workspace owner can manage payment details. Contact an owner to update these fields.
             </div>
           )}
@@ -1028,7 +1277,7 @@ export default function CompanySettings({
                     type="checkbox"
                     checked={mailToAddressEnabled}
                     onChange={(event) => setMailToAddressEnabled(event.target.checked)}
-                    className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                    className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                     disabled={paymentDisabled}
                   />
                   Send Check to Address
@@ -1048,7 +1297,7 @@ export default function CompanySettings({
                           setCustomPayableValue('');
                         }}
                         disabled={paymentDisabled}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                        className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                       />
                       Business Name
                     </label>
@@ -1060,7 +1309,7 @@ export default function CompanySettings({
                         checked={payableOption === 'custom'}
                         onChange={() => setPayableOption('custom')}
                         disabled={paymentDisabled}
-                        className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                        className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                       />
                       Custom Name
                     </label>
@@ -1080,7 +1329,7 @@ export default function CompanySettings({
               {mailToAddressEnabled && (
                 <div className="md:w-1/2 space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase text-purple-700">
+                    <span className="rounded-full border border-[var(--color-brand-logo-text)] bg-zinc-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase text-[var(--color-brand-logo-text)]">
                       Preview
                     </span>
                   </div>
@@ -1113,7 +1362,7 @@ export default function CompanySettings({
             className={`space-y-3 ${paymentDisabled ? 'pointer-events-none opacity-60' : ''}`}
             aria-disabled={paymentDisabled}
           >
-                 <p className="py-0  text-[0.65rem] font-semibold uppercase text-purple-700">
+                 <p className="py-0  text-[0.65rem] font-semibold uppercase text-brand-primary-700">
                       Alternate Payment Methods (PRO)
                     </p>
             
@@ -1123,7 +1372,7 @@ export default function CompanySettings({
                 checked={useVenmo}
                 onChange={(e) => setUseVenmo(e.target.checked)}
                 disabled={paymentDisabled}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               Venmo
             </label>
@@ -1156,7 +1405,7 @@ export default function CompanySettings({
                 checked={useZelle}
                 onChange={(e) => setUseZelle(e.target.checked)}
                 disabled={paymentDisabled}
-                className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               />
               Zelle
             </label>
@@ -1179,7 +1428,7 @@ export default function CompanySettings({
                   checked={useCustomStripe}
                   onChange={(e) => setUseCustomStripe(e.target.checked)}
                   disabled={paymentDisabled}
-                  className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                  className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                 />
                 Online Payment (Requires Stripe Account)
               </label>
@@ -1223,7 +1472,7 @@ export default function CompanySettings({
                           : handleStripeLink('/api/payments/account-link')
                       }
                       disabled={paymentDisabled}
-                      className="inline-flex w-full items-center justify-center rounded-full border border-purple-600 bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-purple-200 disabled:bg-purple-200"
+                      className="inline-flex w-full items-center justify-center rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-brand-primary-200 disabled:bg-brand-primary-200 disabled:text-zinc-500"
                     >
                       {stripeAccountIdValue && stripePublishableKeyValue ? 'Disconnect Stripe' : 'Connect with Stripe'}
                     </button>
@@ -1279,10 +1528,10 @@ export default function CompanySettings({
               type="checkbox"
               checked={leadTokenEnabled}
               onChange={(event) => setLeadTokenEnabled(event.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+              className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
               disabled={paymentDisabled}
             />
-            Enable TrackDrive Lead Token
+            Enable TrackDrive
           </label>
           {leadTokenEnabled && (
             <div className="space-y-1">
@@ -1298,16 +1547,40 @@ export default function CompanySettings({
         </section>
 
         {hydrated && (
-          <div className={`flex items-center gap-3 ${onboardingMode ? 'justify-end' : ''}`}>
-            <button
-              type="submit"
-              disabled={disabled}
-              className="inline-flex items-center justify-center rounded-full border border-purple-600 bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:border-zinc-200 disabled:bg-zinc-200 disabled:text-zinc-500"
-            >
-              {buttonLabel}
-            </button>
-            {message && <p className="text-sm text-emerald-600">{message}</p>}
-            {error && <p className="text-sm text-rose-600">{error}</p>}
+          <div className="flex flex-col gap-2">
+            <div className={`flex items-center gap-3 ${onboardingMode ? 'justify-end' : 'justify-between'}`}>
+              {!onboardingMode && (
+                <div className="text-sm text-zinc-500">
+                  {message ? <span className="font-semibold text-emerald-700">{message}</span> : null}
+                </div>
+              )}
+              <div className="flex items-center gap-3 sm:ml-auto">
+                <button
+                  type="submit"
+                  disabled={disabled}
+                  className="inline-flex items-center justify-center rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:border-zinc-200 disabled:bg-zinc-200 disabled:text-zinc-500"
+                >
+                  {isPending && (
+                    <svg className="mr-2 h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      />
+                    </svg>
+                  )}
+                  {buttonLabel}
+                </button>
+                {onboardingMode && message && <p className="text-sm text-emerald-600">{message}</p>}
+              </div>
+            </div>
+            {onboardingMode && error && <p className="text-sm text-rose-600">{error}</p>}
+            {!onboardingMode && error && (
+              <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700">
+                <strong>Error:</strong> {error}
+              </div>
+            )}
           </div>
         )}
       </form>

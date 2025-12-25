@@ -18,7 +18,7 @@ type SubscriptionConfig = {
   subscriptionPriceCurrency?: string | null;
 };
 
-const SUBSCRIPTION_PRICE_CENTS = Number(process.env.NEXT_PUBLIC_PRO_PRICE_CENTS ?? 1900);
+const SUBSCRIPTION_PRICE_CENTS = Number(process.env.NEXT_PUBLIC_PRO_PRICE_CENTS ?? 999);
 
 export default function SubscriptionPaymentFlow() {
   const [config, setConfig] = useState<SubscriptionConfig | null>(null);
@@ -120,10 +120,10 @@ export default function SubscriptionPaymentFlow() {
 
   return (
     <div className="space-y-8">
-      <div className="rounded-2xl bg-purple-50 p-8 shadow-sm">
-        <h1 className="text-3xl font-bold text-purple-900">Upgrade to ClientWave Pro</h1>
-        <p className="text-sm text-purple-700">$19 / month · Cancel anytime</p>
-        <ul className="mt-6 space-y-3 text-purple-800">
+      <div className="rounded-2xl bg-brand-primary-50 p-8 shadow-sm">
+        <h1 className="text-3xl font-bold text-brand-primary-900">Upgrade to ClientWave Pro</h1>
+        <p className="text-sm text-brand-primary-700">$9.99 / month · Cancel anytime</p>
+        <ul className="mt-6 space-y-3 text-brand-primary-800">
           <li>
             <span className="text-green-600">✓</span> Unlimited clients & invoices
           </li>

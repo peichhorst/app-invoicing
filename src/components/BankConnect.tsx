@@ -53,7 +53,7 @@ export function BankConnect({ userId, email, country }: BankConnectProps) {
         type="button"
         onClick={handleConnect}
         disabled={isLoading}
-        className="inline-flex items-center justify-center rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700 transition hover:bg-purple-100 disabled:opacity-50"
+        className="inline-flex items-center justify-center rounded-lg border border-brand-primary-200 bg-brand-primary-50 px-4 py-2 text-sm font-semibold text-brand-primary-700 transition hover:bg-brand-primary-100 disabled:opacity-50"
       >
         {isLoading ? "Connecting..." : "Connect Bank to Get Paid (15s Plaid flow)"}
       </button>

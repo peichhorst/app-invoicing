@@ -3,9 +3,20 @@ import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { MarkInvoicePaidButton } from '../MarkInvoicePaidButton';
+import { NewMessageForm } from '../../messages/NewMessageForm';
 
 type PageProps = {
   params: Promise<{ id: string }>;
+};
+
+type ThreadMessage = {
+  id: string;
+  text: string;
+  sentAt: Date;
+  fromId: string;
+  from: { name?: string | null; email?: string | null } | null;
+  readBy: { id: string }[];
+  participants?: string[];
 };
 
 const currencyFormatter = new Intl.NumberFormat('en-US', {
@@ -14,6 +25,21 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
 });
 
 const formatCurrency = (value: number) => currencyFormatter.format(Number.isFinite(value) ? value : 0);
+const formatThreadDate = (date: Date) =>
+  date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+const getMessagePreview = (text: string) => {
+  const firstLine = text.split('\n').find((line) => line.trim()) || '';
+  return firstLine.length > 100 ? `${firstLine.slice(0, 100)}...` : firstLine;
+};
+
+const getInitials = (value: string) =>
+  value
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
 
 export default async function InvoiceDetailPage({ params }: PageProps) {
   const user = await getCurrentUser();
@@ -36,13 +62,62 @@ export default async function InvoiceDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  const invoiceMessages = (await prisma.message.findMany({
+    where: {
+      companyId: companyId ?? undefined,
+      contextType: 'INVOICE',
+      contextId: invoice.id,
+    },
+    orderBy: { sentAt: 'desc' },
+    select: {
+      id: true,
+      text: true,
+      sentAt: true,
+      fromId: true,
+      from: { select: { name: true, email: true } },
+      readBy: { select: { id: true } },
+      participants: true,
+    },
+  })) as ThreadMessage[];
+
+  const fallbackMessages = invoiceMessages.length
+    ? []
+    : ((await prisma.message.findMany({
+        where: {
+          companyId: companyId ?? undefined,
+          OR: [{ contextType: null }, { contextType: 'GENERAL' }],
+        },
+        orderBy: { sentAt: 'desc' },
+        take: 12,
+        select: {
+          id: true,
+          text: true,
+          sentAt: true,
+          fromId: true,
+          from: { select: { name: true, email: true } },
+          readBy: { select: { id: true } },
+          participants: true,
+        },
+      })) as ThreadMessage[]);
+
+  const threadMessages = invoiceMessages.length ? invoiceMessages : fallbackMessages;
+  const showingFallbackMessages = !invoiceMessages.length && fallbackMessages.length > 0;
+  const replyAuthorId = threadMessages[0]?.fromId ?? null;
+  const replyParticipantIds = Array.from(
+    new Set(
+      threadMessages.flatMap((msg) =>
+        msg.participants && msg.participants.length ? msg.participants : [msg.fromId],
+      ),
+    ),
+  );
+
   const isPaid = invoice.status === 'PAID';
   const statusLabel =
     invoice.status === 'PAID' ? 'Paid' : invoice.status === 'SENT' ? 'Sent' : 'Not Sent';
 const statusBadgeClass = isPaid
   ? 'bg-green-100 text-green-800'
   : invoice.status === 'SENT'
-  ? 'bg-purple-100 text-purple-800'
+  ? 'bg-brand-primary-100 text-brand-primary-800'
   : 'bg-gray-100 text-gray-800';
 
   const paidOnLabel = isPaid
@@ -209,6 +284,69 @@ const statusBadgeClass = isPaid
             <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{invoice.notes}</p>
           </div>
         )}
+
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-400">Messages</h2>
+          <div className="mt-4 space-y-4">
+            {showingFallbackMessages && (
+              <p className="text-xs text-amber-600">
+                No invoice-specific messages yet. Showing general team messages.
+              </p>
+            )}
+            {!threadMessages.length ? (
+              <p className="text-sm text-gray-500">No messages yet — start the thread below.</p>
+            ) : (
+              <div className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200">
+                {threadMessages.map((msg) => {
+                  const fromLabel = msg.from?.name || msg.from?.email || 'Someone';
+                  const initials = getInitials(fromLabel || 'M');
+                  const preview = getMessagePreview(msg.text);
+                  const isRead = msg.readBy?.some((r) => r.id === user.id) || msg.fromId === user.id;
+
+                  return (
+                    <Link
+                      key={msg.id}
+                      href={`/dashboard/messages?thread=${msg.id}`}
+                      className="flex items-center gap-4 px-4 py-3 transition hover:bg-gray-50"
+                    >
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-sm font-semibold text-gray-700">
+                        {initials}
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-gray-900">{fromLabel}</p>
+                          {!isRead && (
+                            <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">
+                              Unread
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600">{preview}</p>
+                      </div>
+                      <div className="text-xs font-semibold text-gray-400">
+                        {formatThreadDate(msg.sentAt)}
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-gray-400">
+                Message about this invoice
+              </p>
+              <NewMessageForm
+                currentUserId={user.id}
+                contextType="INVOICE"
+                contextId={invoice.id}
+                placeholder="Message about this invoice..."
+                replyAuthorId={replyAuthorId}
+                replyParticipantIds={replyParticipantIds}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

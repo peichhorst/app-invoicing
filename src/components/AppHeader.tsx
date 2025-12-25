@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { Menu, ChevronDown } from 'lucide-react';
+import { Menu, ChevronDown, User as UserIcon } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useMobileSidebar } from '@/components/MobileSidebarContext';
 import { Logo } from './Logo';
@@ -12,11 +12,11 @@ const InstallPromptButton = dynamic(
   { ssr: false },
 );
 const SwitchBackButton = dynamic(
-  () => import('./SwitchBackButton').then((m) => ({ default: m.SwitchBackButton })),
+  () => import('./SwitchBackButton').then((m) => m.SwitchBackButton),
   { ssr: false }
 );
-const getInitials = (name?: string | null, email?: string | null) => {
-  const primary = name?.trim() || email?.split('@')[0]?.trim() || '';
+const getInitials = (name?: string | null) => {
+  const primary = name?.trim() || '';
   if (!primary) return 'U';
   const tokens = primary.split(/[\s._-]+/).filter(Boolean);
   if (tokens.length === 0) {
@@ -35,11 +35,55 @@ type AppHeaderProps = {
     role?: string | null;
     companyName?: string | null;
     logoDataUrl?: string | null;
+    companyLogoUrl?: string | null;
+    companyId?: string | null;
+    useHeaderLogo?: boolean | null;
+    companyPrimaryColor?: string | null;
   } | null;
   isOnboarding?: boolean;
 };
 
 export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
+  const themeLogoColor =
+    user?.companyPrimaryColor && user.companyPrimaryColor !== ''
+      ? user.companyPrimaryColor
+      : 'var(--color-brand-primary-500)';
+  const [useCompanyLogo, setUseCompanyLogo] = useState(Boolean(user?.useHeaderLogo));
+  const [tempLogoUrl, setTempLogoUrl] = useState<string | null>(null);
+
+  // Stable handler refs to avoid listener leaks across rerenders
+  const toggleHandlerRef = useRef<(e: Event) => void>(() => {});
+  const uploadedHandlerRef = useRef<(e: Event) => void>(() => {});
+
+  useEffect(() => {
+    toggleHandlerRef.current = (event: Event) => {
+      const detail = (event as CustomEvent<boolean | undefined>).detail;
+      if (typeof detail === 'boolean') {
+        setUseCompanyLogo(detail);
+      }
+    };
+    uploadedHandlerRef.current = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      setTempLogoUrl(detail);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const toggle = (event: Event) => toggleHandlerRef.current?.(event);
+    const uploaded = (event: Event) => uploadedHandlerRef.current?.(event);
+    window.addEventListener('company-logo-toggle', toggle as EventListener);
+    window.addEventListener('company-logo-uploaded', uploaded as EventListener);
+    return () => {
+      window.removeEventListener('company-logo-toggle', toggle as EventListener);
+      window.removeEventListener('company-logo-uploaded', uploaded as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    setUseCompanyLogo(Boolean(user?.useHeaderLogo));
+  }, [user?.useHeaderLogo]);
+
   const { open } = useMobileSidebar();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -61,58 +105,73 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
     return () => window.removeEventListener('mousedown', handle);
   }, [menuOpen]);
 
+  const hasName = Boolean(user?.name && user.name.trim().length > 0);
+  const shouldUseInitials = hasName && !isOnboarding;
   const avatar = user?.logoDataUrl ? (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={user.logoDataUrl} alt="avatar" className="h-9 w-9 rounded-full object-cover" />
+    <img src={user.logoDataUrl} alt="avatar" className="h-11 w-11 rounded-full object-cover" />
+  ) : shouldUseInitials ? (
+    <div className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-sm font-semibold uppercase text-brand-primary-700">
+      {getInitials(user?.name)}
+    </div>
   ) : (
-    <div className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-xs font-semibold uppercase text-purple-700">
-      {getInitials(user?.name, user?.email)}
+    <div className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-200 bg-zinc-50 text-brand-primary-700">
+      <UserIcon size={18} />
     </div>
   );
 
   return (
     <header className="relative border-b border-zinc-200 bg-white w-full px-2 sm:px-0 overflow-visible">
-        <div className="grid-overlay absolute inset-0 opacity-25 pointer-events-none" />
-      <div className="relative mx-auto flex max-w-6xl items-center justify-between px-0 sm:px-8 lg:px-10 py-4">
+      <div className="grid-overlay absolute inset-0 opacity-25 pointer-events-none" />
+      <div className="relative mx-auto flex max-w-7xl items-center justify-between px-0 sm:px-8 lg:px-10 py-3">
         <Link href="/" className="group flex items-center gap-4">
-          <Logo size="lg" />
-        </Link>
+          {useCompanyLogo && (tempLogoUrl || user?.companyLogoUrl) ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={(tempLogoUrl || user?.companyLogoUrl) as string}
+              alt={user?.companyName || 'Company logo'}
+              className="h-14 w-auto max-w-[220px] object-contain"
+            />
+          ) : (
+              <Logo size="lg" alt={user?.companyName || 'ClientWave'} textColor={themeLogoColor} />
+            )}
+          </Link>
         <div className="flex w-full items-center gap-3">
           <div className="flex items-center gap-3">
-            <SwitchBackButton />
             <InstallPromptButton />
+            <SwitchBackButton />
           </div>
           <div className="ml-auto flex items-center gap-3">
-            {user && !isOnboarding ? (
+            {user ? (
               <div className="relative">
                 <button
                   type="button"
                   ref={buttonRef}
                   onClick={() => setMenuOpen((prev) => !prev)}
-                  className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-purple-700 shadow-sm transition hover:bg-purple-50 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  aria-haspopup="true"
-                  aria-expanded={menuOpen}
-                >
-                  <span className="ring-1 ring-purple-100 rounded-full">{avatar}</span>
-                  <ChevronDown size={16} className="text-purple-600" />
+          className="inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-700 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary-500"
+          aria-haspopup="true"
+          aria-expanded={menuOpen}
+        >
+          <span className="ring-1 ring-brand-primary-100 rounded-full">{avatar}</span>
+                  <ChevronDown size={18} style={{ color: themeLogoColor }} />
                 </button>
                 {menuOpen && (
                   <div
                     ref={menuRef}
-                    className="absolute right-0 top-full z-20 mt-3 w-52 rounded-2xl border border-purple-300 bg-gradient-to-br from-purple-700 via-purple-800 to-indigo-800 p-3 text-white shadow-2xl shadow-purple-900/40"
+                    className="absolute right-0 top-full z-20 mt-3 w-56 rounded-2xl border border-zinc-200 bg-white p-3 text-zinc-900 shadow-2xl"
                   >
-                    <div className="flex flex-col divide-y divide-white/20 text-xs font-semibold  tracking-[0.3em]">
+                    <div className="space-y-2">
                       <Link
                         href="/dashboard/profile"
                         onClick={() => setMenuOpen(false)}
-                        className="rounded-xl px-3 py-2 text-center text-white/90 transition hover:bg-white/10"
+                        className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.3em] text-zinc-800 shadow-sm transition hover:bg-zinc-100 hover:border-zinc-300"
                       >
                         Profile
                       </Link>
                       <form action="/api/auth/logout" method="post">
                         <button
                           type="submit"
-                          className="w-full rounded-xl px-3 py-2 text-white/90 transition hover:bg-white/10"
+                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-800 shadow-sm transition hover:bg-zinc-100 hover:border-zinc-300"
                         >
                           Logout
                         </button>
@@ -125,10 +184,10 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
             <button
               type="button"
               onClick={open}
-              className="md:hidden flex h-10 w-10 items-center justify-center rounded-full border border-purple-300 bg-white text-purple-600 transition hover:border-purple-400 hover:bg-purple-50"
+              className="md:hidden flex h-[52px] w-[52px] items-center justify-center rounded-full border border-[var(--color-brand-logo-text)] bg-white text-[var(--color-brand-logo-text)] transition hover:border-brand-primary-400 hover:bg-brand-primary-50"
             >
               <span className="sr-only">Open menu</span>
-              <Menu size={20} />
+              <Menu size={25} />
             </button>
           </div>
         </div>

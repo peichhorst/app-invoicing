@@ -9,6 +9,7 @@ export type ClientOption = {
   id: string;
   companyName: string;
   contactName: string | null;
+  email?: string | null;
 };
 
 type LineItemInput = {
@@ -26,7 +27,7 @@ export type CreateInvoicePayload = {
   status: InvoiceStatus;
   items: LineItemInput[];
   recurring?: boolean;
-  recurringInterval?: 'week' | 'month' | 'quarter' | 'year' | null;
+  recurringInterval?: 'day' | 'week' | 'month' | 'quarter' | 'year' | null;
   recurringDayOfMonth?: number | null;
   recurringDayOfWeek?: number | null;
   nextOccurrence?: string | null;
@@ -44,10 +45,14 @@ export async function fetchClientOptionsAction(): Promise<ClientOption[]> {
       id: true,
       companyName: true,
       contactName: true,
+      email: true,
     },
   });
 
-  return clients;
+  return clients.map((client) => ({
+    ...client,
+    companyName: client.companyName ?? '',
+  }));
 }
 
 export async function createInvoiceAction(
@@ -145,7 +150,8 @@ const computedTotals = payload.items.reduce(
                   currency: 'USD',
                   interval: payload.recurringInterval,
                   dayOfMonth:
-                    payload.recurringInterval !== 'week'
+                    payload.recurringInterval &&
+                    ['month', 'quarter', 'year'].includes(payload.recurringInterval)
                       ? payload.recurringDayOfMonth ?? null
                       : null,
                   dayOfWeek:
@@ -168,7 +174,7 @@ const computedTotals = payload.items.reduce(
 export type CreateRecurringInvoicePayload = {
   clientId: string;
   amount: number;
-  interval: 'week' | 'month' | 'quarter' | 'year';
+  interval: 'day' | 'week' | 'month' | 'quarter' | 'year';
   dayOfMonth?: number | null;
   dayOfWeek?: number | null;
   nextSendDate: string;
@@ -207,8 +213,11 @@ export async function createRecurringInvoiceAction(
       amount: new Prisma.Decimal(payload.amount),
       currency: payload.currency ?? 'USD',
       interval: payload.interval,
-      dayOfMonth: payload.dayOfMonth ?? null,
-      dayOfWeek: payload.dayOfWeek ?? null,
+      dayOfMonth:
+        payload.interval !== 'week' && payload.interval !== 'day'
+          ? payload.dayOfMonth ?? null
+          : null,
+      dayOfWeek: payload.interval === 'week' ? payload.dayOfWeek ?? null : null,
       nextSendDate: new Date(payload.nextSendDate),
       status: payload.status ?? 'PENDING',
       sendFirstNow: payload.sendFirstNow ?? true,

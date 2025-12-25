@@ -54,7 +54,7 @@ export default function TotalsSection({
         {/* Total */}
         <div className="flex justify-between border-t-2 border-gray-300 pt-3">
           <span className="text-lg font-bold text-gray-900">Total</span>
-          <span className="text-lg font-bold text-purple-600">{formatCurrency(total, currency)}</span>
+          <span className="text-lg font-bold text-brand-primary-600">{formatCurrency(total, currency)}</span>
         </div>
       </div>
     </div>

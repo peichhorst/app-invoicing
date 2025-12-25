@@ -9,8 +9,8 @@ export const dynamic = 'force-dynamic';
 export default async function AdminUsersPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/dashboard');
-  if (user.role === 'OWNER') redirect('/owner/team');
-  if (user.role !== 'ADMIN') redirect('/dashboard');
+  if (user.role === 'OWNER') redirect('/dashboard/team');
+  if (user.role !== 'SUPERADMIN') redirect('/dashboard');
 
   const users = await prisma.user.findMany({
     select: {
@@ -41,10 +41,8 @@ export default async function AdminUsersPage() {
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6 sm:px-8">
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold text-gray-900">Manage members</h1>
-          <p className="text-sm text-gray-500">View company members and their roles.</p>
+          <h1 className="text-3xl font-semibold text-gray-900">Sitewide Users</h1>
         </div>
-        <InviteUserForm />
         <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm">
           <AdminUsersTable members={sorted} />
         </div>

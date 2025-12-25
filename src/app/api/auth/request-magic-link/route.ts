@@ -19,6 +19,13 @@ export async function POST(request: Request) {
     // Check if user exists
     const user = await prisma.user.findUnique({
       where: { email: normalizedEmail },
+      include: {
+        company: {
+          select: {
+            primaryColor: true,
+          },
+        },
+      },
     });
 
     // For security, always return success even if user doesn't exist
@@ -44,7 +51,7 @@ export async function POST(request: Request) {
     });
 
     // Send email
-    await sendMagicLoginEmail(normalizedEmail, token);
+    await sendMagicLoginEmail(normalizedEmail, token, user.company?.primaryColor ?? null);
 
     return NextResponse.json({ 
       success: true, 

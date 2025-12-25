@@ -9,7 +9,7 @@ type PageProps = {
 
 export default async function EditTeamMemberPage({ params }: PageProps) {
   const user = await getCurrentUser();
-  if (!user || user.role !== 'OWNER') {
+  if (!user || (user.role !== 'OWNER' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN')) {
     redirect('/dashboard');
   }
 
@@ -17,25 +17,26 @@ export default async function EditTeamMemberPage({ params }: PageProps) {
   const memberId = resolvedParams.id;
 
   if (!memberId) {
-    redirect('/owner/team');
+    redirect('/dashboard/team');
   }
 
-  const ownerCompany =
-    user.companyId ??
-    (await prisma.company.findFirst({
+  let companyId = user.companyId ?? null;
+  if (!companyId && user.role === 'OWNER') {
+    const ownerCompany = await prisma.company.findFirst({
       where: { ownerId: user.id },
       select: { id: true },
-    }))?.id ??
-    null;
+    });
+    companyId = ownerCompany?.id ?? null;
+  }
 
-  if (!ownerCompany) {
-    redirect('/owner/team');
+  if (!companyId) {
+    redirect('/dashboard/team');
   }
 
   const member = await prisma.user.findFirst({
     where: {
       id: memberId,
-      companyId: ownerCompany,
+      companyId,
     },
     select: {
       id: true,
@@ -57,11 +58,11 @@ export default async function EditTeamMemberPage({ params }: PageProps) {
   });
 
   if (!member) {
-    redirect('/owner/team');
+    redirect('/dashboard/team');
   }
 
   const managerOptions = await prisma.user.findMany({
-    where: { companyId: ownerCompany, NOT: { id: memberId } },
+    where: { companyId, NOT: { id: memberId } },
     select: { id: true, name: true, email: true },
     orderBy: [{ name: 'asc' }, { email: 'asc' }],
   });

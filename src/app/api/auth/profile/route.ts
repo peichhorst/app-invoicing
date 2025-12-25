@@ -42,6 +42,7 @@ export async function PUT(request: Request) {
     reportsToId?: string | null;
     positionId?: string | null;
     password?: string | null;
+    setAsAdministrator?: string | null;
   };
 
   try {
@@ -69,6 +70,14 @@ export async function PUT(request: Request) {
 
     if (body.password) {
       data.password = await hashPassword(body.password);
+    }
+
+    const setAsAdministrator = body.setAsAdministrator === 'true';
+    if (setAsAdministrator) {
+      if (user.role !== 'OWNER' && user.role !== 'SUPERADMIN') {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+      }
+      data.role = 'ADMIN';
     }
 
     const companyId = user.companyId ?? user.company?.id ?? null;

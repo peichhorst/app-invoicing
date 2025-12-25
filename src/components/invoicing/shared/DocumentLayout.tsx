@@ -2,7 +2,7 @@ import React from 'react';
 
 interface DocumentLayoutProps {
   children: React.ReactNode;
-  documentType?: 'invoice' | 'proposal';
+  documentType?: 'invoice' | 'proposal' | 'contract';
   mode?: 'pdf' | 'print' | 'preview';
 }
 

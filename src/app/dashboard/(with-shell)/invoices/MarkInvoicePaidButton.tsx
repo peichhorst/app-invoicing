@@ -69,16 +69,14 @@ export function MarkInvoicePaidButton({
             status === 'PAID'
               ? 'bg-green-600 hover:bg-green-700'
               : loading
-              ? 'bg-purple-600 opacity-70 cursor-wait'
-              : 'bg-purple-600 hover:bg-purple-700'
+              ? 'bg-brand-primary-600 opacity-70 cursor-wait'
+              : 'bg-brand-primary-600 hover:bg-brand-primary-700'
           }`}
         >
           {status === 'PAID' ? (
             <>
               Paid
-              <span aria-hidden="true" className="text-xl leading-3">
-                &times;
-              </span>
+              <span className="text-xs font-semibold underline">(Unmark)</span>
             </>
           ) : loading ? (
             'Marking...'
@@ -91,13 +89,13 @@ export function MarkInvoicePaidButton({
           type="button"
           onClick={handleClick}
           className={`inline-flex items-center gap-1 text-xs font-semibold ${
-            status === 'PAID' ? 'text-rose-700 hover:text-rose-800' : 'text-purple-700 hover:text-purple-800'
+            status === 'PAID' ? 'text-rose-700 hover:text-rose-800' : 'text-brand-primary-700 hover:text-brand-primary-800'
           }`}
         >
           {loading
             ? 'Updating...'
             : status === 'PAID'
-            ? 'Unmark Paid'
+            ? 'Paid (Unmark)'
             : 'Mark Paid'}
         </button>
       )}

@@ -44,6 +44,10 @@ export async function changeEmailAction(newEmail: string): Promise<ChangeEmailRe
     },
   });
 
-  await sendEmailChangeVerificationEmail(normalized, token);
+  await sendEmailChangeVerificationEmail(
+    normalized,
+    token,
+    user.company?.primaryColor ?? null
+  );
   return { status: 'sent', message: 'Check your new inbox for a verification link.' };
 }

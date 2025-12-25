@@ -11,11 +11,13 @@ import { Document, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer
 import {
   createInvoiceAction,
   createRecurringInvoiceAction,
-  fetchClientOptionsAction,
   type ClientOption,
 } from './actions';
 import { GripVertical } from 'lucide-react';
 import { ClientForm, type ClientFormValues } from '@/components/ClientForm';
+import DocumentPreview from '@/components/invoicing/DocumentPreview';
+import { useClientOptions } from '@/components/invoicing/useClientOptions';
+import { ClientSelect } from '@/components/invoicing/ClientSelect';
 
 const lineItemSchema = z.object({
   description: z.string().min(1, 'Description is required'),
@@ -37,7 +39,7 @@ const invoiceSchema = z
       .or(z.literal('')),
     recurringEnabled: z.boolean().optional(),
     recurringInterval: z
-      .enum(['week', 'month', 'quarter', 'year'])
+      .enum(['day', 'week', 'month', 'quarter', 'year'])
       .optional(),
     recurringDayOfMonth: z
       .number()
@@ -89,13 +91,19 @@ const formatCurrency = (value: number) => currencyFormatter.format(Number.isFini
 
 function calculateNextRecurringDate(
   issueDateStr: string | undefined,
-  interval: 'week' | 'month' | 'quarter' | 'year' | undefined,
+  interval: 'day' | 'week' | 'month' | 'quarter' | 'year' | undefined,
   dayOfMonth: number | undefined,
   dayOfWeek: number | undefined
 ): Date | null {
   if (!issueDateStr || !interval) return null;
   const base = new Date(issueDateStr);
   if (Number.isNaN(base.getTime())) return null;
+
+  if (interval === 'day') {
+    const next = new Date(base);
+    next.setDate(base.getDate() + 1);
+    return next;
+  }
 
   if (interval === 'week') {
     const target = Math.min(Math.max(dayOfWeek ?? 1, 1), 7);
@@ -131,16 +139,18 @@ function CreateInvoiceContent() {
   const editId = searchParams.get('edit');
   const isEdit = Boolean(editId);
   const [clientOptions, setClientOptions] = useState<ClientOption[]>([]);
-  const [clientsLoading, setClientsLoading] = useState(true);
+  const { clients: loadedClients, loading: clientsLoading, error: clientsError } = useClientOptions();
   const [toast, setToast] = useState<ToastState | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [savingStatus, setSavingStatus] = useState<InvoiceStatus | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
-  const [dueEnabled, setDueEnabled] = useState(false);
+  const [dueEnabled, setDueEnabled] = useState(true);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [planTier, setPlanTier] = useState<string | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
   const [assignableUsers, setAssignableUsers] = useState<AssignableUserOption[]>([]);
   const [canAssignClients, setCanAssignClients] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any | null>(null);
   const [existingInvoice, setExistingInvoice] = useState<ExistingInvoiceState | null>(null);
   const [showNewClient, setShowNewClient] = useState(false);
   const [addingClient, setAddingClient] = useState(false);
@@ -175,6 +185,7 @@ function CreateInvoiceContent() {
     getValues,
     handleSubmit,
     setValue,
+    watch,
     formState: { errors },
     reset,
   } = useForm<InvoiceFormValues>({
@@ -182,7 +193,7 @@ function CreateInvoiceContent() {
     defaultValues: {
       clientId: '',
       issueDate: defaultDates.issueDate,
-      dueDate: '',
+      dueDate: defaultDates.dueDate,
       notes: '',
       recurringEnabled: false,
       recurringInterval: 'month',
@@ -212,6 +223,7 @@ function CreateInvoiceContent() {
         ...values,
         // Only owners/admins can assign; otherwise force unassigned
         assignedToId: canAssignClients ? values.assignedToId ?? null : null,
+        isLead: values.isLead,
       };
       const res = await fetch('/api/clients', {
         method: 'POST',
@@ -242,32 +254,11 @@ function CreateInvoiceContent() {
 
   useEffect(() => {
     setHasMounted(true);
-    let isMounted = true;
-
-    fetchClientOptionsAction()
-      .then((options) => {
-        if (isMounted) {
-          setClientOptions(options);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setToast({
-            message: 'Unable to load clients. Please refresh and try again.',
-            variant: 'error',
-          });
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
-          setClientsLoading(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    setClientOptions(loadedClients);
+  }, [loadedClients]);
 
   useEffect(() => {
     let isMounted = true;
@@ -278,6 +269,7 @@ function CreateInvoiceContent() {
       })
       .then((data) => {
         if (!isMounted) return;
+        setCurrentUser(data?.user ?? null);
         const tier = (data?.planTier ?? data?.user?.planTier ?? '').toUpperCase();
         setPlanTier(tier || null);
         const role = (data?.user?.role ?? '').toUpperCase();
@@ -628,7 +620,8 @@ function CreateInvoiceContent() {
   };
 
   const triggerSubmit = (status: InvoiceStatus) => {
-    if (isPending) return;
+    if (isPending || savingStatus) return;
+    setSavingStatus(status);
 
     handleSubmit((values) => {
       const normalizedValues = {
@@ -652,15 +645,18 @@ function CreateInvoiceContent() {
             values.recurringDayOfWeek
           )
         : null;
+      const usesDayOfMonth = values.recurringInterval !== 'week' && values.recurringInterval !== 'day';
+      const usesDayOfWeek = values.recurringInterval === 'week';
+
       const recurrencePayload = {
         recurring: recurrenceEnabled,
         recurringInterval: recurrenceEnabled ? values.recurringInterval ?? 'month' : null,
         recurringDayOfMonth:
-          recurrenceEnabled && values.recurringInterval !== 'week'
+          recurrenceEnabled && usesDayOfMonth
             ? Number(values.recurringDayOfMonth ?? 1)
             : null,
         recurringDayOfWeek:
-          recurrenceEnabled && values.recurringInterval === 'week'
+          recurrenceEnabled && usesDayOfWeek
             ? Number(values.recurringDayOfWeek ?? 1)
             : null,
         nextOccurrence: nextRecurrenceDate ? nextRecurrenceDate.toISOString() : null,
@@ -671,31 +667,32 @@ function CreateInvoiceContent() {
         };
 
       startTransition(() => {
-        if (status === 'SENT') {
-            fetch('/api/invoices', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...payloadWithRecurring, status }),
-            })
-                .then(async (res) => {
-                  if (!res.ok) throw new Error(await res.text());
-                  const result = await res.json();
+          if (status === 'SENT') {
+              fetch('/api/invoices', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payloadWithRecurring, status }),
+              })
+                  .then(async (res) => {
+                    if (!res.ok) throw new Error(await res.text());
+                    const result = await res.json();
+                  setToast({
+                    message: `Invoice ${result.invoiceNumber} sent successfully`,
+                    variant: 'success',
+                  });
+                window.setTimeout(() => {
+                  router.push('/dashboard/invoices');
+                }, 800);
+              })
+              .catch((error) => {
+                console.error(error);
                 setToast({
-                  message: `Invoice ${result.invoiceNumber} sent successfully`,
-                  variant: 'success',
+                  message: 'Something went wrong while sending the invoice.',
+                  variant: 'error',
                 });
-              window.setTimeout(() => {
-                router.push('/dashboard/invoices');
-              }, 800);
-            })
-            .catch((error) => {
-              console.error(error);
-              setToast({
-                message: 'Something went wrong while sending the invoice.',
-                variant: 'error',
-              });
-            });
-        } else {
+              })
+              .finally(() => setSavingStatus(null));
+          } else {
           const action = isEdit
             ? fetch(`/api/invoices/${editId}`, {
                 method: 'PUT',
@@ -707,32 +704,91 @@ function CreateInvoiceContent() {
               })
             : createInvoiceAction({ ...payloadWithRecurring, status });
 
-            action
-              .then(async (result: any) => {
-                setToast({
-                  message: isEdit ? `Draft ${result.invoiceNumber} updated` : `Draft ${result.invoiceNumber} saved`,
-                  variant: 'success',
-                });
+              action
+                .then(async (result: any) => {
+                  setToast({
+                    message: isEdit ? `Draft ${result.invoiceNumber} updated` : `Draft ${result.invoiceNumber} saved`,
+                    variant: 'success',
+                  });
 
-              window.setTimeout(() => {
-                router.push('/dashboard/invoices');
-              }, 800);
-            })
-            .catch((error: any) => {
-              console.error(error);
-              setToast({
-                message: 'Something went wrong while saving the invoice.',
-                variant: 'error',
-              });
-            });
-        }
-      });
+                window.setTimeout(() => {
+                  router.push('/dashboard/invoices');
+                }, 800);
+              })
+              .catch((error: any) => {
+                console.error(error);
+                setToast({
+                  message: 'Something went wrong while saving the invoice.',
+                  variant: 'error',
+                });
+              })
+              .finally(() => setSavingStatus(null));
+          }
+        });
     })();
   };
 
+  const selectedClient = clientOptions.find((c) => c.id === getValues('clientId'));
+
+  const companyForPreview = currentUser
+    ? {
+        name:
+          currentUser.company?.name ||
+          currentUser.companyName ||
+          currentUser.name ||
+          'Your Company',
+        logoUrl: currentUser.company?.logoUrl || undefined,
+        address:
+          [
+            currentUser.company?.addressLine1,
+            currentUser.company?.addressLine2,
+            [
+              currentUser.company?.city,
+              currentUser.company?.state,
+              currentUser.company?.postalCode,
+            ]
+              .filter(Boolean)
+              .join(', '),
+            currentUser.company?.country,
+          ]
+            .filter(Boolean)
+            .join('\n') || undefined,
+        email: currentUser.email || undefined,
+        phone: currentUser.phone || undefined,
+      }
+    : undefined;
+
+  const clientForPreview = selectedClient
+    ? {
+        name: selectedClient.contactName || selectedClient.companyName || 'Client',
+        companyName: selectedClient.companyName || undefined,
+      }
+    : undefined;
+
+  const lineItemsForPreview = watchedItems?.map((item) => {
+    const quantity = Number(item?.quantity) || 0;
+    const unitPrice = Number(item?.unitPrice) || 0;
+    const taxEnabled = !!item?.taxEnabled;
+    const rate = taxEnabled ? Number(item?.taxRate) || 0 : 0;
+    const lineSubtotal = quantity * unitPrice;
+    const lineTax = lineSubtotal * (rate / 100);
+    return {
+      description: item?.description || '',
+      quantity,
+      rate: unitPrice,
+      amount: lineSubtotal + lineTax,
+    };
+  }) ?? [];
+
+  const totalsForPreview = {
+    subtotal: summary.subtotal,
+    tax: summary.tax,
+    total: summary.total,
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-50 px-4 py-10 sm:px-0">
-      <div className="mx-auto w-full max-w-6xl  sm:px-10">
+    <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8 lg:px-10">
+      <div className="mx-auto max-w-6xl">
         {toast && (
           <div
             className={`fixed right-6 top-6 z-50 rounded-lg px-4 py-3 text-sm font-medium text-white shadow-lg ${
@@ -744,57 +800,48 @@ function CreateInvoiceContent() {
         )}
 
         <div className="space-y-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-2">
-                <h1 className="text-3xl font-semibold text-zinc-900">{isEdit ? 'Edit Invoice' : 'Create Invoice'}</h1>
-                <p className="text-sm text-zinc-500">
-                  {isEdit
-                    ? 'Update your draft or send it when ready.'
-                    : 'Select a client, add line items, and save your work as a draft or send the invoice immediately.'}
-                </p>
-              </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <h1 className="text-3xl font-semibold text-gray-900">{isEdit ? 'Edit Invoice' : 'Create Invoice'}</h1>
+              <p className="text-sm text-gray-500">
+                {isEdit
+                  ? 'Update your draft or send it when ready.'
+                  : 'Select a client, add line items, and save your work as a draft or send the invoice immediately.'}
+              </p>
+            </div>
           </div>
 
 
 
-          <form className="space-y-10 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1.4fr),minmax(0,1fr)] lg:items-start">
+          <form className="space-y-10 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm new-invoice-form">
           <section className="grid gap-6 lg:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-zinc-700">
-                Client <span className="text-rose-500">*</span>
-              </label>
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <select
-                    {...register('clientId')}
-                    className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-sm shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 cursor-pointer"
-                    disabled={!hasMounted || clientsLoading || isEdit}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>
-                      {clientsLoading ? 'Loading clients...' : 'Select a client'}
-                    </option>
-                    {!clientsLoading && clientOptions.length === 0 && (
-                      <option value="" disabled>
-                        No clients found
-                      </option>
-                    )}
-                    {clientOptions.map((client) => (
-                      <option key={client.id} value={client.id}>
-                        {client.companyName}
-                        {client.contactName ? ` - ${client.contactName}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+              <div className="flex-1">
+                <ClientSelect
+                  value={watch('clientId')}
+                  onChange={(value, client) => {
+                    setValue('clientId', value, { shouldDirty: true, shouldTouch: true });
+                    if (client) {
+                      setToast(null);
+                    }
+                  }}
+                  clients={clientOptions}
+                  loading={clientsLoading}
+                  label="Client"
+                  required
+                />
+                {clientsError && <p className="text-xs text-rose-500">{clientsError}</p>}
+              </div>
                 <button
                   type="button"
                   onClick={() => setShowNewClient(true)}
-                  className="rounded-full border border-purple-300 bg-white px-3 py-1 text-xs font-semibold text-purple-700 shadow-sm transition hover:bg-purple-50"
+                  className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
                 >
-                  Create client
+                  + New Client
                 </button>
-              </div>
+            </div>
               {errors.clientId && <p className="text-xs text-rose-500">{errors.clientId.message}</p>}
             </div>
 
@@ -821,7 +868,7 @@ function CreateInvoiceContent() {
                       }}
                       className="text-xs font-medium text-rose-600 hover:text-rose-700"
                     >
-                      Clear
+                      No Due Date
                     </button>
                   ) : (
                     <button
@@ -1056,42 +1103,45 @@ function CreateInvoiceContent() {
                         {...register('recurringInterval')}
                         className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
                       >
+                        <option value="day">Day</option>
                         <option value="week">Week</option>
                         <option value="month">Month</option>
                         <option value="quarter">Quarter</option>
                         <option value="year">Year</option>
                       </select>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-semibold text-zinc-600">
-                        {recurringIntervalWatch === 'week' ? 'Day of week' : 'Day of month'}
-                      </label>
-                      {recurringIntervalWatch === 'week' ? (
-                        <select
-                          {...register('recurringDayOfWeek', { valueAsNumber: true })}
-                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                        >
-                          <option value={1}>Monday</option>
-                          <option value={2}>Tuesday</option>
-                          <option value={3}>Wednesday</option>
-                          <option value={4}>Thursday</option>
-                          <option value={5}>Friday</option>
-                          <option value={6}>Saturday</option>
-                          <option value={7}>Sunday</option>
-                        </select>
-                      ) : (
-                        <select
-                          {...register('recurringDayOfMonth', { valueAsNumber: true })}
-                          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
-                        >
-                          {Array.from({ length: 31 }, (_, idx) => idx + 1).map((day) => (
-                            <option key={day} value={day}>
-                              {day}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
+                    {recurringIntervalWatch !== 'day' && (
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-zinc-600">
+                          {recurringIntervalWatch === 'week' ? 'Day of week' : 'Day of month'}
+                        </label>
+                        {recurringIntervalWatch === 'week' ? (
+                          <select
+                            {...register('recurringDayOfWeek', { valueAsNumber: true })}
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                          >
+                            <option value={1}>Monday</option>
+                            <option value={2}>Tuesday</option>
+                            <option value={3}>Wednesday</option>
+                            <option value={4}>Thursday</option>
+                            <option value={5}>Friday</option>
+                            <option value={6}>Saturday</option>
+                            <option value={7}>Sunday</option>
+                          </select>
+                        ) : (
+                          <select
+                            {...register('recurringDayOfMonth', { valueAsNumber: true })}
+                            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+                          >
+                            {Array.from({ length: 31 }, (_, idx) => idx + 1).map((day) => (
+                              <option key={day} value={day}>
+                                {day}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {nextRecurringPreview && (
                     <p className="text-xs text-zinc-600">
@@ -1197,62 +1247,76 @@ function CreateInvoiceContent() {
             </div>
           </section>
 
+          <div className="mt-6">
+            <DocumentPreview
+              type="invoice"
+              company={companyForPreview}
+              client={clientForPreview}
+              lineItems={lineItemsForPreview}
+              totals={totalsForPreview}
+              documentNumber={undefined}
+              issueDate={issueDateWatch ? new Date(issueDateWatch) : undefined}
+              dueDate={watchedDueDate ? new Date(watchedDueDate) : undefined}
+              paymentTerms={getValues('notes') || undefined}
+            />
+          </div>
           <div className="flex flex-col gap-3 border-t border-zinc-100 pt-0 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-zinc-500">
               All amounts are saved in USD.
             </p>
             <div className="flex flex-col gap-3 sm:flex-row">
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => triggerSubmit('DRAFT')}
-                className="inline-flex items-center justify-center rounded-xl border border-zinc-200 px-5 py-2.5 text-sm font-semibold text-zinc-900 shadow-sm transition hover:border-zinc-300 hover:bg-zinc-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Save Draft
-              </button>
-              <button
-                type="button"
-                disabled={isGeneratingPdf}
-                onClick={handleSavePdf}
-                className="inline-flex items-center justify-center rounded-xl border border-zinc-300 px-6 py-2.5 text-sm font-semibold text-zinc-900 shadow-sm transition hover:bg-zinc-50 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isGeneratingPdf ? 'Generating...' : 'Save PDF'}
-              </button>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => triggerSubmit('SENT')}
-                className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-zinc-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isPending ? 'Sending...' : 'Send Invoice'}
-              </button>
+                <button
+                  type="button"
+                  disabled={isGeneratingPdf}
+                  onClick={handleSavePdf}
+                  className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isGeneratingPdf ? 'Generating...' : 'Download PDF'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending || savingStatus !== null}
+                  onClick={() => triggerSubmit('DRAFT')}
+                  className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingStatus === 'DRAFT' ? 'Saving...' : 'Save Draft'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isPending || savingStatus !== null}
+                  onClick={() => triggerSubmit('SENT')}
+                  className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingStatus === 'SENT' ? 'Saving...' : 'Save & Send Invoice'}
+                </button>
             </div>
           </div>
         </form>
-        {showNewClient && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4 py-6">
-            <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-zinc-900">Create Client</h3>
-                <button
-                  type="button"
-                  className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500 hover:text-zinc-700"
-                  onClick={() => setShowNewClient(false)}
-                >
-                  Close
-                </button>
-              </div>
-              <ClientForm
-                onSubmit={handleAddClient}
-                onCancel={() => setShowNewClient(false)}
-                submitLabel="Create client"
-                submitting={addingClient}
-                assignableUsers={assignableUsers}
-                canAssign={canAssignClients}
-              />
+      </div>
+      {showNewClient && (
+        <div className="fixed inset-0 z-50 flex items-start md:items-center justify-center bg-black/30 px-4 py-6">
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl max-h-[calc(100vh-2rem)] overflow-y-auto">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-zinc-900">Create Client</h3>
+              <button
+                type="button"
+                className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500 hover:text-zinc-700"
+                onClick={() => setShowNewClient(false)}
+              >
+                Close
+              </button>
             </div>
+            <ClientForm
+              onSubmit={handleAddClient}
+              onCancel={() => setShowNewClient(false)}
+              submitLabel="Create client"
+              submitting={addingClient}
+              assignableUsers={assignableUsers}
+              canAssign={canAssignClients}
+            />
           </div>
-        )}
+        </div>
+      )}
         </div>
       </div>
     </div>

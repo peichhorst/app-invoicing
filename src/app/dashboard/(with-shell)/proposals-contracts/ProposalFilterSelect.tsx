@@ -26,7 +26,7 @@ export default function ProposalFilterSelect({ current }: ProposalFilterSelectPr
     <select
       value={current}
       onChange={(e) => handleChange(e.target.value)}
-      className="min-w-[160px] rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-purple-500 focus:outline-none focus:ring-2 focus:ring-purple-100"
+      className="min-w-[160px] rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
     >
       {STATUS_OPTIONS.map((option) => (
         <option key={option} value={option}>

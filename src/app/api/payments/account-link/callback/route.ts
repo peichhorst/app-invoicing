@@ -79,7 +79,7 @@ const renderPage = (
             box-shadow: 0 20px 60px rgba(15, 23, 42, 0.6);
           }
           a {
-            color: #a855f7;
+            color: #1d4ed8;
             text-decoration: underline;
           }
         </style>

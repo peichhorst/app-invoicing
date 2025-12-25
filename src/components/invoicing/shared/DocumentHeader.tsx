@@ -1,6 +1,8 @@
 import React from 'react';
 import Image from 'next/image';
 
+export type DocumentType = 'invoice' | 'proposal' | 'contract';
+
 interface DocumentHeaderProps {
   company?: {
     name: string;
@@ -18,7 +20,7 @@ interface DocumentHeaderProps {
   documentNumber?: string;
   documentDate?: Date;
   dueDate?: Date;
-  documentType?: 'invoice' | 'proposal';
+  documentType?: DocumentType;
 }
 
 export default function DocumentHeader({
@@ -38,7 +40,8 @@ export default function DocumentHeader({
     }).format(date);
   };
 
-  const documentLabel = documentType === 'invoice' ? 'Invoice' : 'Proposal';
+  const documentLabel =
+    documentType === 'invoice' ? 'Invoice' : documentType === 'contract' ? 'Contract' : 'Proposal';
 
   return (
     <div className="space-y-8">
@@ -67,7 +70,7 @@ export default function DocumentHeader({
 
         {/* Document Details */}
         <div className="text-right">
-          <h1 className="text-3xl font-bold text-purple-600">{documentLabel}</h1>
+          <h1 className="text-3xl font-bold text-brand-primary-600">{documentLabel}</h1>
           {documentNumber && (
             <p className="mt-1 text-sm font-semibold text-gray-700">#{documentNumber}</p>
           )}

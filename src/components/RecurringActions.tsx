@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Pause, Play, Trash2, DollarSign, Edit, Eye, X } from 'lucide-react';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 
 export type RecurringStatus = 'PENDING' | 'ACTIVE' | 'PAUSED' | 'CANCELLED';
 
@@ -17,7 +18,7 @@ interface RecurringActionsProps {
 }
 
 const iconButtonClasses =
-  'inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white p-2 text-zinc-600 transition hover:border-purple-300 hover:text-purple-700 disabled:opacity-50 disabled:cursor-not-allowed';
+  'inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white p-2 text-zinc-600 transition hover:border-brand-primary-300 hover:text-brand-primary-700 disabled:opacity-50 disabled:cursor-not-allowed';
 
 const dangerIconButton =
   'inline-flex items-center justify-center rounded-lg border border-rose-200 bg-white p-2 text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed';
@@ -32,6 +33,7 @@ export function RecurringActions({
 }: RecurringActionsProps) {
   const router = useRouter();
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const isCancelled = status === 'CANCELLED';
   const isPaused = status === 'PAUSED';
@@ -58,7 +60,6 @@ export function RecurringActions({
   const handlePauseResume = () => request(`/api/recurring/${recurringId}/pause`, 'POST', pauseLabel);
   const handleCancel = () => request(`/api/recurring/${recurringId}/cancel`, 'POST', 'Cancel');
   const handleDelete = () => {
-    if (!confirm('Permanently delete this recurring invoice? This cannot be undone.')) return;
     request(`/api/recurring/${recurringId}`, 'DELETE', 'Delete');
   };
 
@@ -104,7 +105,7 @@ export function RecurringActions({
 
       {(isPaused || isCancelled) && (
         <button
-          onClick={handleDelete}
+          onClick={() => setShowDeleteConfirm(true)}
           disabled={!!busyAction}
           className={dangerIconButton}
           title="Delete"
@@ -112,6 +113,15 @@ export function RecurringActions({
           <Trash2 className="h-4 w-4" />
         </button>
       )}
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDelete}
+        title="Delete recurring invoice?"
+        message="Permanently delete this recurring invoice? This cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
     </div>
   );
 }

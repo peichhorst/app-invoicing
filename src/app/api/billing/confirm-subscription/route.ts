@@ -6,7 +6,7 @@ import type { Stripe } from 'stripe';
 
 const PRICE_ID = process.env.PRO_SUBSCRIPTION_PRICE_ID;
 const PRODUCT_ID = process.env.PRO_SUBSCRIPTION_PRODUCT_ID;
-const SUBSCRIPTION_AMOUNT_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 1900);
+const SUBSCRIPTION_AMOUNT_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 999);
 
 export async function POST(request: Request) {
   try {

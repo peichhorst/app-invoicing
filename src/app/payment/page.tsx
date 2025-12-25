@@ -11,7 +11,7 @@ export default function PaymentPage() {
 
   if (mode === 'subscription') {
     return (
-      <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 pb-12 pt-10">
+      <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 pb-12 pt-10">
         <div className="grid-overlay" />
         <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
           <div className="flex-1 space-y-3 text-white">
@@ -26,7 +26,7 @@ export default function PaymentPage() {
 
   if (invoiceId) {
     return (
-      <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 pb-12 pt-10">
+      <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 pb-12 pt-10">
         <div className="grid-overlay" />
         <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
           <div className="flex-1 space-y-3 text-white">
@@ -40,7 +40,7 @@ export default function PaymentPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 pb-12 pt-10">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 pb-12 pt-10">
       <div className="grid-overlay" />
       <div className="mx-auto flex max-w-5xl flex-col gap-8 lg:flex-row lg:items-start">
         <div className="flex-1 space-y-3 text-white">

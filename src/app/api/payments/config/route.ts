@@ -4,7 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { stripe } from '@/lib/stripe';
 
-const SUBSCRIPTION_PRICE_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 1900);
+const SUBSCRIPTION_PRICE_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 999);
 const SUBSCRIPTION_PRICE_ID = process.env.PRO_SUBSCRIPTION_PRICE_ID || null;
 const SUBSCRIPTION_PRODUCT_ID = process.env.PRODUCT_ID || null;
 

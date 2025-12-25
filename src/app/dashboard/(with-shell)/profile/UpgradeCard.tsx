@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CurrentPlan } from '@/lib/plan';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 
 type UpgradeCardProps = {
   currentPlan: CurrentPlan;
@@ -17,6 +18,29 @@ export function UpgradeCard({ currentPlan, upgradeStatus, sessionId }: UpgradeCa
   );
   const [isProcessing, setIsProcessing] = useState(false);
   const [localCancelAt, setLocalCancelAt] = useState<string | null>(null);
+  const [contrastIsLight, setContrastIsLight] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const updateContrastFlag = () => {
+      const contrast = getComputedStyle(document.documentElement)
+        .getPropertyValue('--color-brand-contrast')
+        .trim()
+        .replace('#', '');
+      if (contrast.length === 6) {
+        const r = parseInt(contrast.slice(0, 2), 16);
+        const g = parseInt(contrast.slice(2, 4), 16);
+        const b = parseInt(contrast.slice(4, 6), 16);
+        const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+        setContrastIsLight(luminance > 0.5);
+      }
+    };
+
+    updateContrastFlag();
+    window.addEventListener('accent-color-updated', updateContrastFlag);
+    return () => window.removeEventListener('accent-color-updated', updateContrastFlag);
+  }, []);
 
   useEffect(() => {
     const confirmUpgrade = async () => {
@@ -52,7 +76,6 @@ export function UpgradeCard({ currentPlan, upgradeStatus, sessionId }: UpgradeCa
   const hasCancellation = displayedCancelAtDate !== null;
 
   const handleSubscriptionAction = async () => {
-    if (!hasCancellation && !confirm('Are you sure you want to cancel your Pro subscription?')) return;
     setIsProcessing(true);
     setMessage(hasCancellation ? 'Resuming your subscription...' : 'Cancelling subscription...');
     try {
@@ -88,30 +111,30 @@ export function UpgradeCard({ currentPlan, upgradeStatus, sessionId }: UpgradeCa
       : 'Cancel Subscription';
 
   return (
-    <div className="rounded-2xl border border-purple-200 bg-purple-50 p-6 shadow-sm">
+    <div className="rounded-2xl border border-brand-primary-700 bg-brand-primary-700 p-6 shadow-sm text-[var(--color-brand-contrast)]">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-purple-700">Plan</p>
-          <h2 className="text-xl font-semibold text-purple-900">{planLabel}</h2>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-brand-contrast)] opacity-80">Plan</p>
+          <h2 className="text-xl font-semibold text-[var(--color-brand-contrast)]">{planLabel}</h2>
           {daysLeft !== null && daysLeft >= 0 && (
-            <p className="text-xs text-purple-700">
+            <p className="text-xs text-[var(--color-brand-contrast)] opacity-80">
               Trial ends in {daysLeft} day{daysLeft === 1 ? '' : 's'}.
             </p>
           )}
           {hasCancellation && displayedCancelAtDate && (
-            <p className="text-xs text-purple-700">
+            <p className="text-xs text-[var(--color-brand-contrast)] opacity-80">
               Subscription cancelled — ends on {displayedCancelAtDate.toLocaleDateString()}.
             </p>
           )}
-          {message && <p className="mt-1 text-sm text-purple-800">{message}</p>}
+          {message && <p className="mt-1 text-sm text-[var(--color-brand-contrast)]">{message}</p>}
         </div>
 
         <div className="flex flex-col gap-3 items-start">
           {!isPro ? (
             <>
-              <div className="text-sm text-purple-900">
+              <div className="text-sm text-[var(--color-brand-contrast)]">
                 <div className="font-semibold">Pro Plan Includes:</div>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-[var(--color-brand-contrast)] opacity-80">
                   <li>Unlimited Clients & Invoices</li>
                   <li>Payment Methods (Venmo / Zelle)</li>
                   <li>Stripe Online Payment Integration</li>
@@ -122,23 +145,42 @@ export function UpgradeCard({ currentPlan, upgradeStatus, sessionId }: UpgradeCa
               <button
                 type="button"
                 onClick={() => router.push('/payment?mode=subscription')}
-                className="inline-flex items-center justify-center rounded-lg bg-purple-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-800"
+                className={
+                  contrastIsLight
+                    ? 'inline-flex items-center justify-center rounded-lg border border-brand-primary-600 bg-white px-4 py-2 text-sm font-semibold text-brand-primary-700 shadow-sm transition hover:bg-white/90'
+                    : 'inline-flex items-center justify-center rounded-lg border border-black/70 bg-white px-4 py-2 text-sm font-semibold text-black shadow-sm transition hover:bg-black/5'
+                }
               >
-                Upgrade to Pro ($19/mo)
+                Upgrade to Pro ($9.99/mo)
               </button>
             </>
           ) : (
             <button
               type="button"
-              onClick={handleSubscriptionAction}
+              onClick={() => {
+                if (hasCancellation) {
+                  handleSubscriptionAction();
+                } else {
+                  setShowCancelConfirm(true);
+                }
+              }}
               disabled={isProcessing}
-              className="inline-flex items-center justify-center rounded-lg border border-purple-700 bg-white/90 px-4 py-2 text-sm font-semibold text-purple-700 shadow-sm transition hover:bg-white cursor-pointer disabled:cursor-not-allowed disabled:border-purple-300 disabled:text-purple-300"
+              className="inline-flex items-center justify-center rounded-lg border border-brand-primary-200 bg-white/10 px-4 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-white/20 cursor-pointer disabled:cursor-not-allowed disabled:border-brand-primary-300 disabled:text-brand-primary-300"
             >
               {buttonLabel}
             </button>
           )}
         </div>
       </div>
+      <ConfirmationModal
+        isOpen={showCancelConfirm}
+        onClose={() => setShowCancelConfirm(false)}
+        onConfirm={handleSubscriptionAction}
+        title="Cancel subscription?"
+        message="Are you sure you want to cancel your Pro subscription?"
+        confirmText="Cancel subscription"
+        cancelText="Keep Pro"
+      />
     </div>
   );
 }

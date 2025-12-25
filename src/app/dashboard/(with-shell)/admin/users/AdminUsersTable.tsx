@@ -1,11 +1,10 @@
 'use client';
-
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { DeleteUserButton } from './DeleteUserButton';
 import { ImpersonateUserButton } from './ImpersonateUserButton';
 import { Link as LinkIcon } from 'lucide-react';
+import { ConfirmationModal } from '@/components/ui/ConfirmationModal';
 
 type Member = {
   id: string;
@@ -36,10 +35,10 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [generatedLinks, setGeneratedLinks] = useState<Map<string, { link: string; expiresAt: string }>>(new Map());
   const [generatingFor, setGeneratingFor] = useState<string | null>(null);
+  const [showBulkConfirm, setShowBulkConfirm] = useState(false);
 
   const selectableMembers = useMemo(() => members, [members]);
 
-  // Drop any selections that no longer exist (after deletes/refresh)
   useEffect(() => {
     setSelectedIds((prev) => {
       const valid = new Set(selectableMembers.map((m) => m.id));
@@ -70,15 +69,6 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
 
   const handleBulkDelete = async () => {
     if (!selectedIds.size) return;
-    const selectedMembers = selectableMembers.filter((m) => selectedIds.has(m.id));
-    const hasOwner = selectedMembers.some((m) => m.role === 'OWNER');
-    const warning = hasOwner
-      ? `Delete ${selectedIds.size} user(s)? Deleting an owner will also remove their entire company and members.`
-      : `Delete ${selectedIds.size} user(s)? This cannot be undone.`;
-    if (
-      !confirm(warning)
-    )
-      return;
     setIsDeleting(true);
     try {
       const ids = Array.from(selectedIds);
@@ -87,10 +77,7 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
         try {
           const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
           if (!res.ok) {
-            // If the user was already removed (e.g., owner cascade), treat as success
-            if (res.status === 404) {
-              continue;
-            }
+            if (res.status === 404) continue;
             let reason: string | undefined;
             try {
               const body = await res.json();
@@ -104,7 +91,6 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
           failed.push({ id, reason: error instanceof Error ? error.message : 'Unknown error' });
         }
       }
-
       if (failed.length === 0) {
         setSelectedIds(new Set());
         router.refresh();
@@ -130,12 +116,10 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId }),
       });
-
       if (!res.ok) {
         alert('Failed to generate magic link');
         return;
       }
-
       const data = await res.json();
       setGeneratedLinks((prev) => new Map(prev).set(userId, {
         link: data.magicLink,
@@ -154,93 +138,183 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
     alert('Magic link copied to clipboard!');
   };
 
+  const selectedMembers = selectableMembers.filter((m) => selectedIds.has(m.id));
+  const hasOwner = selectedMembers.some((m) => m.role === 'OWNER');
+  const bulkWarning = hasOwner
+    ? `Delete ${selectedIds.size} user(s)? Deleting an owner will also remove their entire company and members.`
+    : `Delete ${selectedIds.size} user(s)? This cannot be undone.`;
+
   return (
-    <div className="space-y-3">
-      <table className="w-full table-auto text-sm">
-        <thead className="border-b border-zinc-200">
-          <tr>
-            <th className="pb-3 pr-12 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Name</th>
-            <th className="pb-3 pr-12 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Email</th>
-            <th className="pb-3 pr-12 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Company</th>
-            <th className="pb-3 pr-12 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Role</th>
-            <th className="pb-3 pr-12 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Status</th>
-            <th className="pb-3 pr-6 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">Actions</th>
-            <th className="pb-3 text-right pr-2">
-              <div className="flex items-center justify-end gap-2">
-                <input
-                  type="checkbox"
-                  aria-label="Select all"
-                  checked={selectedIds.size > 0 && selectedIds.size === selectableMembers.length}
-                  ref={(el) => {
-                    if (el) {
-                      el.indeterminate = selectedIds.size > 0 && selectedIds.size < selectableMembers.length;
-                    }
-                  }}
-                  onChange={(e) => toggleAll(e.target.checked)}
-                  className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleBulkDelete}
-                  disabled={!selectedIds.size || isDeleting}
-                  title="Delete selected"
-                  className="rounded border border-rose-200 bg-white p-1.5 text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
-                    <path d="M3 6h18" />
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-                  </svg>
-                </button>
-              </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-zinc-100">
-          {members.map((member) => {
-            const isOwner = member.role === 'OWNER';
-            return (
-              <tr key={member.id} className={`hover:bg-zinc-50 ${isOwner ? 'bg-amber-50/50' : ''}`}>
-                <td className="py-4 pr-12">
-                  <div className={`flex items-center gap-3 ${isOwner ? '' : 'pl-3'}`}>
-                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-purple-100 text-xs font-semibold uppercase text-purple-600">
-                      {getInitials(member.name, member.email)}
-                    </span>
-                    <span className="font-semibold text-zinc-900">{member.name ?? 'Unnamed'}</span>
-                  </div>
-                </td>
-                <td className="py-4 pr-12 text-zinc-600">{member.email}</td>
-                <td className="py-4 pr-12 text-sm text-zinc-600">
-                  {member.role === 'OWNER' ? member.company?.name ?? '—' : '—'}
-                </td>
-                <td className="py-4 pr-12">
-                  <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">
-                    {isOwner ? '' : member.role}
+    <div className="rounded-2xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
+      {/* Mobile Card View */}
+      <div className="space-y-4 md:hidden p-4">
+        {members.map((member) => {
+          const isOwner = member.role === 'OWNER';
+
+          return (
+            <div key={member.id} className="rounded-lg border bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-primary-700 text-sm font-semibold uppercase text-white">
+                    {getInitials(member.name, member.email)}
                   </span>
-                </td>
-                <td className="py-4 pr-12 text-sm">
-                  {isOwner
-                    ? <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                  <div>
+                    <p className="font-semibold text-gray-900">{member.name ?? 'Unnamed'}</p>
+                    <p className="text-sm text-gray-600">{member.email}</p>
+                    {member.company?.name && (
+                      <p className="text-sm text-gray-500">{member.company.name}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold uppercase text-zinc-600">
+                    {member.role}
+                  </span>
+                  {isOwner && (
+                    <p className="mt-1 text-xs font-medium text-amber-700">Owner</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="text-sm text-gray-600 mb-4">
+                <p>
+                  Status:{' '}
+                  {isOwner ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                      Owner
+                    </span>
+                  ) : member.isConfirmed ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                      Confirmed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-600">
+                      Pending
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => generateMagicLink(member.id)}
+                  disabled={generatingFor === member.id}
+                  className="inline-flex items-center gap-1 rounded border border-brand-primary-200 bg-white px-3 py-1.5 text-sm text-brand-primary-600 hover:bg-brand-primary-50 disabled:opacity-50"
+                >
+                  <LinkIcon size={14} />
+                  Magic Link
+                </button>
+                <ImpersonateUserButton userId={member.id} userName={member.name ?? member.email} />
+                <DeleteUserButton
+                  userId={member.id}
+                  userName={member.name ?? member.email}
+                  role={member.role}
+                />
+              </div>
+
+              {generatedLinks.has(member.id) && (
+                <div className="mt-3 rounded bg-brand-primary-50 p-3 text-xs">
+                  <input
+                    type="text"
+                    readOnly
+                    value={generatedLinks.get(member.id)!.link}
+                    className="w-full rounded border border-brand-primary-200 bg-white px-2 py-1 font-mono text-xs"
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <button
+                      onClick={() => copyToClipboard(generatedLinks.get(member.id)!.link)}
+                      className="rounded bg-brand-primary-600 px-3 py-1 text-white hover:bg-brand-primary-700"
+                    >
+                      Copy
+                    </button>
+                    <span className="text-brand-primary-700">
+                      Expires: {new Date(generatedLinks.get(member.id)!.expiresAt).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop Table View */}
+      <div className="hidden md:block rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="relative max-h-[70vh] overflow-x-auto overflow-y-auto">
+          <table className="w-full min-w-[820px]">
+            <thead className="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-50">
+              <tr>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Name
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Email
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Company
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Role
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Status
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Actions
+              </th>
+              <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                Select
+              </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-100 bg-white">
+            {members.map((member) => {
+              const isOwner = member.role === 'OWNER';
+
+              return (
+                <tr key={member.id} className={`hover:bg-zinc-50 ${isOwner ? 'bg-amber-50/50' : ''}`}>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-primary-700 text-xs font-semibold uppercase text-white">
+                        {getInitials(member.name, member.email)}
+                      </span>
+                      <span className="font-semibold text-zinc-900">{member.name ?? 'Unnamed'}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 text-zinc-600">{member.email}</td>
+                  <td className="px-6 py-4 text-sm text-zinc-600">
+                    {member.role === 'OWNER' ? member.company?.name ?? '—' : '—'}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-600">
+                      {member.role}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    {isOwner ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
                         Owner
                       </span>
-                    : member.isConfirmed
-                    ? <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                    ) : member.isConfirmed ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
                         Confirmed
                       </span>
-                    : <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600">
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-600">
                         <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
                         Pending
-                      </span>}
-                </td>
-                <td className="py-4 pr-6 text-sm text-gray-600">
-                  <div className="flex flex-col items-start gap-2">
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => generateMagicLink(member.id)}
                         disabled={generatingFor === member.id}
-                        className="inline-flex items-center justify-center rounded-lg border border-purple-200 bg-white p-2 text-purple-600 shadow-sm transition hover:bg-purple-50 hover:text-purple-700 disabled:opacity-50"
+                        className="rounded border border-brand-primary-200 bg-white p-1.5 text-brand-primary-600 hover:bg-brand-primary-50 disabled:opacity-50"
                         title="Generate magic login link"
                       >
                         <LinkIcon size={16} />
@@ -252,52 +326,92 @@ export function AdminUsersTable({ members }: { members: Member[] }) {
                         role={member.role}
                       />
                     </div>
-                    {generatedLinks.has(member.id) && (
-                      <div className="flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-2 text-xs">
-                        <input
-                          type="text"
-                          readOnly
-                          value={generatedLinks.get(member.id)!.link}
-                          className="w-64 rounded border border-purple-200 bg-white px-2 py-1 text-xs"
-                          onClick={(e) => e.currentTarget.select()}
-                        />
-                        <button
-                          onClick={() => copyToClipboard(generatedLinks.get(member.id)!.link)}
-                          className="rounded bg-purple-600 px-2 py-1 text-white hover:bg-purple-700"
-                        >
-                          Copy
-                        </button>
-                        <span className="text-purple-600">
-                          Expires: {new Date(generatedLinks.get(member.id)!.expiresAt).toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </td>
-                <td className="py-3 text-right pr-2">
-                  <div className="flex items-center justify-end gap-2">
+                  </td>
+                  <td className="px-6 py-4 text-right">
                     <input
                       type="checkbox"
                       aria-label={`Select ${member.name ?? member.email}`}
                       checked={selectedIds.has(member.id)}
                       onChange={(e) => toggleOne(member.id, e.target.checked)}
-                      className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                      className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                     />
-                    <div className="w-[28px]" aria-hidden="true"></div>
-                  </div>
+                  </td>
+                </tr>
+              );
+            })}
+            {members.length === 0 && (
+              <tr>
+                <td colSpan={7} className="py-10 text-center text-sm text-zinc-500">
+                  No members yet.
                 </td>
               </tr>
-            );
-          })}
-          {members.length === 0 && (
-            <tr>
-              <td colSpan={7} className="py-6 text-center text-sm text-zinc-500">
-                No members yet.
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Bulk actions bar (shared for both views) */}
+      {selectedIds.size > 0 && (
+        <div className="border-t border-zinc-200 bg-zinc-50 px-4 py-3 flex items-center justify-between">
+          <p className="text-sm text-zinc-700">
+            {selectedIds.size} {selectedIds.size === 1 ? 'user' : 'users'} selected
+          </p>
+          <button
+            onClick={() => setShowBulkConfirm(true)}
+            disabled={isDeleting}
+            className="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete selected'}
+          </button>
+        </div>
+      )}
+      <ConfirmationModal
+        isOpen={showBulkConfirm}
+        onClose={() => setShowBulkConfirm(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete users?"
+        message={bulkWarning}
+        confirmText="Delete"
+        cancelText="Cancel"
+      />
+
+      {/* Magic links section (shared) */}
+      {generatedLinks.size > 0 && (
+        <div className="border-t border-zinc-200 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">Generated Magic Links</p>
+          <div className="space-y-3">
+            {Array.from(generatedLinks.entries()).map(([userId, { link, expiresAt }]) => {
+              const member = members.find((m) => m.id === userId);
+              return (
+                <div key={userId} className="rounded-lg bg-brand-primary-50 p-3">
+                  <p className="text-xs font-medium text-brand-primary-800 mb-1">
+                    {member?.name || member?.email}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={link}
+                      className="flex-1 min-w-0 rounded border border-brand-primary-200 bg-white px-3 py-1.5 text-xs font-mono"
+                      onClick={(e) => e.currentTarget.select()}
+                    />
+                    <button
+                      onClick={() => copyToClipboard(link)}
+                      className="rounded bg-brand-primary-600 px-4 py-1.5 text-xs text-white hover:bg-brand-primary-700"
+                    >
+                      Copy
+                    </button>
+                    <span className="text-xs text-brand-primary-700">
+                      Expires: {new Date(expiresAt).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

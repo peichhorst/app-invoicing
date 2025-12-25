@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ClientForm, type ClientFormValues } from '@components/ClientForm';
 
 type MemberOption = { id: string; name: string | null; email: string | null };
+type ToastState = { message: string; variant: 'success' | 'error' };
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -14,6 +15,8 @@ export default function NewClientPage() {
   const [limitMessage, setLimitMessage] = useState<string | null>(null);
   const [assignableUsers, setAssignableUsers] = useState<MemberOption[]>([]);
   const [canAssign, setCanAssign] = useState(false);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const handleSubmit = async (values: ClientFormValues) => {
     setSaving(true);
@@ -25,55 +28,77 @@ export default function NewClientPage() {
     });
 
     if (res.ok) {
-      alert('New lead created.');
-      router.push('/dashboard/clients');
-      router.refresh();
+      setToast({ message: values.isLead ? 'Lead created.' : 'Client created.', variant: 'success' });
+      setTimeout(() => {
+        router.push('/dashboard/clients');
+        router.refresh();
+      }, 650);
     } else {
       const txt = await res.text();
-      alert(txt || 'Failed - check the console');
+      setToast({ message: txt || 'Failed to create client', variant: 'error' });
       console.error('Create client failed', txt);
     }
     setSaving(false);
   };
 
   useEffect(() => {
-    const loadLimit = async () => {
+    let isMounted = true;
+    const loadData = async () => {
       try {
-        const res = await fetch('/api/clients/can-create');
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        setCanCreate(data.canCreate);
-        if (!data.canCreate) {
-          setLimitMessage('Free plan allows up to 3 clients. Upgrade to add more.');
-        }
-      } catch (err: any) {
-        console.error('Client limit check failed', err);
-        setLimitMessage('Unable to check client limit.');
-      }
-    };
-    void loadLimit();
-
-    const loadAssignable = async () => {
-      try {
-        const me = await fetch('/api/auth/me');
-        const meJson = await me.json().catch(() => null);
+        const meRes = await fetch('/api/auth/me');
+        const meJson = await meRes.json().catch(() => null);
         const role = meJson?.user?.role as string | undefined;
         const elevated = role === 'OWNER' || role === 'ADMIN';
+        if (meJson?.user?.id) {
+          setCurrentUserId(meJson.user.id);
+        }
         setCanAssign(elevated);
-        if (!elevated) return;
-        const res = await fetch('/api/company/members');
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        setAssignableUsers(data.members ?? []);
+
+        const companyId = meJson?.user?.companyId ?? meJson?.user?.company?.id ?? null;
+        if (!companyId) {
+          setCanCreate(false);
+          setLimitMessage('You must belong to a company before creating clients.');
+        } else {
+          const res = await fetch('/api/clients/can-create');
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          setCanCreate(data.canCreate);
+          if (!data.canCreate) {
+            setLimitMessage('Free plan allows up to 3 clients. Upgrade to add more.');
+          }
+          if (elevated) {
+            const membersRes = await fetch('/api/company/members');
+            if (!membersRes.ok) throw new Error(await membersRes.text());
+            const membersData = await membersRes.json();
+            if (isMounted) {
+              setAssignableUsers(membersData.members ?? []);
+            }
+          }
+        }
       } catch (err) {
-        console.error('Failed to load assignable users', err);
+        console.error('Failed to load client helpers', err);
+        setLimitMessage('Unable to verify client limits at this time.');
       }
     };
-    void loadAssignable();
+
+    void loadData();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 px-10 py-10">
+      {toast && (
+        <div
+          className={`fixed right-6 top-6 z-50 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition ${
+            toast.variant === 'success' ? 'bg-emerald-500' : 'bg-rose-500'
+          }`}
+        >
+          {toast.message}
+        </div>
+      )}
       <div className="mx-auto max-w-6xl space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -89,7 +114,7 @@ export default function NewClientPage() {
               <button
                 type="button"
                 onClick={() => router.push('/dashboard/profile')}
-                className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700"
+                className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700"
               >
                 Upgrade Plan
               </button>
@@ -105,12 +130,14 @@ export default function NewClientPage() {
         ) : (
           <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
             <ClientForm
+              initialValues={currentUserId ? { assignedToId: currentUserId } : undefined}
               onSubmit={handleSubmit}
               onCancel={() => router.push('/dashboard/clients')}
               submitting={saving}
               submitLabel="Save Client"
               assignableUsers={assignableUsers}
               canAssign={canAssign}
+              allowUnassigned={false}
             />
           </div>
         )}

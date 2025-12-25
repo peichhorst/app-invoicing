@@ -23,7 +23,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <main className="mx-auto w-full max-w-6xl px-0 py-0">{children}</main>
+          <main className="mx-auto w-full max-w-7xl px-4 py-0 sm:px-6">{children}</main>
         </div>
       </div>
       {mobileOpen && !hideSidebar && (
@@ -36,7 +36,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             <div className="relative h-full">
               <button
                 type="button"
-                className="absolute top-5 right-2 z-40 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-purple-700 text-purple-700 shadow-sm"
+                className="absolute top-5 right-2 z-40 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white border border-brand-primary-700 text-brand-primary-700 shadow-sm"
                 onClick={close}
               >
                 <span className="sr-only">Close menu</span>

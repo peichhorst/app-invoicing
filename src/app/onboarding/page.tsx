@@ -48,6 +48,17 @@ export default function OnboardingPage() {
   const [logoPreview, setLogoPreview] = useState('');
   const [logoError, setLogoError] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
+
+  // On auth/onboarding screens, kill any stale service worker/cache to avoid chunk load errors.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => Promise.all(regs.map((reg) => reg.unregister())))
+      .catch((err) => console.error("Service worker cleanup failed", err));
+  }, []);
+
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [logoFetching, setLogoFetching] = useState(false);
   const [logoFetchStatus, setLogoFetchStatus] = useState<{ message: string; success: boolean; source?: string } | null>(null);
@@ -61,6 +72,8 @@ export default function OnboardingPage() {
   const [country, setCountry] = useState('USA');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [useHeaderLogo, setUseHeaderLogo] = useState(false);
   const [clientForm, setClientForm] = useState<ClientPayload>({
     companyName: '',
     contactName: '',
@@ -69,7 +82,13 @@ export default function OnboardingPage() {
   });
   const [creatingClient, setCreatingClient] = useState(false);
   const [clientMessage, setClientMessage] = useState<string | null>(null);
+  const [clientError, setClientError] = useState<string | null>(null);
   const isOwner = user?.role === 'OWNER';
+  const displayBusinessName =
+    (companyName && companyName.trim()) ||
+    user?.company?.name ||
+    user?.companyName ||
+    null;
 
   const countryList = useMemo(() => {
     const all = Country.getAllCountries();
@@ -115,6 +134,7 @@ export default function OnboardingPage() {
           setPostalCode(data.user.company?.postalCode || '');
           setCountry(data.user.company?.country || 'USA');
           setWebsiteUrl(data.user.company?.website || '');
+          setUseHeaderLogo(Boolean(data.user.company?.useHeaderLogo));
           setClientForm((prev) => ({
             ...prev,
             email: prev.email || data.user.email || '',
@@ -169,6 +189,11 @@ export default function OnboardingPage() {
       const data = await res.json();
       setLogoDataUrl(data.secureUrl);
       setLogoPreview(data.secureUrl);
+      setUseHeaderLogo(true);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: data.secureUrl }));
+        window.dispatchEvent(new CustomEvent('company-logo-toggle', { detail: true }));
+      }
     } catch (error: any) {
       setLogoError(error?.message || 'Logo upload failed.');
     } finally {
@@ -178,15 +203,19 @@ export default function OnboardingPage() {
 
   const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const trimmedCompany = companyName.trim();
+    if (!trimmedCompany) {
+      setProfileError('Business name is required.');
+      setProfileMessage(null);
+      return;
+    }
+
+    setProfileError(null);
     setProfileMessage(null);
     setProfileSaving(true);
-    const canonicalCompanyName =
-      companyName.trim() ||
-      user?.companyName ||
-      user?.company?.name ||
-      'My Business';
+    const canonicalCompanyName = trimmedCompany || user?.companyName || user?.company?.name || 'My Business';
     try {
-      const canonicalName = companyName.trim() || null;
+      const canonicalName = trimmedCompany || null;
       const payload = {
         name: canonicalName,
         companyName: canonicalName,
@@ -217,6 +246,7 @@ export default function OnboardingPage() {
           body: JSON.stringify({
             name: canonicalCompanyName,
             websiteUrl: websiteUrl.trim() || null,
+            useHeaderLogo,
           }),
         });
         if (!companyRes.ok) {
@@ -231,9 +261,21 @@ export default function OnboardingPage() {
         companyName: companyName ? `${companyName} Client` : prev.companyName,
       }));
     } catch (error: any) {
-      setProfileMessage(error?.message || 'Could not save company info.');
+      setProfileError(error?.message || 'Could not save company info.');
     } finally {
       setProfileSaving(false);
+    }
+  };
+
+  const handleHeaderLogoToggle = (checked: boolean) => {
+    setUseHeaderLogo(checked);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('company-logo-toggle', { detail: checked }));
+      if (!checked) {
+        window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: '' }));
+      } else if (logoDataUrl) {
+        window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: logoDataUrl }));
+      }
     }
   };
 
@@ -267,7 +309,17 @@ export default function OnboardingPage() {
   const handleFinishOnboarding = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setClientMessage(null);
+    setClientError(null);
+    if (!clientForm.companyName.trim()) {
+      setClientError('Client name is required.');
+      return;
+    }
+    if (!clientForm.email.trim()) {
+      setClientError('Client email is required.');
+      return;
+    }
     setCreatingClient(true);
+    setRedirecting(false);
     try {
       const clientPayload = {
         companyName: clientForm.companyName,
@@ -290,17 +342,37 @@ export default function OnboardingPage() {
         throw new Error(await clientRes.text());
       }
 
-      setClientMessage('Client created! You can now send your first invoice.');
-      setTimeout(() => {
-        router.push('/dashboard');
-        router.refresh();
-      }, 1200);
+      // Mark onboarding as complete
+      if (isOwner) {
+        const companyRes = await fetch('/api/company', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            completeOnboarding: true,
+          }),
+        });
+        if (!companyRes.ok) {
+          throw new Error('Failed to complete onboarding');
+        }
+      }
+
+      setClientMessage('Client created! Redirecting to dashboard…');
+      setRedirecting(true);
     } catch (error: any) {
-      setClientMessage(error?.message || 'Failed to create your first client.');
+      setClientError(error?.message || 'Failed to create your first client.');
     } finally {
       setCreatingClient(false);
     }
   };
+
+  // Handle delayed redirect once redirecting is true so the overlay can render.
+  useEffect(() => {
+    if (!redirecting) return;
+    const timer = setTimeout(() => {
+      window.location.href = '/dashboard';
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [redirecting]);
 
   async function requestLogoFromWebsite(value: string) {
     if (!value) return;
@@ -320,6 +392,11 @@ export default function OnboardingPage() {
       if (data?.success) {
         setLogoPreview(data.logoUrl);
         setLogoDataUrl(data.logoUrl);
+        setUseHeaderLogo(true);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('company-logo-uploaded', { detail: data.logoUrl }));
+          window.dispatchEvent(new CustomEvent('company-logo-toggle', { detail: true }));
+        }
         setLogoFetchStatus({
           message: `Logo fetched via ${data.source ?? 'site'}.`,
           success: true,
@@ -346,14 +423,36 @@ export default function OnboardingPage() {
 
   if (loading || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 text-sm text-white">
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 text-sm text-white">
         Loading onboarding...
       </div>
     );
   }
 
   return (
-    <div className="relative flex min-h-screen items-start justify-center overflow-hidden bg-gradient-to-br from-purple-700 via-indigo-700 to-blue-700 px-4 py-16">
+    <div className="relative flex min-h-screen items-start justify-center overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 py-16">
+      {redirecting && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="rounded-3xl border border-white/10 bg-white/10 px-6 py-5 text-center shadow-2xl">
+            <div className="flex items-center justify-center gap-2 text-white">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/15" aria-hidden="true">
+                <svg className="h-6 w-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              </span>
+              <div className="text-left">
+                <p className="text-sm font-semibold uppercase tracking-[0.3em] text-white/80">Redirecting</p>
+                <p className="text-sm text-white">Setting up your workspace…</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="absolute inset-0 opacity-40">
         <div className="grid-overlay" />
       </div>
@@ -364,13 +463,34 @@ export default function OnboardingPage() {
           <p className="text-sm text-white/70">
             You are signed in with email <strong>{user.email}</strong>. <br />We just need some information about you and to add a first client to get a real invoice ready.
           </p>
+          {displayBusinessName && (
+            <p className="text-sm text-white/70">
+              Business name:
+              <br />
+              <span className="text-white font-semibold">{displayBusinessName}</span>
+            </p>
+          )}
         </div>
 
-        <div className="space-y-6">
-          <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
-            <span className={`px-4 py-2 rounded-full ${step === 1 ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/70'}`}>Step 1</span>
-            <span className={`px-4 py-2 rounded-full ${step === 2 ? 'bg-purple-600 text-white' : 'bg-white/10 text-white/70'}`}>Step 2</span>
-          </div>
+          <div className="space-y-6">
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-white/70">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className={`px-4 py-2 rounded-full transition ${step === 1 ? 'bg-brand-primary-600 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
+                aria-current={step === 1 ? 'step' : undefined}
+              >
+                Step 1
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                className={`px-4 py-2 rounded-full transition ${step === 2 ? 'bg-brand-primary-600 text-white' : 'bg-white/10 text-white/70 hover:bg-white/20'}`}
+                aria-current={step === 2 ? 'step' : undefined}
+              >
+                Step 2
+              </button>
+            </div>
 
           {step === 1 && (
             <form
@@ -381,11 +501,21 @@ export default function OnboardingPage() {
                 <label className="text-sm font-medium text-white/80 mb-1 block">Company / Personal Name</label>
                 <input
                   value={companyName}
-                  onChange={(event) => setCompanyName(event.target.value)}
+                  onChange={(event) => {
+                    setCompanyName(event.target.value);
+                    if (profileError) setProfileError(null);
+                  }}
                   placeholder="Acme Corp or John Smith"
                   className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white placeholder-white/60 focus:border-white focus:outline-none focus:ring-2 focus:ring-white/40"
+                  aria-invalid={Boolean(profileError)}
+                  aria-describedby={profileError ? 'company-error' : undefined}
                 />
                 <p className="text-xs text-white/60">Enter company name or individual&rsquo;s full name</p>
+                {profileError && (
+                  <p id="company-error" className="text-xs text-rose-200">
+                    {profileError}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1 text-sm">
@@ -423,7 +553,7 @@ export default function OnboardingPage() {
                     <select
                       value={stateValue}
                       onChange={(event) => setStateValue(event.target.value)}
-                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-purple-900"
+                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-brand-primary-900"
                     >
                       <option value="">Select state/province</option>
                       {availableStates.map((st: string) => (
@@ -450,7 +580,7 @@ export default function OnboardingPage() {
                 <select
                   value={country}
                   onChange={(event) => handleCompanyCountryChange(event.target.value)}
-                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-purple-900"
+                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-brand-primary-900"
                 >
                   {countryList.map((c) => (
                     <option key={c.isoCode} value={c.name}>
@@ -474,7 +604,7 @@ export default function OnboardingPage() {
                       type="button"
                       onClick={() => requestLogoFromWebsite(websiteUrl.trim())}
                       disabled={!websiteUrl.trim() || logoFetching}
-                      className="rounded-2xl border border-white/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-purple-900 transition hover:bg-white/80 disabled:opacity-60"
+                      className="rounded-2xl border border-white/20 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-900 transition hover:bg-white/80 disabled:opacity-60"
                     >
                       {logoFetching ? 'Finding logo…' : 'Fetch logo'}
                     </button>
@@ -507,16 +637,28 @@ export default function OnboardingPage() {
                     />
                   )}
                   {logoError && <p className="text-xs text-rose-300">{logoError}</p>}
+                  <label className="flex items-center gap-2 text-sm text-white/80">
+                    <input
+                      type="checkbox"
+                      checked={useHeaderLogo}
+                      onChange={(e) => handleHeaderLogoToggle(e.target.checked)}
+                      className="h-4 w-4 rounded border-white/50 bg-white/10 text-brand-primary-900 focus:ring-white"
+                    />
+                    <span>Use company logo in header</span>
+                  </label>
                 </div>
               </div>
 
-              <button
-                type="submit"
-                disabled={profileSaving}
-                className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-purple-900 shadow-lg transition hover:opacity-90 disabled:opacity-60"
-              >
-                {profileSaving ? 'Saving...' : 'Save & continue'}
-              </button>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="rounded-2xl bg-white px-6 py-3 text-sm font-semibold text-brand-primary-900 shadow-lg transition hover:opacity-90 disabled:opacity-60"
+                >
+                  {profileSaving ? 'Saving...' : 'Save & continue'}
+                </button>
+              </div>
+              {profileError && <p className="text-xs text-rose-200">{profileError}</p>}
               {profileMessage && <p className="text-xs text-white/70">{profileMessage}</p>}
             </form>
           )}
@@ -572,7 +714,7 @@ export default function OnboardingPage() {
                     <select
                       value={clientForm.state ?? ''}
                       onChange={(event) => handleClientChange('state', event.target.value)}
-                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-purple-900"
+                      className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-brand-primary-900"
                     >
                       <option value="">Select state/province</option>
                       {availableClientStates.map((st: string) => (
@@ -599,7 +741,7 @@ export default function OnboardingPage() {
                 <select
                   value={clientForm.country ?? ''}
                   onChange={(event) => handleClientCountryChange(event.target.value)}
-                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-purple-900"
+                  className="w-full rounded-2xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-brand-primary-900"
                 >
                   {countryList.map((c) => (
                     <option key={c.isoCode} value={c.name}>
@@ -622,11 +764,12 @@ export default function OnboardingPage() {
               <button
                 type="submit"
                 disabled={creatingClient}
-                className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-purple-900 shadow-lg transition  hover:opacity-90 disabled:opacity-60"
+                className="w-full rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-brand-primary-900 shadow-lg transition  hover:opacity-90 disabled:opacity-60"
               >
                 {creatingClient ? 'Creating client...' : 'Create client'}
               </button>             
 
+              {clientError && <p className="text-xs text-rose-200">{clientError}</p>}
               {clientMessage && <p className="text-xs text-white/70">{clientMessage}</p>}
             </form>
           )}

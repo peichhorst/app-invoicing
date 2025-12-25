@@ -27,6 +27,7 @@ export function ResourceForm({ canManage }: Props) {
   const [loadingPositions, setLoadingPositions] = useState(false);
   const [selectedPositions, setSelectedPositions] = useState<Set<string>>(new Set());
   const [allPositions, setAllPositions] = useState<boolean>(false);
+  const [requiresAcknowledgment, setRequiresAcknowledgment] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +121,7 @@ export function ResourceForm({ canManage }: Props) {
         description: description.trim() || null,
         // When "all positions" is checked, send empty array to indicate visible to all
         visibleToPositions: allPositions ? [] : Array.from(selectedPositions),
+        requiresAcknowledgment,
       };
       const res = await fetch('/api/resources', {
         method: 'POST',
@@ -144,7 +146,15 @@ export function ResourceForm({ canManage }: Props) {
       setDescription('');
       setAllPositions(false);
       setSelectedPositions(new Set());
+      setRequiresAcknowledgment(false);
       router.refresh();
+      if (requiresAcknowledgment) {
+        void fetch('/api/compliance/notify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: payload.title }),
+        });
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to create resource';
       setError(msg);
@@ -157,12 +167,12 @@ export function ResourceForm({ canManage }: Props) {
     <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-zinc-200 bg-white/70 p-6 shadow-sm">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-purple-600">Resources</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Resources</p>
           <h2 className="text-lg font-semibold text-zinc-900">Add a resource</h2>
           <p className="text-sm text-zinc-500">Owners and admins can add links and files for the team.</p>
         </div>
         {!canManage && (
-          <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">Owners/Admins only</span>
+          <span className="rounded-full bg-brand-primary-50 px-3 py-1 text-xs font-semibold text-brand-primary-700">Owners/Admins only</span>
         )}
       </div>
 
@@ -226,7 +236,7 @@ export function ResourceForm({ canManage }: Props) {
             checked={allPositions}
             onChange={(e) => setAllPositions(e.target.checked)}
             disabled={!canManage || loadingPositions}
-            className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+            className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
           />
           Include all positions
         </label>
@@ -243,20 +253,38 @@ export function ResourceForm({ canManage }: Props) {
                   checked={selectedPositions.has(pos.id)}
                   onChange={() => togglePosition(pos.id)}
                   disabled={!canManage || allPositions}
-                  className="h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500"
+                  className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                 />
                 <span className="text-zinc-800">{pos.name}</span>
               </label>
             ))
-          )}
-        </div>
+        )}
       </div>
+    </div>
 
-      <div className="flex items-center gap-3">
+    <div className="space-y-2">
+      <label className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-800">
+        <input
+          type="checkbox"
+          checked={requiresAcknowledgment}
+          onChange={(event) => setRequiresAcknowledgment(event.target.checked)}
+          disabled={!canManage}
+          className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+        />
+        <span>Require team acknowledgment</span>
+      </label>
+      {requiresAcknowledgment && (
+        <p className="text-xs text-zinc-500">
+          Team members will be prompted to acknowledge this document when it becomes available.
+        </p>
+      )}
+    </div>
+
+    <div className="flex items-center gap-3">
         <button
           type="submit"
           disabled={!canSubmit}
-          className="inline-flex items-center justify-center rounded-full border border-purple-600 bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-200 disabled:text-zinc-500"
+          className="inline-flex items-center justify-center rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-200 disabled:text-zinc-500"
         >
           {saving ? 'Saving...' : 'Add resource'}
         </button>

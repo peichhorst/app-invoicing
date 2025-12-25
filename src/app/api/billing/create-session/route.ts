@@ -3,6 +3,8 @@ import Stripe from 'stripe';
 import { getCurrentUser } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
+const SUBSCRIPTION_PRICE_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 999);
+
 const stripeSecret = process.env.STRIPE_SECRET_KEY;
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
@@ -36,7 +38,7 @@ export async function POST() {
           price_data: {
             currency: 'usd',
             product_data: { name: 'ClientWave Pro – Unlimited clients' },
-          unit_amount: 1900,
+            unit_amount: SUBSCRIPTION_PRICE_CENTS,
             recurring: { interval: 'month' },
           },
           quantity: 1,

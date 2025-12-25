@@ -6,10 +6,10 @@ import { sendEmailChangeVerificationEmail } from '@/lib/email';
 import crypto from 'crypto';
 
 type PageProps = {
-  searchParams?: {
+  searchParams?: Promise<{
     status?: string;
     error?: string;
-  };
+  }>;
 };
 
 export default async function EmailSettingsPage({ searchParams }: PageProps) {
@@ -18,8 +18,10 @@ export default async function EmailSettingsPage({ searchParams }: PageProps) {
     redirect('/login');
   }
 
-  const status = searchParams?.status;
-  const error = searchParams?.error;
+  const params = await searchParams;
+
+  const status = params?.status;
+  const error = params?.error;
 
   const getMessage = () => {
     if (error) {
@@ -76,7 +78,11 @@ export default async function EmailSettingsPage({ searchParams }: PageProps) {
       },
     });
 
-    await sendEmailChangeVerificationEmail(newEmail, token);
+    await sendEmailChangeVerificationEmail(
+      newEmail,
+      token,
+      currentUser.company?.primaryColor ?? null
+    );
     revalidatePath('/settings/email');
     redirect('/settings/email?status=sent');
   }
@@ -114,7 +120,7 @@ export default async function EmailSettingsPage({ searchParams }: PageProps) {
             </div>
             <button
               type="submit"
-              className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-purple-700"
+              className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700"
             >
               Change email
             </button>

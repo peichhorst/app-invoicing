@@ -4,6 +4,7 @@ import {
   getInvoiceStatuses,
   getReportingSummary,
   ReportingFilters,
+  ReportingSummary,
 } from '@/lib/reporting';
 import ReportingDashboard from './ReportingDashboard';
 import Link from 'next/link';
@@ -16,8 +17,9 @@ export default async function ReportingPage() {
 
   const plan = describePlan(user);
   const companyId = user.companyId ?? user.company?.id ?? null;
-  const includeCompany = (user.role === 'OWNER' || user.role === 'ADMIN') && Boolean(companyId);
-  const reportingScope = { userId: user.id, companyId, includeCompany };
+  const canSeeTeam = (user.role === 'OWNER' || user.role === 'ADMIN') && Boolean(companyId);
+  // Default personal scope (owner/admin can opt into team view separately)
+  const reportingScope = { userId: user.id, companyId, includeCompany: false };
   const today = new Date();
   const initialFilters: ReportingFilters = {
     year: today.getFullYear(),
@@ -30,6 +32,14 @@ export default async function ReportingPage() {
     getReportingSummary(reportingScope, initialFilters),
     getInvoiceStatuses(reportingScope),
   ]);
+
+  let teamInitialSummary: ReportingSummary | null = null;
+  if (canSeeTeam) {
+    teamInitialSummary = await getReportingSummary(
+      { userId: user.id, companyId, includeCompany: true },
+      initialFilters,
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6 sm:px-8">
@@ -48,7 +58,26 @@ export default async function ReportingPage() {
           initialSummary={initialSummary}
           statusOptions={statusOptions}
           planTier={plan.effectiveTier}
+          canSeeTeam={false}
         />
+
+        {canSeeTeam && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900">Team Reporting</h2>
+              <p className="text-sm text-zinc-500">Company-wide revenue across all team members.</p>
+            </div>
+            <ReportingDashboard
+              initialFilters={initialFilters}
+              initialSummary={teamInitialSummary ?? initialSummary}
+              initialTeamSummary={teamInitialSummary ?? null}
+              statusOptions={statusOptions}
+              planTier={plan.effectiveTier}
+              canSeeTeam={true}
+              forceTeamOnly
+            />
+          </div>
+        )}
       </div>
     </div>
   );

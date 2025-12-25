@@ -112,7 +112,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
       });
 
       if (response.ok) {
-        router.push('/owner/team');
+        router.push('/dashboard/team');
       } else {
         alert('Failed to update user');
       }
@@ -151,7 +151,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
           <h3 className="text-lg font-semibold text-zinc-900">{member.name ?? 'Unnamed'}</h3>
           <p className="text-sm text-zinc-500">{member.email}</p>
           <div className="mt-2">
-            <label className="inline-flex items-center justify-center rounded-lg bg-purple-600 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-purple-700 cursor-pointer">
+            <label className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 cursor-pointer">
               {logoDataUrl ? 'Change' : 'Upload'} Photo
               <input
                 type="file"
@@ -176,7 +176,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
           id="name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-brand-primary-500 focus:ring-brand-primary-500"
         />
       </div>
 
@@ -189,7 +189,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
           id="email"
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-brand-primary-500 focus:ring-brand-primary-500"
         />
       </div>
 
@@ -202,7 +202,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
           id="phone"
           value={formData.phone}
           onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-brand-primary-500 focus:ring-brand-primary-500"
         />
       </div>
 
@@ -215,7 +215,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
           value={formData.positionId}
           onChange={(e) => setFormData({ ...formData, positionId: e.target.value })}
           disabled={loadingPositions}
-          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-brand-primary-500 focus:ring-brand-primary-500"
         >
           <option value="">
             {loadingPositions ? 'Loading positions...' : 'Select position'}
@@ -236,7 +236,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
           id="reportsToId"
           value={formData.reportsToId}
           onChange={(e) => setFormData({ ...formData, reportsToId: e.target.value })}
-          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-purple-500 focus:ring-purple-500"
+          className="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-brand-primary-500 focus:ring-brand-primary-500"
         >
           <option value="">No manager</option>
           {managerOptions.map((manager) => (
@@ -251,7 +251,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
         <input type="hidden" name="logoDataUrl" value={logoDataUrl} />
         <button
           type="button"
-          onClick={() => router.push('/owner/team')}
+          onClick={() => router.push('/dashboard/team')}
           className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
         >
           Cancel
@@ -259,7 +259,7 @@ export default function EditUserForm({ member, managerOptions }: Props) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+          className="rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-primary-700 disabled:opacity-50"
         >
           {isSubmitting ? 'Saving...' : 'Save Changes'}
         </button>

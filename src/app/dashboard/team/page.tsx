@@ -2,30 +2,51 @@ import Link from 'next/link';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { redirect } from 'next/navigation';
-import { DeleteUserButton } from '@/app/dashboard/admin/users/DeleteUserButton';
 import InviteUserForm from '@/app/dashboard/admin/users/InviteUserForm';
 import { TeamTableWithAutoRefresh } from './TeamTableWithAutoRefresh';
 import { PositionManager } from './PositionManager';
 
 export const dynamic = 'force-dynamic';
 
-export default async function OwnerTeamPage() {
+export default async function DashboardTeamPage() {
   const user = await getCurrentUser();
-  if (!user || user.role !== 'OWNER') {
+  if (!user || (user.role !== 'OWNER' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN')) {
     redirect('/dashboard');
   }
 
-  const ownerCompany =
-    user.companyId ??
-    (await prisma.company.findFirst({
+  let companyId = user.companyId ?? null;
+  if (!companyId && user.role === 'OWNER') {
+    const ownerCompany = await prisma.company.findFirst({
       where: { ownerId: user.id },
       select: { id: true },
-    }))?.id ??
-    null;
+    });
+    companyId = ownerCompany?.id ?? null;
+  }
 
-  const ownerCompanyMissing = !ownerCompany;
+  const companyMissing = !companyId;
 
-  const members = ownerCompany
+  const owner =
+    companyId === null
+      ? null
+      : await prisma.user.findFirst({
+          where: { companyId, role: 'OWNER' },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            isConfirmed: true,
+            position: true,
+            positionId: true,
+            positionCustom: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        });
+
+  const members = companyId
     ? await prisma.user.findMany({
         select: {
           id: true,
@@ -42,23 +63,24 @@ export default async function OwnerTeamPage() {
             },
           },
         },
-        where: { companyId: ownerCompany },
+        where: { companyId, role: { not: 'OWNER' } },
         orderBy: { createdAt: 'asc' },
       })
     : [];
+  const teamMembers = owner ? [{ ...owner }, ...members] : members;
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-6 sm:px-8">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-6xl space-y-6">
         <div>
           <h1 className="text-3xl font-semibold text-gray-900">Team</h1>
           <p className="text-sm text-gray-500">Manage your company members and roles.</p>
         </div>
-        <PositionManager />
-        {ownerCompanyMissing ? (
+        {user.role === 'OWNER' && <PositionManager />}
+        {companyMissing ? (
           <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5 text-sm text-orange-900">
             <p className="text-xs font-semibold uppercase tracking-[0.3em] text-orange-500">
-              Owner account missing company
+              Company not configured
             </p>
             <p className="mt-1 text-base font-semibold">Complete your company setup before inviting teammates.</p>
             <p className="mt-2 text-zinc-700">
@@ -66,7 +88,7 @@ export default async function OwnerTeamPage() {
             </p>
             <Link
               href="/dashboard/settings"
-              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-purple-600 hover:text-purple-700"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600 hover:text-brand-primary-700"
             >
               Update settings
             </Link>
@@ -74,7 +96,7 @@ export default async function OwnerTeamPage() {
         ) : (
           <InviteUserForm />
         )}
-        <TeamTableWithAutoRefresh members={members} />
+        <TeamTableWithAutoRefresh members={teamMembers} />
       </div>
     </div>
   );
