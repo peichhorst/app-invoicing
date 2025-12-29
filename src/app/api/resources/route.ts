@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       url?: string;
       description?: string | null;
       visibleToPositions?: string[]; // empty array means visible to all positions
+      requiresAcknowledgment?: boolean;
     };
 
     const title = (body.title || '').trim();
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
         url,
         description: body.description?.trim() || null,
         visibleToPositions,
+        requiresAcknowledgment: Boolean(body.requiresAcknowledgment),
       },
     });
 

@@ -10,6 +10,7 @@ import {
   FileText,
   Repeat,
   BarChart2,
+  PieChart,
   Settings,
   Home,
   Wrench,
@@ -88,7 +89,8 @@ const navItems = [
   },
   { label: 'Reporting', href: '/dashboard/reporting', icon: BarChart2 },
   { label: 'Resources', href: '/dashboard/resources', icon: Files },
-  { label: 'Messages', href: '/dashboard/messages', icon: Bell },
+  { label: 'Compliance', href: '/dashboard/compliance', icon: PieChart },
+  { label: 'Messaging', href: '/dashboard/messaging', icon: Bell },
 ];
 
 export function DashboardSidebar({ className }: { className?: string }) {
@@ -244,7 +246,7 @@ export function DashboardSidebar({ className }: { className?: string }) {
        
       </div>            
       <nav className="flex-1 text-sm font-semibold">
-        <div className="space-y-6 -mx-4 px-0">
+        <div className="space-y-0 -mx-4 px-0">
           <div className="space-y-[1px]">
             {navItems.map((item) => {
               const safeHref = item.href?.trim();
@@ -276,14 +278,11 @@ export function DashboardSidebar({ className }: { className?: string }) {
               );
             })}
           </div>
-          {isAdmin && (
-            <div className="space-y-[1px] border-t border-white/30 pt-4 pl-0">
-              <p className="pl-4 text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)] pb-2">
-                Admin {!collapsed && <span>controls</span>}
-              </p>
+          {(role === 'OWNER' || isAdmin || isSuperAdmin) && (
+            <div className="space-y-[1px] border-t border-white/30 pt-0 pl-0">
               <Link
                 href="/dashboard/team"
-                className={`group flex w-full items-center gap-3 px-2 py-2 transition ${
+                className={`group flex w-full items-center gap-3 px-4 py-2 transition ${
                   collapsed ? 'justify-center' : ''
                 } text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)] hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]`}
               >
@@ -296,10 +295,7 @@ export function DashboardSidebar({ className }: { className?: string }) {
             </div>
           )}
           {(role === 'OWNER' || isSuperAdmin) && (
-            <div className="space-y-[1px] border-t border-white/30 pt-5 pl-0">
-              <p className="pl-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)]">
-                Owner {!collapsed && <span>controls</span>}
-              </p>
+            <div className="space-y-[1px] border-t border-white/30 pt-0 pl-0">
               <Link
                 href="/dashboard/settings"
                 className={`group flex w-full items-center gap-3 px-4 py-2 transition ${
@@ -312,28 +308,13 @@ export function DashboardSidebar({ className }: { className?: string }) {
                 />
                 {!collapsed && <span className="transition group-hover:text-[var(--color-brand-contrast)]">Settings</span>}
               </Link>
-              <Link
-                href="/dashboard/team"
-                className={`group flex w-full items-center gap-3 px-4 py-2 transition ${
-                  collapsed ? 'justify-center' : ''
-                } text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)] hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]`}
-              >
-                <Users
-                  size={18}
-                  className="transition text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)] group-hover:text-[var(--color-brand-contrast)]"
-                />
-                {!collapsed && <span className="transition group-hover:text-[var(--color-brand-contrast)]">Team</span>}
-              </Link>
             </div>
           )}
           {isSuperAdmin && (
-            <div className="space-y-[1px] border-t border-white/30 pt-4 pl-4">
-              <p className="pl-4 text-[10px] font-semibold uppercase tracking-[0.3em] text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)] pb-2">
-                Superadmin {!collapsed && <span>controls</span>}
-              </p>
+            <div className="space-y-[1px] border-t border-white/30 pt-0 pl-0">              
               <Link
                 href="/dashboard/admin/users"
-                className={`group flex w-full items-center gap-3 px-2 py-2 transition ${
+                className={`group flex w-full items-center gap-3 px-5 py-2 transition ${
                   collapsed ? 'justify-center' : ''
                 } text-[var(--color-brand-sidebar-text)] md:text-[var(--color-brand-logo-text)] hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]`}
               >

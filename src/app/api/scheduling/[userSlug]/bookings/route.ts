@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 
-const RATE_LIMIT_WINDOW = 60 * 60 * 1000;
-const RATE_LIMIT_MAX = 8;
-const bookingRateLimit = new Map<string, { count: number; reset: number }>();
-
 const normalizeSlug = (slug: string) => slug.trim().toLowerCase();
 const slugToName = (slug: string) => slug.replace(/[-_]+/g, ' ').trim();
 
@@ -31,23 +27,7 @@ const getClientIdentifier = (request: NextRequest) => {
   return forwarded || request.headers.get('x-real-ip') || 'unknown';
 };
 
-const ensureRateLimit = (key: string) => {
-  const now = Date.now();
-  const existing = bookingRateLimit.get(key);
-  if (existing) {
-    if (now > existing.reset) {
-      existing.count = 0;
-      existing.reset = now + RATE_LIMIT_WINDOW;
-    }
-    if (existing.count >= RATE_LIMIT_MAX) {
-      return false;
-    }
-    existing.count += 1;
-    return true;
-  }
-  bookingRateLimit.set(key, { count: 1, reset: now + RATE_LIMIT_WINDOW });
-  return true;
-};
+const ensureRateLimit = (_identifier: string) => true;
 
 const findUser = async (slug: string) => {
   const normalized = normalizeSlug(slug);
@@ -65,20 +45,20 @@ const findUser = async (slug: string) => {
   });
 };
 
-export async function POST(request: NextRequest, { params }: { params: { userSlug?: string } }) {
-  if (!params?.userSlug) {
+export async function POST(request: NextRequest) {
+  const pathSegments = request.nextUrl.pathname.split('/');
+  const userSlug = pathSegments[3];
+  if (!userSlug) {
     return NextResponse.json({ error: 'Missing user slug' }, { status: 400 });
   }
 
-  const user = await findUser(params.userSlug);
+  const user = await findUser(userSlug);
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
   const identifier = `${user.id}:${getClientIdentifier(request)}`;
-  if (!ensureRateLimit(identifier)) {
-    return NextResponse.json({ error: 'Too many booking attempts, try again later' }, { status: 429 });
-  }
+  ensureRateLimit(identifier);
 
   let payload: {
     clientName?: string;
@@ -105,9 +85,9 @@ export async function POST(request: NextRequest, { params }: { params: { userSlu
     return NextResponse.json({ error: 'Invalid start/end time' }, { status: 400 });
   }
 
-  const dayOfWeek = startDate.getUTCDay();
-  const startMinutes = startDate.getUTCHours() * 60 + startDate.getUTCMinutes();
-  const endMinutes = endDate.getUTCHours() * 60 + endDate.getUTCMinutes();
+  const dayOfWeek = startDate.getDay();
+  const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+  const endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
   if (startMinutes === null || endMinutes === null) {
     return NextResponse.json({ error: 'Invalid time format' }, { status: 400 });
   }
@@ -181,6 +161,12 @@ export async function POST(request: NextRequest, { params }: { params: { userSlu
 
   const formattedStart = startDate.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   const formattedEnd = endDate.toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  const formattedDate = startDate.toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
   const companyName = user.companyName || user.company?.name || 'ClientWave';
 
   if (clientEmail) {
@@ -192,7 +178,7 @@ export async function POST(request: NextRequest, { params }: { params: { userSlu
         <div style="font-family:system-ui,sans-serif; max-width:640px; margin:0 auto; padding:24px;">
           <h1 style="margin-bottom:12px; color:#111;">Booking confirmed</h1>
           <p style="margin-bottom:6px;">Hi ${clientName.split(' ')[0] || clientName},</p>
-          <p style="margin-bottom:12px;">Your session with ${user.name || companyName} is booked for ${formattedStart} - ${formattedEnd}.</p>
+          <p style="margin-bottom:12px;">Your session with ${user.name || companyName} is booked for ${formattedDate} from ${formattedStart} - ${formattedEnd}.</p>
           <p style="margin:0;">If you need to reschedule, reply to this email.</p>
         </div>
       `,
@@ -209,7 +195,7 @@ export async function POST(request: NextRequest, { params }: { params: { userSlu
           <h1 style="margin-bottom:12px; color:#111;">New booking received</h1>
           <p style="margin-bottom:4px;">Client: ${clientName}</p>
           <p style="margin-bottom:4px;">Email: ${clientEmail}</p>
-          <p style="margin-bottom:12px;">When: ${formattedStart} - ${formattedEnd}</p>
+          <p style="margin-bottom:12px;">When: ${formattedDate} from ${formattedStart} - ${formattedEnd}</p>
           <p style="margin:0;">Notes: ${notes || 'None'}</p>
         </div>
       `,

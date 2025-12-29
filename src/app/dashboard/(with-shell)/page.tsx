@@ -9,6 +9,7 @@ import {
   FileText,
   Repeat,
   BarChart2,
+  PieChart,
   Wrench,
   FileSignature,
   Files,
@@ -38,17 +39,15 @@ const navItems = [
   },
   { label: 'Reporting', href: '/dashboard/reporting', icon: BarChart2 },
   { label: 'Resources', href: '/dashboard/resources', icon: Files },
-  { label: 'Messages', href: '/dashboard/messages', icon: Bell },
+  { label: 'Compliance', href: '/dashboard/compliance', icon: PieChart },
+  { label: 'Messaging', href: '/dashboard/messaging', icon: Bell },
 ];
 
-const adminItems = [
-  { label: 'Users', href: '/dashboard/admin/users', icon: Users },
-  { label: 'Team', href: '/dashboard/team', icon: Users },
-];
 const ownerItems = [
   { label: 'Settings', href: '/dashboard/settings', icon: Settings },
   { label: 'Team', href: '/dashboard/team', icon: Users },
 ];
+const superAdminItems = [{ label: 'Users', href: '/dashboard/admin/users', icon: Users }];
 
 export default async function Dashboard() {
   const user = await getCurrentUser();
@@ -171,16 +170,11 @@ export default async function Dashboard() {
               </div>
             </div>
 
-            {(hydratedUser?.role === 'OWNER' || hydratedUser?.role === 'SUPERADMIN') && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 pt-8">
-                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-200 to-transparent" />
-                  <p className="text-xs font-medium text-[var(--color-brand-logo-text)]">Owner settings</p>
-                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-200 to-transparent" />
-                </div>
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  {ownerItems.map((item) => {
-                    const Icon = item.icon;
+          {(hydratedUser?.role === 'OWNER' || hydratedUser?.role === 'ADMIN' || hydratedUser?.role === 'SUPERADMIN') && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {ownerItems.map((item) => {
+                  const Icon = item.icon;
                   return (
                     <Link
                       key={item.href}
@@ -198,36 +192,31 @@ export default async function Dashboard() {
                   );
                 })}
               </div>
-              </div>
-            )}
+            </div>
+          )}
 
-            {hydratedUser?.role === 'ADMIN' && (
+            {hydratedUser?.role === 'SUPERADMIN' && (
               <div className="space-y-4">
-                <div className="flex items-center gap-3 pt-8">
-                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-200 to-transparent" />
-                  <p className="text-xs font-medium text-[var(--color-brand-logo-text)]">Admin settings</p>
-                  <div className="h-px flex-1 bg-gradient-to-r from-transparent via-zinc-200 to-transparent" />
-                </div>
                 <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                  {adminItems.map((item) => {
+                  {superAdminItems.map((item) => {
                     const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="group m-[1px] flex flex-col items-center justify-center gap-4 rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm text-[var(--color-brand-logo-text)] transition-all hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)] hover:shadow-lg hover:border-brand-primary-700"
-                    >
-                      <Icon
-                        size={56}
-                        className="text-[var(--color-brand-logo-text)] transition-colors group-hover:text-[var(--color-brand-contrast)]"
-                      />
-                      <span className="text-base font-semibold text-[var(--color-brand-logo-text)] transition-colors group-hover:text-[var(--color-brand-contrast)]">
-                        {item.label}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="group m-[1px] flex flex-col items-center justify-center gap-4 rounded-xl border border-zinc-200 bg-white p-8 text-center shadow-sm text-[var(--color-brand-logo-text)] transition-all hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)] hover:shadow-lg hover:border-brand-primary-700"
+                      >
+                        <Icon
+                          size={56}
+                          className="text-[var(--color-brand-logo-text)] transition-colors group-hover:text-[var(--color-brand-contrast)]"
+                        />
+                        <span className="text-base font-semibold text-[var(--color-brand-logo-text)] transition-colors group-hover:text-[var(--color-brand-contrast)]">
+                          {item.label}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>

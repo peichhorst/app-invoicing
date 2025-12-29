@@ -6,6 +6,9 @@ import { ProfileForm } from './ProfileForm';
 import { describePlan, ensureTrialState } from '@/lib/plan';
 import { prisma } from '@/lib/prisma';
 import { EnableNotificationsButton } from '@/components/EnableNotificationsButton';
+import { SchedulingForm } from '../../scheduling/SchedulingForm';
+import { getAvailabilityForUser } from '../../scheduling/actions';
+import { buildBookingLink, normalizeSlug } from '../../scheduling/helpers';
 
 export async function generateMetadata(): Promise<Metadata> {
   const user = await getCurrentUser();
@@ -40,6 +43,10 @@ export default async function ProfilePage() {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  const availability = await getAvailabilityForUser(user.id);
+  const slug = normalizeSlug(user.name ?? user.companyName ?? user.email);
+  const bookingLink = slug ? buildBookingLink(slug) : null;
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8">
@@ -79,6 +86,7 @@ export default async function ProfilePage() {
           allowSetAsAdministrator={isOwner || isAdmin}
           initialRole={user.role}
         />
+        <SchedulingForm availability={availability} bookingLink={bookingLink} heading="Scheduling" />
       </div>
     </div>
   );

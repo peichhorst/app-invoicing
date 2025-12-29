@@ -9,9 +9,10 @@ type DeleteUserButtonProps = {
   userId: string;
   userName: string;
   role?: string;
+  className?: string;
 };
 
-export function DeleteUserButton({ userId, userName, role }: DeleteUserButtonProps) {
+export function DeleteUserButton({ userId, userName, role, className }: DeleteUserButtonProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showConfirm, setShowConfirm] = useState(false);
@@ -41,7 +42,7 @@ export function DeleteUserButton({ userId, userName, role }: DeleteUserButtonPro
         type="button"
         onClick={() => setShowConfirm(true)}
         disabled={isPending}
-        className="inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-50 disabled:opacity-60"
+        className={`inline-flex items-center justify-center rounded-lg border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-600 shadow-sm transition hover:bg-red-50 disabled:opacity-60 ${className ?? ''}`}
         title={`Remove ${userName}`}
         aria-label={`Remove ${userName}`}
       >

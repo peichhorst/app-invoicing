@@ -195,7 +195,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
       : [];
 
   const contextMetaByKey: Record<string, { label: string; href: string }> = {
-    GENERAL: { label: 'General', href: '/dashboard/messages' },
+    GENERAL: { label: 'General', href: '/dashboard/messaging' },
   };
   for (const [id, label] of clientsById.entries()) {
     contextMetaByKey[`CLIENT:${id}`] = {
@@ -242,7 +242,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
           ].map((tab) => (
             <Link
               key={tab.key}
-              href={`/dashboard/messages?tab=${tab.key}`}
+              href={`/dashboard/messaging?tab=${tab.key}`}
               className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${
                 activeTab === tab.key
                   ? 'bg-brand-primary-700 text-white'

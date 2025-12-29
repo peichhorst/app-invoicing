@@ -5,7 +5,7 @@ import { prisma } from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { clientVisibilityWhere } from '@/lib/client-scope';
 import { AssignClientSelect } from '../AssignClientSelect';
-import { NewMessageForm } from '../../messages/NewMessageForm';
+import { NewMessageForm } from '../../messaging/NewMessageForm';
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -270,7 +270,7 @@ export default async function ClientViewPage({ params }: PageProps) {
                 New proposal
               </Link>
               <Link
-                href="/dashboard/messages"
+                href="/dashboard/messaging"
                 className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
               >
                 <MessageSquare className="h-4 w-4" />
@@ -569,7 +569,7 @@ export default async function ClientViewPage({ params }: PageProps) {
               return (
                 <Link
                   key={msg.id}
-                  href={`/dashboard/messages?thread=${msg.id}`}
+                  href={`/dashboard/messaging?thread=${msg.id}`}
                   className="flex items-center gap-4 px-4 py-3 transition hover:bg-gray-50"
                 >
                   <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-sm font-semibold text-gray-700">

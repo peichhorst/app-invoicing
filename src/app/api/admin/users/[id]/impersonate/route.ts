@@ -11,7 +11,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const admin = await getCurrentUser();
-  if (!admin || admin.role !== 'ADMIN') {
+  if (!admin || !['ADMIN', 'OWNER', 'SUPERADMIN'].includes(admin.role)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 

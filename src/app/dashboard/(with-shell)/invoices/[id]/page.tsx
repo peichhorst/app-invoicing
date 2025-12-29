@@ -3,7 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { MarkInvoicePaidButton } from '../MarkInvoicePaidButton';
-import { NewMessageForm } from '../../messages/NewMessageForm';
+import { NewMessageForm } from '../../messaging/NewMessageForm';
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -306,7 +306,7 @@ const statusBadgeClass = isPaid
                   return (
                     <Link
                       key={msg.id}
-                      href={`/dashboard/messages?thread=${msg.id}`}
+                      href={`/dashboard/messaging?thread=${msg.id}`}
                       className="flex items-center gap-4 px-4 py-3 transition hover:bg-gray-50"
                     >
                       <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-sm font-semibold text-gray-700">

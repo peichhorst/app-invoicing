@@ -13,16 +13,22 @@ export default async function ResourcesPage() {
   const companyId = user.companyId ?? null;
   const canManage = user.role === 'OWNER' || user.role === 'ADMIN';
   let resources: ResourceWithCompliance[] = [];
-  let teamCount = 0;
+  let companyUsers: { id: string; positionId: string | null }[] = [];
 
   if (companyId) {
-    const rawResources = await prisma.resource.findMany({
-      where: { companyId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        acknowledgments: { select: { userId: true } },
-      },
-    });
+    const [rawResources, users] = await Promise.all([
+      prisma.resource.findMany({
+        where: { companyId },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          acknowledgments: { select: { userId: true } },
+        },
+      }),
+      prisma.user.findMany({
+        where: { companyId },
+        select: { id: true, positionId: true },
+      }),
+    ]);
     resources = rawResources.map((resource) => ({
       id: resource.id,
       title: resource.title,
@@ -30,8 +36,10 @@ export default async function ResourcesPage() {
       createdAt: resource.createdAt?.toISOString() ?? null,
       requiresAcknowledgment: resource.requiresAcknowledgment,
       acknowledgments: resource.acknowledgments,
+      visibleToPositions: resource.visibleToPositions ?? [],
+      description: resource.description,
     }));
-    teamCount = await prisma.user.count({ where: { companyId } });
+    companyUsers = users;
   }
 
   return (
@@ -50,7 +58,11 @@ export default async function ResourcesPage() {
             No resources yet.
           </div>
         ) : (
-          <ResourceTableClient resources={resources} currentUserId={user.id} teamCount={teamCount} />
+          <ResourceTableClient
+            resources={resources}
+            currentUserId={user.id}
+            companyUsers={companyUsers}
+          />
         )}
       </div>
     </div>

@@ -223,21 +223,21 @@ export function TeamTableWithAutoRefresh({ members }: Props) {
 
               {!isOwner && (
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => generateMagicLink(member.id)}
-                    disabled={generatingFor === member.id}
-                    className="inline-flex items-center gap-1 rounded border border-brand-primary-200 bg-white px-3 py-1.5 text-sm text-brand-primary-600 hover:bg-brand-primary-50 disabled:opacity-50"
-                  >
-                    <LinkIcon size={14} />
-                    Magic Link
-                  </button>
+                <button
+                  onClick={() => generateMagicLink(member.id)}
+                  disabled={generatingFor === member.id}
+                  className="inline-flex items-center justify-center rounded border border-brand-primary-200 bg-white px-3 py-1.5 text-brand-primary-600 hover:bg-brand-primary-50 disabled:opacity-50"
+                >
+                  <LinkIcon size={18} />
+                </button>
                   <ImpersonateUserButton userId={member.id} userName={member.name ?? member.email} />
                   <Link
                     href={`/dashboard/team/${member.id}`}
                     className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+                    aria-label="Edit member"
                   >
                     <Pencil size={14} />
-                    Edit
+                    <span className="sr-only">Edit</span>
                   </Link>
                   <DeleteUserButton userId={member.id} userName={member.name ?? member.email} />
                 </div>
@@ -350,22 +350,23 @@ export function TeamTableWithAutoRefresh({ members }: Props) {
                   </td>
                   <td className="px-6 py-4 text-right">
                     {isOwner ? null : (
-                      <div className="inline-grid grid-cols-2 gap-2 text-right">
+                      <div className="flex flex-wrap justify-end gap-2">
                         <button
                           onClick={() => generateMagicLink(member.id)}
                           disabled={generatingFor === member.id}
-                          className="flex items-center justify-center rounded border border-brand-primary-200 bg-white px-2 py-1 text-brand-primary-600 hover:bg-brand-primary-50 disabled:opacity-50"
+                          className="inline-flex items-center justify-center rounded border border-brand-primary-200 bg-white px-3 py-1.5 text-brand-primary-600 hover:bg-brand-primary-50 disabled:opacity-50"
                           title="Generate magic login link"
                         >
-                          <LinkIcon size={16} />
+                          <LinkIcon size={20} />
                         </button>
                         <ImpersonateUserButton userId={member.id} userName={member.name ?? member.email} />
                         <Link
                           href={`/dashboard/team/${member.id}`}
-                          className="inline-flex items-center justify-center rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-600 hover:bg-zinc-50"
+                          className="inline-flex items-center gap-1 rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
                           title="Edit user"
                         >
                           <Pencil size={16} />
+                          <span className="sr-only">Edit</span>
                         </Link>
                         <DeleteUserButton userId={member.id} userName={member.name ?? member.email} />
                       </div>

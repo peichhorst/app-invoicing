@@ -2,9 +2,9 @@ import { ReactNode } from 'react';
 import { headers } from 'next/headers';
 import { DashboardShell } from '../DashboardShell';
 
-export default function DashboardWithShellLayout({ children }: { children: ReactNode }) {
+export default async function DashboardWithShellLayout({ children }: { children: ReactNode }) {
   // Skip the dashboard shell (and sidebar) for onboarding routes so the page can render full-width immediately.
-  const headerList = headers();
+  const headerList = await headers();
   const getHeader = (key: string) => {
     const target: any = headerList as any;
     if (typeof target.get === 'function') return target.get(key);

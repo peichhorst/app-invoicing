@@ -8,8 +8,11 @@ export function SwitchBackButton() {
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    const hasBackup = document.cookie.split(';').some((c) => c.trim().startsWith('session_token_backup='));
-    setVisible(hasBackup);
+    const token = setTimeout(() => {
+      const hasBackup = document.cookie.split(';').some((c) => c.trim().startsWith('session_token_backup='));
+      setVisible(hasBackup);
+    }, 0);
+    return () => clearTimeout(token);
   }, []);
 
   const handleSwitchBack = () => {

@@ -2,6 +2,8 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getCurrentUser } from '@/lib/auth';
 import { OnboardingWizard } from './OnboardingWizard';
+import { getAvailabilityForUser } from '../../scheduling/actions';
+import { buildBookingLink, normalizeSlug } from '../../scheduling/helpers';
 
 export const metadata: Metadata = {
   title: 'Business Onboarding',
@@ -74,6 +76,10 @@ export default async function DashboardOnboardingPage({ searchParams }: PageProp
       : null,
   };
 
+  const availability = await getAvailabilityForUser(user.id);
+  const slug = normalizeSlug(user.name ?? user.email ?? user.companyName);
+  const bookingLink = slug ? buildBookingLink(slug) : null;
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8">
       <div className="mx-auto max-w-4xl space-y-6">
@@ -88,6 +94,8 @@ export default async function DashboardOnboardingPage({ searchParams }: PageProp
           user={serializedUser}
           showBusiness={!inviteMode}
           onCompleteHref="/dashboard"
+          availability={availability}
+          bookingLink={bookingLink}
         />
       </div>
     </div>

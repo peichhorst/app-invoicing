@@ -5,6 +5,9 @@ import { getCurrentUser } from '@/lib/auth';
 import { describePlan } from '@/lib/plan';
 import { UpgradeCard } from '../profile/UpgradeCard';
 import CompanySettings from '../profile/CompanySettings';
+import { SchedulingForm } from '../../scheduling/SchedulingForm';
+import { getAvailabilityForUser } from '../../scheduling/actions';
+import { buildBookingLink, normalizeSlug } from '../../scheduling/helpers';
 
 type PageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
@@ -35,6 +38,10 @@ export default async function SettingsPage({ searchParams }: PageProps) {
   const upgradeStatus = Array.isArray(upgradeParam) ? upgradeParam[0] ?? null : upgradeParam ?? null;
   const sessionId = Array.isArray(sessionParam) ? sessionParam[0] ?? null : sessionParam ?? null;
   const companySettingsKey = `${user.company?.name ?? user.companyName ?? 'company'}|${user.company?.website ?? ''}`;
+
+  const availability = await getAvailabilityForUser(user.id);
+  const slug = normalizeSlug(user.name ?? user.companyName ?? user.email);
+  const bookingLink = slug ? buildBookingLink(slug) : null;
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8">
@@ -73,6 +80,7 @@ export default async function SettingsPage({ searchParams }: PageProps) {
           initialPrimaryColor={user.company?.primaryColor ?? undefined}
           initialUseHeaderLogo={user.company?.useHeaderLogo ?? false}
         />
+        <SchedulingForm availability={availability} bookingLink={bookingLink} heading="Availability" />
       </div>
     </div>
   );

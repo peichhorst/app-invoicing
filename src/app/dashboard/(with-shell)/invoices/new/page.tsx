@@ -839,7 +839,7 @@ function CreateInvoiceContent() {
                   onClick={() => setShowNewClient(true)}
                   className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
                 >
-                  + New Client
+                  + Add New Client
                 </button>
             </div>
               {errors.clientId && <p className="text-xs text-rose-500">{errors.clientId.message}</p>}
@@ -1287,7 +1287,7 @@ function CreateInvoiceContent() {
                   onClick={() => triggerSubmit('SENT')}
                   className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {savingStatus === 'SENT' ? 'Saving...' : 'Save & Send Invoice'}
+                  {savingStatus === 'SENT' ? 'Sending...' : 'Save & Send Invoice'}
                 </button>
             </div>
           </div>

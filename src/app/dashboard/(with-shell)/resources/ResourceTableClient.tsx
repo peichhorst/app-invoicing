@@ -16,12 +16,18 @@ export type ResourceWithCompliance = {
   createdAt?: string | null;
   requiresAcknowledgment: boolean;
   acknowledgments: ResourceAck[];
+  visibleToPositions: string[];
+};
+
+type CompanyUser = {
+  id: string;
+  positionId: string | null;
 };
 
 type Props = {
   resources: ResourceWithCompliance[];
   currentUserId: string | null;
-  teamCount: number;
+  companyUsers: CompanyUser[];
 };
 
 const isPdf = (url: string) => url.toLowerCase().endsWith(".pdf");
@@ -30,7 +36,7 @@ const isImage = (url: string) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url);
 export default function ResourceTableClient({
   resources,
   currentUserId,
-  teamCount,
+  companyUsers,
 }: Props) {
   const router = useRouter();
   const [selectedResource, setSelectedResource] = useState<ResourceWithCompliance | null>(null);
@@ -38,16 +44,44 @@ export default function ResourceTableClient({
   const [ackChecked, setAckChecked] = useState(false);
   const [ackProcessing, setAckProcessing] = useState(false);
 
+  const allUserIds = companyUsers.map((user) => user.id);
+
+  const getAllowedUserIds = (resource: ResourceWithCompliance) => {
+    if (!resource.visibleToPositions || resource.visibleToPositions.length === 0) {
+      return new Set(allUserIds);
+    }
+    const allowed = companyUsers
+      .filter((user) => user.positionId && resource.visibleToPositions.includes(user.positionId))
+      .map((user) => user.id);
+    return new Set(allowed);
+  };
+
   const pendingCount = resources.filter((res) => {
     if (!res.requiresAcknowledgment) return false;
+    const allowedSet = getAllowedUserIds(res);
     if (!currentUserId) return true;
-    return !res.acknowledgments.some((ack) => ack.userId === currentUserId);
+    if (!allowedSet.has(currentUserId)) return false;
+    return !res.acknowledgments.some((ack) => allowedSet.has(ack.userId));
   }).length;
 
   const selectedHref = useMemo(() => {
     if (!selectedResource) return "";
     return normalizeUrl(selectedResource.url);
   }, [selectedResource]);
+
+  const [previewResource, setPreviewResource] = useState<ResourceWithCompliance | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewHref = useMemo(() => {
+    if (!previewResource) return "";
+    return normalizeUrl(previewResource.url);
+  }, [previewResource]);
+
+  const startPreview = (resource: ResourceWithCompliance) => {
+    setPreviewResource(resource);
+    setPreviewLoading(true);
+  };
 
   const handleResourceClick = (event: MouseEvent<HTMLAnchorElement>, res: ResourceWithCompliance) => {
     const hasAck = currentUserId
@@ -59,6 +93,16 @@ export default function ResourceTableClient({
       setSelectedResource(res);
       setAckChecked(false);
       setShowAckModal(true);
+      startPreview(res);
+      return;
+    }
+    const href = normalizeUrl(res.url);
+    const previewable = href && (isPdf(href) || isImage(href));
+    if (previewable) {
+      event.preventDefault();
+      startPreview(res);
+      setShowPreviewModal(true);
+      return;
     }
   };
 
@@ -69,8 +113,9 @@ export default function ResourceTableClient({
       const response = await fetch(`/api/resources/${selectedResource.id}/acknowledge`, {
         method: "POST",
       });
+      const payload = await response.json();
       if (!response.ok) {
-        throw new Error("Unable to acknowledge resource");
+        throw new Error(payload?.error || "Unable to acknowledge resource");
       }
       closeModal();
       router.refresh();
@@ -81,10 +126,18 @@ export default function ResourceTableClient({
     }
   };
 
+  const closePreview = () => {
+    setShowPreviewModal(false);
+    setPreviewLoading(false);
+    setPreviewResource(null);
+  };
+
   const closeModal = () => {
     setShowAckModal(false);
     setSelectedResource(null);
     setAckChecked(false);
+    setPreviewResource(null);
+    setPreviewLoading(false);
   };
 
   return (
@@ -112,9 +165,10 @@ export default function ResourceTableClient({
           <tbody className="divide-y divide-zinc-100">
             {resources.map((resource) => {
               const href = normalizeUrl(resource.url);
-              const acknowledged = currentUserId
-                ? resource.acknowledgments.some((ack) => ack.userId === currentUserId)
-                : false;
+              const allowedSet = getAllowedUserIds(resource);
+              const acknowledged = currentUserId ? allowedSet.has(currentUserId) && resource.acknowledgments.some((ack) => allowedSet.has(ack.userId)) : false;
+              const acknowledgedCount = resource.acknowledgments.filter((ack) => allowedSet.has(ack.userId)).length;
+              const allowedTotal = allowedSet.size;
 
               return (
                 <tr key={resource.id} className="hover:bg-zinc-50">
@@ -165,7 +219,8 @@ export default function ResourceTableClient({
                           Compliance required
                         </span>
                         <p className="text-xs text-zinc-600">
-                          Acknowledged by {resource.acknowledgments.length} of {teamCount || 0} team members
+                          Acknowledged by {acknowledgedCount} of {allowedTotal || allUserIds.length}{' '}
+                          {allowedTotal === 0 ? '(no eligible positions)' : 'team members'}
                         </p>
                         <Link
                           href={`/dashboard/resources/${resource.id}`}
@@ -208,18 +263,19 @@ export default function ResourceTableClient({
                   Please review the material and confirm you understand before proceeding.
                 </p>
               </div>
-              {isPdf(selectedHref) ? (
-                <iframe src={selectedHref} className="h-96 w-full rounded-2xl border border-zinc-200" />
-              ) : isImage(selectedHref) ? (
-                <img
-                  src={selectedHref}
-                  alt={selectedResource.title}
-                  className="w-full rounded-2xl border border-zinc-200"
-                />
+              {selectedHref ? (
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 px-4 py-3 text-sm text-zinc-600">
+                  <p className="text-xs text-zinc-500">
+                    This document will open in a new tab when you click the link below.
+                  </p>
+                  <div className="mt-2 text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600">
+                    <Link href={selectedHref} className="text-brand-primary-600 hover:underline">
+                      Open document
+                    </Link>
+                  </div>
+                </div>
               ) : (
-                <Link href={selectedHref} className="text-brand-primary-600 hover:underline">
-                  Open document
-                </Link>
+                <p className="text-sm text-zinc-500">No document URL available.</p>
               )}
               <label className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-800">
                 <input
@@ -247,6 +303,71 @@ export default function ResourceTableClient({
                   {ackProcessing ? "Acknowledging..." : "Acknowledge"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPreviewModal && previewResource && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 px-4 py-8">
+          <div className="w-full max-w-5xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+              <div>
+                <h2 className="text-xl font-semibold text-zinc-900">{previewResource.title}</h2>
+                <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Preview</p>
+              </div>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="text-xs font-semibold text-zinc-500 hover:text-zinc-900"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 min-h-[60vh]">
+              {previewLoading && (
+                <div className="flex h-full items-center justify-center">
+                  <div className="h-10 w-10 animate-spin rounded-full border-4 border-zinc-200 border-t-brand-primary-600" />
+                </div>
+              )}
+              {previewHref ? (
+                isPdf(previewHref) ? (
+                    <iframe
+                      src={`https://docs.google.com/gview?url=${encodeURIComponent(
+                        previewHref
+                      )}&embedded=true`}
+                    title={previewResource.title}
+                    className="h-[80vh] w-full rounded-2xl border border-zinc-200"
+                    onLoad={() => setPreviewLoading(false)}
+                  />
+                ) : (
+                  <img
+                    src={previewHref}
+                    alt={previewResource.title}
+                    className="mx-auto max-w-full rounded-2xl border border-zinc-200 object-contain"
+                    onLoad={() => setPreviewLoading(false)}
+                  />
+                )
+              ) : (
+                <p className="text-sm text-zinc-500">Preview URL unavailable.</p>
+              )}
+            </div>
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4">
+              <a
+                href={previewHref}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-brand-primary-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white"
+              >
+                Download
+              </a>
+              <button
+                type="button"
+                onClick={closePreview}
+                className="rounded-full border border-zinc-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-700"
+              >
+                Close preview
+              </button>
             </div>
           </div>
         </div>

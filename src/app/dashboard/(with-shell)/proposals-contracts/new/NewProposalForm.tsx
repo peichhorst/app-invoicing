@@ -273,7 +273,7 @@ export function NewProposalForm({
                   onClick={() => setShowNewClient(true)}
                   className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
                 >
-                  + New Client
+                  + Add New Client
                 </button>
             </div>
             {clientsError && <p className="text-xs text-rose-500">{clientsError}</p>}

@@ -45,12 +45,13 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     : 'all';
 
   const statuses = getStatusesForFilter(appliedFilter);
+  const isPlatformAdmin = user.role === 'SUPERADMIN';
   const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
   const companyId = user.companyId ?? user.company?.id ?? null;
 
   const invoices = await prisma.invoice.findMany({
     where: {
-      ...(user.role === 'ADMIN'
+      ...(isPlatformAdmin
         ? {}
         : isOwnerOrAdmin
         ? { user: { companyId: companyId ?? undefined } }
@@ -63,7 +64,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
     },
     include: { client: true, items: true, user: { include: { company: true } } },
     orderBy:
-      user.role === 'ADMIN'
+      isPlatformAdmin
         ? [{ user: { company: { name: 'asc' } } }, { createdAt: 'desc' }]
         : [{ createdAt: 'desc' }],
   });

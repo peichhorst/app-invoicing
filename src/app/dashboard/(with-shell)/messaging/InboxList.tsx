@@ -220,7 +220,7 @@ export default function InboxList({ messages, currentUserId, contextMetaByKey, u
     }
     const contextKey = getContextKey(msg);
     const contextMeta = contextMetaByKey[contextKey];
-    const baseHref = contextMeta?.href || '/dashboard/messages';
+    const baseHref = contextMeta?.href || '/dashboard/messaging';
     router.push(`${baseHref}?thread=${msg.id}`);
   };
 
@@ -235,7 +235,7 @@ export default function InboxList({ messages, currentUserId, contextMetaByKey, u
         const contextKey = getContextKey(msg);
         const contextMeta = contextMetaByKey[contextKey];
         const contextLabel = contextMeta?.label || 'General';
-        const contextHref = contextMeta?.href || '/dashboard/messages';
+        const contextHref = contextMeta?.href || '/dashboard/messaging';
         const recipientSummary = getRecipientSummary(msg, currentUserId);
         const isInternalNote =
           !msg.toAll &&

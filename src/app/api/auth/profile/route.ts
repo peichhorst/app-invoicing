@@ -37,11 +37,12 @@ export async function PUT(request: Request) {
     zelleHandle?: string | null;
     mailToAddressEnabled?: string | null;
     mailToAddressTo?: string | null;
-    trackdriveLeadToken?: string | null;
-    trackdriveLeadEnabled?: string | null;
-    reportsToId?: string | null;
-    positionId?: string | null;
-    password?: string | null;
+  trackdriveLeadToken?: string | null;
+  trackdriveLeadEnabled?: string | null;
+  reportsToId?: string | null;
+  positionId?: string | null;
+  positionName?: string | null;
+  password?: string | null;
     setAsAdministrator?: string | null;
   };
 
@@ -96,21 +97,50 @@ export async function PUT(request: Request) {
       }
     }
 
-    if (companyId && user.role === 'OWNER' && body.positionId !== undefined) {
-      const positionIdRaw = typeof body.positionId === 'string' ? body.positionId.trim() : '';
-      if (!positionIdRaw) {
-        data.positionId = null;
-        data.position = null;
-      } else {
-        const position = await prisma.position.findFirst({
-          where: { id: positionIdRaw, companyId },
+    if (companyId && user.role === 'OWNER') {
+      const positionNameTrimmed =
+        typeof body.positionName === 'string' ? body.positionName.trim() : '';
+      if (positionNameTrimmed) {
+        const existingPosition = await prisma.position.findFirst({
+          where: { companyId, name: positionNameTrimmed },
           select: { id: true },
         });
-        if (!position) {
-          return NextResponse.json({ error: 'Position not found for this company' }, { status: 400 });
+        if (existingPosition) {
+          data.positionId = existingPosition.id;
+          data.position = null;
+        } else {
+          const lastPosition = await prisma.position.findFirst({
+            where: { companyId },
+            orderBy: { order: 'desc' },
+          });
+          const newOrder = (lastPosition?.order ?? 0) + 1;
+          const created = await prisma.position.create({
+            data: {
+              companyId,
+              name: positionNameTrimmed,
+              order: newOrder,
+              isCustom: true,
+            },
+          });
+          data.positionId = created.id;
+          data.position = null;
         }
-        data.positionId = position.id;
-        data.position = null;
+      } else if (body.positionId !== undefined) {
+        const positionIdRaw = typeof body.positionId === 'string' ? body.positionId.trim() : '';
+        if (!positionIdRaw) {
+          data.positionId = null;
+          data.position = null;
+        } else {
+          const position = await prisma.position.findFirst({
+            where: { id: positionIdRaw, companyId },
+            select: { id: true },
+          });
+          if (!position) {
+            return NextResponse.json({ error: 'Position not found for this company' }, { status: 400 });
+          }
+          data.positionId = position.id;
+          data.position = null;
+        }
       }
     }
 

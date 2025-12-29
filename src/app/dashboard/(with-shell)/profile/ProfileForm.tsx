@@ -126,10 +126,7 @@ export function ProfileForm({
     if (tokens.length === 0) {
       return rawName.charAt(0).toUpperCase() || '?';
     }
-    return tokens
-      .slice(0, 2)
-      .map((segment) => segment.charAt(0).toUpperCase())
-      .join('');
+    return tokens.map((segment) => segment.charAt(0).toUpperCase()).join('');
   }, [companyNameValue, initial.name]);
   const companyLabel = useMemo(() => companyNameValue.trim() || 'Your Company', [companyNameValue]);
   const computedMailToValue = useMemo(() => {

@@ -17,7 +17,7 @@ export function InstallPromptButton() {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    setHydrated(true);
+    const token = window ? setTimeout(() => setHydrated(true), 0) : null;
     const detectStandalone = () => {
       if (typeof window === 'undefined') return false;
       const anyStandalone =
@@ -92,6 +92,7 @@ export function InstallPromptButton() {
       displayModeQuery.removeEventListener('change', handleDisplayModeChange);
       window.removeEventListener('online', onlineHandler);
       window.removeEventListener('offline', offlineHandler);
+      if (token) clearTimeout(token);
     };
   }, []);
 

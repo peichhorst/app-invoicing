@@ -8,7 +8,7 @@ import TotalsSection from '@/components/invoicing/shared/TotalsSection';
 import PaymentTermsFooter from '@/components/invoicing/shared/PaymentTermsFooter';
 import SignatureBlock from '@/components/invoicing/SignatureBlock';
 import ProposalDetailsSection from '@/components/invoicing/ProposalDetailsSection';
-import { NewMessageForm } from '../../messages/NewMessageForm';
+import { NewMessageForm } from '../../messaging/NewMessageForm';
 
 type ViewProposalPageProps = {
   params: Promise<{ id: string }>;
@@ -270,7 +270,7 @@ export default async function ViewProposalPage({ params }: ViewProposalPageProps
                       return (
                         <Link
                           key={msg.id}
-                          href={`/dashboard/messages?thread=${msg.id}`}
+                          href={`/dashboard/messaging?thread=${msg.id}`}
                           className="flex items-center gap-4 px-4 py-3 transition hover:bg-gray-50"
                         >
                           <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-sm font-semibold text-gray-700">

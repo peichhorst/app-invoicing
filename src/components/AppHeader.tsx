@@ -81,7 +81,11 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
   }, []);
 
   useEffect(() => {
-    setUseCompanyLogo(Boolean(user?.useHeaderLogo));
+    if (typeof window === 'undefined') return undefined;
+    const token = setTimeout(() => {
+      setUseCompanyLogo(Boolean(user?.useHeaderLogo));
+    }, 0);
+    return () => clearTimeout(token);
   }, [user?.useHeaderLogo]);
 
   const { open } = useMobileSidebar();
@@ -164,14 +168,14 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
                       <Link
                         href="/dashboard/profile"
                         onClick={() => setMenuOpen(false)}
-                        className="block rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.3em] text-zinc-800 shadow-sm transition hover:bg-zinc-100 hover:border-zinc-300"
+                        className="block rounded-xl border border-brand-primary-700 bg-brand-primary-600 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm transition hover:border-brand-primary-700 hover:bg-brand-primary-700"
                       >
                         Profile
                       </Link>
                       <form action="/api/auth/logout" method="post">
                         <button
                           type="submit"
-                          className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-800 shadow-sm transition hover:bg-zinc-100 hover:border-zinc-300"
+                          className="w-full rounded-xl border border-brand-primary-700 bg-brand-primary-600 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm transition hover:border-brand-primary-700 hover:bg-brand-primary-700"
                         >
                           Logout
                         </button>

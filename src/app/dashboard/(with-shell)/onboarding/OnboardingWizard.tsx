@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProfileForm } from '@/app/dashboard/(with-shell)/profile/ProfileForm';
 import CompanySettings from '@/app/dashboard/(with-shell)/profile/CompanySettings';
+import { SchedulingForm } from '../../scheduling/SchedulingForm';
+import type { AvailabilityEntry } from '../../scheduling/actions';
 
 type OnboardingUser = {
   name?: string | null;
@@ -54,15 +56,21 @@ type OnboardingWizardProps = {
   user: OnboardingUser;
   showBusiness?: boolean;
   onCompleteHref?: string;
+  availability?: AvailabilityEntry[];
+  bookingLink?: string | null;
 };
+
+type OnboardingStep = 1 | 2 | 3;
 
 export function OnboardingWizard({
   user,
   showBusiness = true,
   onCompleteHref,
+  availability = [],
+  bookingLink,
 }: OnboardingWizardProps) {
   const router = useRouter();
-  const [step, setStep] = useState<1 | 2>(1);
+  const [step, setStep] = useState<OnboardingStep>(1);
   const [businessPrimaryColor, setBusinessPrimaryColor] = useState<string | null>(
     user.company?.primaryColor ?? null
   );
@@ -81,6 +89,7 @@ export function OnboardingWizard({
     window.addEventListener('accent-color-updated', handler);
     return () => window.removeEventListener('accent-color-updated', handler);
   }, []);
+
   const company = user.company;
 
   return (
@@ -89,17 +98,37 @@ export function OnboardingWizard({
         <button
           type="button"
           onClick={() => setStep(1)}
-          className={`px-4 py-2 rounded-full border transition uppercase ${step === 1 ? 'bg-brand-primary-600 border-transparent text-white' : 'bg-white border border-brand-primary-500 text-brand-primary-700 hover:bg-brand-primary-50'}`}
+          className={`px-4 py-2 rounded-full border transition uppercase ${
+            step === 1
+              ? 'bg-brand-primary-600 border-transparent text-white'
+              : 'bg-white border border-brand-primary-500 text-brand-primary-700 hover:bg-brand-primary-50'
+          }`}
           aria-current={step === 1 ? 'step' : undefined}
         >
           Profile Details
         </button>
+        <button
+          type="button"
+          onClick={() => setStep(2)}
+          className={`px-4 py-2 rounded-full border transition uppercase ${
+            step === 2
+              ? 'bg-brand-primary-600 border-transparent text-white'
+              : 'bg-white border border-brand-primary-500 text-brand-primary-700 hover:bg-brand-primary-50'
+          }`}
+          aria-current={step === 2 ? 'step' : undefined}
+        >
+          Availability
+        </button>
         {showBusiness && (
           <button
             type="button"
-            onClick={() => setStep(2)}
-            className={`px-4 py-2 rounded-full border transition uppercase ${step === 2 ? 'bg-brand-primary-600 border-transparent text-white' : 'bg-white border border-brand-primary-500 text-brand-primary-700 hover:bg-brand-primary-50'}`}
-            aria-current={step === 2 ? 'step' : undefined}
+            onClick={() => setStep(3)}
+            className={`px-4 py-2 rounded-full border transition uppercase ${
+              step === 3
+                ? 'bg-brand-primary-600 border-transparent text-white'
+                : 'bg-white border border-brand-primary-500 text-brand-primary-700 hover:bg-brand-primary-50'
+            }`}
+            aria-current={step === 3 ? 'step' : undefined}
           >
             Business Details
           </button>
@@ -134,13 +163,7 @@ export function OnboardingWizard({
             showPaymentAndLead={false}
             showProfileDetails={true}
             skipRedirect
-            onSaveSuccess={() => {
-              if (showBusiness) {
-                setStep(2);
-              } else if (onCompleteHref) {
-                router.replace(onCompleteHref);
-              }
-            }}
+            onSaveSuccess={() => setStep(2)}
             simplePositionInput
             allowSetAsAdministrator={Boolean(user.role)}
             initialRole={user.role ?? null}
@@ -148,7 +171,18 @@ export function OnboardingWizard({
         </div>
       )}
 
-      {showBusiness && step === 2 && company && (
+      {step === 2 && (
+        <div className="rounded-3xl border border-brand-primary-100 bg-white/80 p-6 shadow-sm">
+          <SchedulingForm
+            availability={availability}
+            bookingLink={bookingLink}
+            heading="Availability"
+            onSubmit={() => setStep(3)}
+          />
+        </div>
+      )}
+
+      {showBusiness && step === 3 && company && (
         <div className="rounded-3xl border border-brand-primary-100 bg-white/80 p-6 shadow-sm">
           <CompanySettings
             key={`${company.id}-${company.updatedAt ?? ''}`}
