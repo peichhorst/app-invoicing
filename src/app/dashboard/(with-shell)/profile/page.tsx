@@ -9,6 +9,8 @@ import { EnableNotificationsButton } from '@/components/EnableNotificationsButto
 import { SchedulingForm } from '../../scheduling/SchedulingForm';
 import { getAvailabilityForUser } from '../../scheduling/actions';
 import { buildBookingLink, normalizeSlug } from '../../scheduling/helpers';
+import { MeetingTypeSettings } from './MeetingTypeSettings';
+import { DEFAULT_BUSINESS_TIME_ZONE } from '@/lib/timezone';
 
 export async function generateMetadata(): Promise<Metadata> {
   const user = await getCurrentUser();
@@ -47,6 +49,20 @@ export default async function ProfilePage() {
   const availability = await getAvailabilityForUser(user.id);
   const slug = normalizeSlug(user.name ?? user.companyName ?? user.email);
   const bookingLink = slug ? buildBookingLink(slug) : null;
+  const meetingTypeConfig = [
+    { key: 'phone', label: 'Phone call', enabled: Boolean(user.enablePhone) },
+    { key: 'video', label: 'Video call', enabled: Boolean(user.enableVideo) },
+    { key: 'inperson', label: 'In-person visit', enabled: Boolean(user.enableInPerson) },
+  ];
+  const activeMeetingTypes = meetingTypeConfig.filter((entry) => entry.enabled);
+  const allowedMeetingTypes = activeMeetingTypes.length ? activeMeetingTypes : meetingTypeConfig;
+  const allowedTypeKeys = allowedMeetingTypes.map((entry) => entry.key);
+  const allowedTypeLabels = allowedMeetingTypes.map((entry) => entry.label);
+  const EMBED_SCRIPT_SRC = 'https://clientwave-scheduling.vercel.app/embed.js';
+  const embedSnippet =
+    slug && allowedTypeKeys.length
+      ? `<div id="clientwave-scheduler" data-user-id="${slug}" data-type="${allowedTypeKeys.join(',')}"></div>\n<script src="${EMBED_SCRIPT_SRC}" async></script>`
+      : null;
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8">
@@ -76,7 +92,8 @@ export default async function ProfilePage() {
             trackdriveLeadToken: user.trackdriveLeadToken,
             trackdriveLeadEnabled: user.trackdriveLeadEnabled,
             reportsToId: user.reportsToId,
-            positionId: user.positionId,
+        positionId: user.positionId,
+            timezone: user.timezone ?? DEFAULT_BUSINESS_TIME_ZONE,
           }}
           canAcceptPayments={isPro}
           isOwner={isOwner}
@@ -86,7 +103,25 @@ export default async function ProfilePage() {
           allowSetAsAdministrator={isOwner || isAdmin}
           initialRole={user.role}
         />
-        <SchedulingForm availability={availability} bookingLink={bookingLink} heading="Scheduling" />
+        <div className="space-y-4">
+          <SchedulingForm
+            availability={availability}
+            bookingLink={bookingLink}
+            heading="Scheduling"
+            embedSnippet={embedSnippet}
+            allowedTypeLabels={allowedTypeLabels}
+          />
+          <MeetingTypeSettings
+            initial={{
+              enablePhone: Boolean(user.enablePhone),
+              phoneNumber: user.phoneNumber ?? "",
+              enableVideo: Boolean(user.enableVideo),
+              videoLink: user.videoLink ?? "",
+              enableInPerson: Boolean(user.enableInPerson),
+              location: user.location ?? "",
+            }}
+          />
+        </div>
       </div>
     </div>
   );

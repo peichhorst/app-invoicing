@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { Download, Eye, Pencil, FileText, Plus } from 'lucide-react';
 import { MarkInvoicePaidButton } from './MarkInvoicePaidButton';
 import { DeleteInvoiceButton } from './DeleteInvoiceButton';
+import { RefundInvoiceButton } from './RefundInvoiceButton';
 import { ResendButton } from '@components/ResendButton';
 import InvoiceFilterSelect from './InvoiceFilterSelect';
 import { InvoiceStatus } from '@prisma/client';
@@ -139,6 +140,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                         status={invoice.status}
                         variant="button"
                       />
+                      <RefundInvoiceButton invoiceId={invoice.id} />
                       <div className="flex flex-wrap gap-2">
                         <Link
                           href={invoice.status === 'PAID' ? '#' : `/dashboard/invoices/new?edit=${invoice.id}`}
@@ -282,6 +284,7 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                               status={invoice.status}
                               variant="link"
                             />
+                            <RefundInvoiceButton invoiceId={invoice.id} />
                             <div className="grid w-full max-w-[140px] grid-cols-2 gap-2 justify-items-center">
                               <Link
                                 href={invoice.status === 'PAID' ? '#' : `/dashboard/invoices/new?edit=${invoice.id}`}

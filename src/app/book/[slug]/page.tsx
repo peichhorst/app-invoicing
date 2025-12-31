@@ -1,5 +1,4 @@
 import BookingFormClient from './BookingFormClient';
-import { redirect } from 'next/navigation';
 import { prisma } from '@/lib/prisma';
 
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -79,7 +78,7 @@ async function loadAvailability(slug: string) {
         { name: { equals: nameCandidate, mode: 'insensitive' } },
       ],
     },
-    select: { id: true },
+    select: { id: true, timezone: true },
   });
   if (!user) {
     return null;
@@ -113,16 +112,45 @@ async function loadAvailability(slug: string) {
     },
   });
 
+  const hostTimeZone = user.timezone ?? 'America/Los_Angeles';
+  const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: hostTimeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const timeFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: hostTimeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: hostTimeZone,
+    weekday: 'short',
+  });
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+
   const bookedSlots = bookings
     .map((booking) => {
       const start = booking.startTime;
-      const date = start.toISOString().split('T')[0];
-      const hours = String(start.getHours()).padStart(2, '0');
-      const minutes = String(start.getMinutes()).padStart(2, '0');
+      const date = dateFormatter.format(start);
+      const localStart = timeFormatter.format(start);
+      const weekday = weekdayFormatter.format(start);
+      const dayOfWeek = weekdayMap[weekday as keyof typeof weekdayMap] ?? start.getUTCDay();
       return {
         date,
-        dayOfWeek: start.getDay(),
-        startTime: `${hours}:${minutes}`,
+        dayOfWeek,
+        startTime: localStart,
       };
     })
     .filter(
@@ -140,7 +168,7 @@ async function loadAvailability(slug: string) {
       return 0;
     });
 
-  return { availability, bookedSlots };
+  return { availability, bookedSlots, hostTimezone: hostTimeZone };
 }
 
 export default async function BookingPage({ params }: { params: Promise<{ slug?: string }> }) {
@@ -167,7 +195,7 @@ export default async function BookingPage({ params }: { params: Promise<{ slug?:
     );
   }
 
-  const { availability: availabilityDataRaw, bookedSlots } = availabilityPayload;
+  const { availability: availabilityDataRaw, bookedSlots, hostTimezone } = availabilityPayload;
   const availabilityData: Array<{
     dayOfWeek: number;
     startTime: string;
@@ -201,7 +229,13 @@ export default async function BookingPage({ params }: { params: Promise<{ slug?:
             Public booking link: <span className="font-mono text-[11px] text-blue-600">{bookingLink}</span>
           </p>
         </div>
-        <BookingFormClient slug={slug} days={days} bookingLink={bookingLink} bookedSlots={bookedSlots} />
+        <BookingFormClient
+          slug={slug}
+          days={days}
+          bookingLink={bookingLink}
+          bookedSlots={bookedSlots}
+          hostTimezone={hostTimezone}
+        />
       </div>
     </div>
   );

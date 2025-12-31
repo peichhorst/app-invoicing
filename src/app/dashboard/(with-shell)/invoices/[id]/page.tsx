@@ -3,6 +3,7 @@ import { notFound, redirect } from 'next/navigation';
 import { prisma } from '@lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { MarkInvoicePaidButton } from '../MarkInvoicePaidButton';
+import { RefundInvoiceButton } from '../RefundInvoiceButton';
 import { NewMessageForm } from '../../messaging/NewMessageForm';
 
 type PageProps = {
@@ -176,6 +177,9 @@ const statusBadgeClass = isPaid
             ) : (
               <p className="text-sm text-gray-500">Invoice not paid yet.</p>
             )}
+            <div className="flex flex-wrap gap-3 pt-2">
+              <RefundInvoiceButton invoiceId={invoice.id} />
+            </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link

@@ -45,6 +45,13 @@ model User {
   password                String
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
+  enableVideo             Boolean                  @default(true)
+  videoLink               String?
+  enablePhone             Boolean                  @default(true)
+  phoneNumber             String?
+  enableInPerson          Boolean                  @default(false)
+  location                String?
+  timezone                String                   @default("America/Los_Angeles")
   companyName             String?
   logoDataUrl             String?
   signatureDataUrl        String?
@@ -137,6 +144,10 @@ model Invoice {
   taxRate             Float             @default(0)
   taxAmount           Float             @default(0)
   total               Float             @default(0)
+  amountPaid          Float             @default(0)
+  amountRefunded      Float             @default(0)
+  stripePaymentIntentId String?
+  stripeChargeId      String?
   sentCount           Int               @default(0)
   shortCode           String?           @unique
   lastReminderSentAt  DateTime?
@@ -400,6 +411,7 @@ model Booking {
   userId      String
   clientName  String
   clientEmail String
+  clientPhone String?
   startTime   DateTime
   endTime     DateTime
   notes       String?
@@ -457,4 +469,6 @@ enum InvoiceStatus {
   PAID
   OVERDUE
   VOID
+  PARTIALLY_REFUNDED
+  REFUNDED
 }

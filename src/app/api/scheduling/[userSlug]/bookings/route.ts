@@ -2,6 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { sendEmail } from '@/lib/email';
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+};
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
 const normalizeSlug = (slug: string) => slug.trim().toLowerCase();
 const slugToName = (slug: string) => slug.replace(/[-_]+/g, ' ').trim();
 
@@ -45,16 +55,19 @@ const findUser = async (slug: string) => {
   });
 };
 
+const jsonWithCors = (body: unknown, status?: number) =>
+  NextResponse.json(body, { status, headers: corsHeaders });
+
 export async function POST(request: NextRequest) {
   const pathSegments = request.nextUrl.pathname.split('/');
   const userSlug = pathSegments[3];
   if (!userSlug) {
-    return NextResponse.json({ error: 'Missing user slug' }, { status: 400 });
+    return jsonWithCors({ error: 'Missing user slug' }, 400);
   }
 
   const user = await findUser(userSlug);
   if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return jsonWithCors({ error: 'User not found' }, 404);
   }
 
   const identifier = `${user.id}:${getClientIdentifier(request)}`;
@@ -66,37 +79,69 @@ export async function POST(request: NextRequest) {
     startTime?: string;
     endTime?: string;
     notes?: string;
+    clientPhone?: string;
   };
 
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: 'Invalid booking payload' }, { status: 400 });
+    return jsonWithCors({ error: 'Invalid booking payload' }, 400);
   }
 
-  const { clientName, clientEmail, startTime, endTime, notes } = payload;
+  const { clientName, clientEmail, startTime, endTime, notes, clientPhone } = payload;
   if (!clientName || !clientEmail || !startTime || !endTime) {
-    return NextResponse.json({ error: 'Missing required booking fields' }, { status: 400 });
+    return jsonWithCors({ error: 'Missing required booking fields' }, 400);
   }
 
   const startDate = new Date(startTime);
   const endDate = new Date(endTime);
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || startDate >= endDate) {
-    return NextResponse.json({ error: 'Invalid start/end time' }, { status: 400 });
+    return jsonWithCors({ error: 'Invalid start/end time' }, 400);
   }
 
-  const dayOfWeek = startDate.getDay();
-  const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-  const endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
+  const hostTimeZone = user.timezone ?? 'America/Los_Angeles';
+  const getHostTimeParts = (date: Date) => {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: hostTimeZone,
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      weekday: 'short',
+    });
+    const parts = formatter.formatToParts(date);
+    const hourStr = parts.find((part) => part.type === 'hour')?.value ?? '00';
+    const minuteStr = parts.find((part) => part.type === 'minute')?.value ?? '00';
+    const weekday = (parts.find((part) => part.type === 'weekday')?.value ?? '').slice(0, 3).toLowerCase();
+    const weekdayMap: Record<string, number> = {
+      sun: 0,
+      mon: 1,
+      tue: 2,
+      wed: 3,
+      thu: 4,
+      fri: 5,
+      sat: 6,
+    };
+    return {
+      hour: Number(hourStr),
+      minute: Number(minuteStr),
+      dayOfWeek: weekdayMap[weekday] ?? date.getUTCDay(),
+    };
+  };
+
+  const startInfo = getHostTimeParts(startDate);
+  const endInfo = getHostTimeParts(endDate);
+  const dayOfWeek = startInfo.dayOfWeek;
+  const startMinutes = startInfo.hour * 60 + startInfo.minute;
+  const endMinutes = endInfo.hour * 60 + endInfo.minute;
   if (startMinutes === null || endMinutes === null) {
-    return NextResponse.json({ error: 'Invalid time format' }, { status: 400 });
+    return jsonWithCors({ error: 'Invalid time format' }, 400);
   }
 
   const availability = await prisma.availability.findFirst({
     where: { userId: user.id, dayOfWeek, isActive: true },
   });
   if (!availability) {
-    return NextResponse.json({ error: 'No availability defined for the requested day' }, { status: 400 });
+    return jsonWithCors({ error: 'No availability defined for the requested day' }, 400);
   }
   const availableStart = parseTimeMarker(availability.startTime);
   const availableEnd = parseTimeMarker(availability.endTime);
@@ -106,7 +151,7 @@ export async function POST(request: NextRequest) {
     startMinutes < availableStart ||
     endMinutes > availableEnd
   ) {
-    return NextResponse.json({ error: 'Requested slot falls outside availability' }, { status: 400 });
+    return jsonWithCors({ error: 'Requested slot falls outside availability' }, 400);
   }
 
   const conflict = await prisma.booking.findFirst({
@@ -118,7 +163,7 @@ export async function POST(request: NextRequest) {
     },
   });
   if (conflict) {
-    return NextResponse.json({ error: 'Requested slot already booked' }, { status: 409 });
+    return jsonWithCors({ error: 'Requested slot already booked' }, 409);
   }
 
   let clientId: string | null = null;
@@ -152,6 +197,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       clientName: clientName.trim(),
       clientEmail: clientEmail.trim(),
+      clientPhone: clientPhone?.trim() || null,
       startTime: startDate,
       endTime: endDate,
       notes: notes?.trim() || null,
@@ -202,5 +248,6 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  return NextResponse.json({ success: true, bookingId: booking.id, clientId });
+  const response = NextResponse.json({ success: true, bookingId: booking.id, clientId }, { headers: corsHeaders });
+  return response;
 }

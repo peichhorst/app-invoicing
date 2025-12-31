@@ -4,7 +4,17 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState, useTransi
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { StripeConnectGuide } from '@/components/StripeConnectGuide';
+import { DEFAULT_BUSINESS_TIME_ZONE } from '@/lib/timezone';
 import { changeEmailAction, type ChangeEmailResult } from './actions/change-email';
+
+const TIMEZONE_OPTIONS = [
+  { label: 'Pacific (US)', value: 'America/Los_Angeles' },
+  { label: 'Mountain (US)', value: 'America/Denver' },
+  { label: 'Central (US)', value: 'America/Chicago' },
+  { label: 'Eastern (US)', value: 'America/New_York' },
+  { label: 'London', value: 'Europe/London' },
+  { label: 'UTC', value: 'UTC' },
+];
 
 type ProfileFormProps = {
   initial: {
@@ -24,6 +34,7 @@ type ProfileFormProps = {
     trackdriveLeadEnabled?: boolean | null;
     reportsToId?: string | null;
     positionId?: string | null;
+    timezone?: string | null;
   };
   canAcceptPayments: boolean;
   isOwner: boolean;
@@ -157,6 +168,7 @@ export function ProfileForm({
   useEffect(() => {
     setSetAsAdministrator(initialRole === 'ADMIN');
   }, [initialRole]);
+
 
   useEffect(() => {
     if (!paymentDisabled) return;
@@ -412,7 +424,6 @@ export function ProfileForm({
     payload.trackdriveLeadEnabled = leadTokenEnabled ? 'true' : 'false';
     payload.signatureDataUrl = signatureDataUrl ?? '';
     payload.setAsAdministrator = setAsAdministrator ? 'true' : 'false';
-
     startTransition(async () => {
       setMessage(null);
       let resolvedPositionId = positionSelection;
@@ -763,6 +774,22 @@ export function ProfileForm({
             <input name="password" type="password" placeholder="********" className={inputClass} />
           </div>
         </div>
+        <div className="space-y-1">
+          <label className="text-sm font-medium text-zinc-700">Timezone</label>
+          <select
+            name="timezone"
+            defaultValue={initial.timezone ?? DEFAULT_BUSINESS_TIME_ZONE}
+            className={inputClass}
+          >
+            {TIMEZONE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-zinc-500">This timezone controls your scheduler embeds and availability.</p>
+        </div>
+
 
         <div className="space-y-1">
           <button

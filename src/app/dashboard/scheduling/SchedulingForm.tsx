@@ -7,10 +7,19 @@ type SchedulingFormProps = {
   availability: AvailabilityEntry[];
   bookingLink?: string | null;
   heading?: string;
+  embedSnippet?: string | null;
+  allowedTypeLabels?: string[];
   onSubmit?: () => void;
 };
 
-export function SchedulingForm({ availability, bookingLink, heading, onSubmit }: SchedulingFormProps) {
+export function SchedulingForm({
+  availability,
+  bookingLink,
+  heading,
+  embedSnippet,
+  allowedTypeLabels = [],
+  onSubmit,
+}: SchedulingFormProps) {
   const availabilityMap = new Map(availability.map((entry) => [entry.dayOfWeek, entry]));
   const [isPending, startTransition] = useTransition();
 
@@ -47,6 +56,25 @@ export function SchedulingForm({ availability, bookingLink, heading, onSubmit }:
           >
             {bookingLink}
           </a>
+        </div>
+      )}
+
+      {embedSnippet && (
+        <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-blue-600">Embed the scheduler</p>
+              <p className="text-sm text-zinc-500">
+                Paste this snippet onto your site. The widget reads the data-type attribute to filter allowed meeting types.
+              </p>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
+              {allowedTypeLabels.length ? allowedTypeLabels.join(', ') : 'All meeting types'}
+            </p>
+          </div>
+          <div className="rounded-lg bg-zinc-900/5 px-3 py-2 text-xs text-zinc-600">
+            <code className="whitespace-pre-wrap block font-mono">{embedSnippet}</code>
+          </div>
         </div>
       )}
 

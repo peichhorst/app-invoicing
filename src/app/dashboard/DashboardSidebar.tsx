@@ -95,15 +95,20 @@ const navItems = [
 
 export function DashboardSidebar({ className }: { className?: string }) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('clientwave-sidebar-collapsed') === 'true';
-  });
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem('clientwave-sidebar-collapsed', String(collapsed));
   }, [collapsed]);
+  
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = window.localStorage.getItem('clientwave-sidebar-collapsed');
+    if (stored !== null) {
+      setCollapsed(stored === 'true');
+    }
+  }, []);
 
   // Ensure contrast/logo text vars are correct on first paint after navigation (e.g., post-onboarding)
   useLayoutEffect(() => {

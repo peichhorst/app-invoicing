@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getCurrentUser, hashPassword } from '@/lib/auth';
 import { normalizeStateValue } from '@/lib/states';
+import { DEFAULT_BUSINESS_TIME_ZONE } from '@/lib/timezone';
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -37,13 +38,20 @@ export async function PUT(request: Request) {
     zelleHandle?: string | null;
     mailToAddressEnabled?: string | null;
     mailToAddressTo?: string | null;
-  trackdriveLeadToken?: string | null;
-  trackdriveLeadEnabled?: string | null;
-  reportsToId?: string | null;
-  positionId?: string | null;
-  positionName?: string | null;
-  password?: string | null;
+    trackdriveLeadToken?: string | null;
+    trackdriveLeadEnabled?: string | null;
+    reportsToId?: string | null;
+    positionId?: string | null;
+    positionName?: string | null;
+    password?: string | null;
     setAsAdministrator?: string | null;
+    timezone?: string | null;
+    enableVideo?: string | null;
+    videoLink?: string | null;
+    enablePhone?: string | null;
+    phoneNumber?: string | null;
+    enableInPerson?: string | null;
+    location?: string | null;
   };
 
   try {
@@ -65,8 +73,15 @@ export async function PUT(request: Request) {
       zelleHandle: body.zelleHandle?.trim() || null,
       mailToAddressEnabled: body.mailToAddressEnabled === 'true',
       mailToAddressTo: body.mailToAddressTo?.trim() || null,
+      enableVideo: body.enableVideo === 'true',
+      videoLink: body.videoLink?.trim() || null,
+      enablePhone: body.enablePhone === 'true',
+      phoneNumber: body.phoneNumber?.trim() || null,
+      enableInPerson: body.enableInPerson === 'true',
+      location: body.location?.trim() || null,
       trackdriveLeadToken: body.trackdriveLeadToken?.trim() || null,
       trackdriveLeadEnabled: body.trackdriveLeadEnabled === 'true',
+      timezone: body.timezone?.trim() || DEFAULT_BUSINESS_TIME_ZONE,
     };
 
     if (body.password) {

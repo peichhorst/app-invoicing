@@ -3,15 +3,30 @@ import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
-const normalizeSlug = (slug: string): string => slug.trim().toLowerCase();
-const slugToName = (slug: string): string => slug.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Vary': 'Origin',
+};
 
+const normalizeSlug = (slug: string): string => slug.trim().toLowerCase();
+const slugToName = (slug: string): string =>
+  slug.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+// Handle preflight
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
+// GET handler — no RouteHandlerContext needed
 export async function GET(request: NextRequest) {
-  const pathSegments = request.nextUrl.pathname.split('/');
-  const userSlug = pathSegments[3]?.trim();
+  const { pathname } = request.nextUrl;
+  const segments = pathname.split('/');
+  const userSlug = segments[segments.length - 2]?.trim(); // [userSlug] is second-last
 
   if (!userSlug) {
-    return NextResponse.json({ error: 'Missing user slug' }, { status: 400 });
+    return NextResponse.json({ error: 'Missing user slug' }, { status: 400, headers: corsHeaders });
   }
 
   const normalizedSlug = normalizeSlug(userSlug);
@@ -25,12 +40,18 @@ export async function GET(request: NextRequest) {
         { name: { equals: nameCandidate, mode: 'insensitive' } },
       ],
     },
-    select: { id: true },
+    select: { id: true, timezone: true },
   });
 
   if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    return NextResponse.json({ error: 'User not found' }, { status: 404, headers: corsHeaders });
   }
+
+  console.log('availability request', {
+    slug: normalizedSlug,
+    userId: user.id,
+    now: new Date().toISOString(),
+  });
 
   const availability = await prisma.availability.findMany({
     where: { userId: user.id, isActive: true },
@@ -46,50 +67,27 @@ export async function GET(request: NextRequest) {
 
   const now = new Date();
   const future = new Date(now);
-  future.setDate(future.getDate() + 30);
+  future.setMonth(future.getMonth() + 12);
 
   const bookings = await prisma.booking.findMany({
     where: {
       userId: user.id,
-      startTime: {
-        gte: now,
-        lt: future,
-      },
+      startTime: { lt: future },
     },
-    select: { startTime: true },
+    select: { startTime: true, endTime: true },
   });
 
+  console.log('bookings fetched', { count: bookings.length, userId: user.id, now: now.toISOString(), future: future.toISOString() });
+
   const bookedSlots = bookings
-    .map((booking) => {
-      const start = booking.startTime;
-      const date = start.toISOString().split('T')[0];
-      const hours = String(start.getHours()).padStart(2, '0');
-      const minutes = String(start.getMinutes()).padStart(2, '0');
-      return {
-        date,
-        startTime: `${hours}:${minutes}`,
-      };
-    })
-    .sort((a, b) => {
-      if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return a.startTime.localeCompare(b.startTime);
-    });
+    .map((booking) => ({
+      startTime: booking.startTime.toISOString(),
+      endTime: booking.endTime?.toISOString() ?? null,
+    }))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-  const response = NextResponse.json({ availability, bookedSlots });
-
-  // Add CORS headers
-  response.headers.set('Access-Control-Allow-Origin', '*'); // or specific domain for security
-  response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-
-  return response;
-}
-
-// Handle preflight OPTIONS request
-export async function OPTIONS() {
-  const response = new NextResponse(null, { status: 200 });
-  response.headers.set('Access-Control-Allow-Origin', '*');
-  response.headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
-  return response;
+  return NextResponse.json(
+    { availability, bookedSlots, hostTimezone: user.timezone ?? 'America/Los_Angeles' },
+    { headers: corsHeaders },
+  );
 }
