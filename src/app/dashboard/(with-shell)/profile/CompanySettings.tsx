@@ -6,21 +6,6 @@ import { useRouter } from 'next/navigation';
 import { Country, State, City } from 'country-state-city';
 import { HexColorPicker } from 'react-colorful';
 
-// Google Maps API types
-declare global {
-  interface Window {
-    google?: {
-      maps: {
-        places: {
-          Autocomplete: new (input: HTMLInputElement, opts?: any) => any;
-        };
-        Geocoder: new () => any;
-        GeocoderStatus: any;
-      };
-    };
-  }
-}
-
 type CountryModel = ReturnType<typeof Country.getAllCountries>[number];
 type StateModel = ReturnType<typeof State.getStatesOfCountry>[number];
 type CityModel = ReturnType<typeof City.getCitiesOfState>[number];
@@ -693,9 +678,11 @@ export default function CompanySettings(props: CompanySettingsProps) {
   }, []);
 
   useEffect(() => {
-    if (!autocompleteInputRef.current || typeof window === 'undefined' || !window.google || !googleMapsLoaded) return;
+    if (!autocompleteInputRef.current || typeof window === 'undefined' || !googleMapsLoaded) return;
+    const googleMaps = window.google?.maps;
+    if (!googleMaps?.places) return;
 
-    const autocomplete = new window.google.maps.places.Autocomplete(autocompleteInputRef.current, {
+    const autocomplete = new googleMaps.places.Autocomplete(autocompleteInputRef.current, {
       types: ['address'],
       fields: ['address_components', 'formatted_address', 'geometry'],
     });
@@ -754,12 +741,13 @@ export default function CompanySettings(props: CompanySettingsProps) {
       async (position) => {
         const { latitude, longitude } = position.coords;
         try {
-          if (!window.google) {
+          const googleMaps = window.google?.maps;
+          if (!googleMaps) {
             alert('Google Maps API not loaded yet. Please try again.');
             setLoadingLocation(false);
             return;
           }
-          const geocoder = new window.google.maps.Geocoder();
+          const geocoder = new googleMaps.Geocoder();
           geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results: any, status: any) => {
             if (status === 'OK' && results && results[0]) {
               const place = results[0];

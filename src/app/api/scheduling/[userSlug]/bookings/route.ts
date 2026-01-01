@@ -166,6 +166,8 @@ export async function POST(request: NextRequest) {
     return jsonWithCors({ error: 'Requested slot already booked' }, 409);
   }
 
+  const normalizedPhone = clientPhone?.trim() || null;
+
   let clientId: string | null = null;
   if (clientEmail) {
     const companyId = user.companyId ?? null;
@@ -178,6 +180,12 @@ export async function POST(request: NextRequest) {
       });
       if (existingClient) {
         clientId = existingClient.id;
+        if (normalizedPhone && normalizedPhone !== existingClient.phone) {
+          await prisma.client.update({
+            where: { id: existingClient.id },
+            data: { phone: normalizedPhone },
+          });
+        }
       } else {
         const createdClient = await prisma.client.create({
           data: {
@@ -185,6 +193,7 @@ export async function POST(request: NextRequest) {
             email: clientEmail.trim(),
             contactName: clientName.trim(),
             companyName: clientName.trim(),
+            phone: normalizedPhone,
           },
         });
         clientId = createdClient.id;
@@ -197,7 +206,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       clientName: clientName.trim(),
       clientEmail: clientEmail.trim(),
-      clientPhone: clientPhone?.trim() || null,
+      clientPhone: normalizedPhone,
       startTime: startDate,
       endTime: endDate,
       notes: notes?.trim() || null,
@@ -231,6 +240,8 @@ export async function POST(request: NextRequest) {
     });
   }
 
+  const phoneDisplay = normalizedPhone ?? '—';
+
   if (user.email) {
     await sendEmail({
       from: process.env.RESEND_FROM || 'invoices@858webdesign.com',
@@ -241,6 +252,7 @@ export async function POST(request: NextRequest) {
           <h1 style="margin-bottom:12px; color:#111;">New booking received</h1>
           <p style="margin-bottom:4px;">Client: ${clientName}</p>
           <p style="margin-bottom:4px;">Email: ${clientEmail}</p>
+          <p style="margin-bottom:4px;">Phone: ${phoneDisplay}</p>
           <p style="margin-bottom:12px;">When: ${formattedDate} from ${formattedStart} - ${formattedEnd}</p>
           <p style="margin:0;">Notes: ${notes || 'None'}</p>
         </div>
@@ -248,6 +260,14 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const response = NextResponse.json({ success: true, bookingId: booking.id, clientId }, { headers: corsHeaders });
+  const response = NextResponse.json(
+    {
+      success: true,
+      bookingId: booking.id,
+      clientId,
+      clientPhone: normalizedPhone,
+    },
+    { headers: corsHeaders },
+  );
   return response;
 }

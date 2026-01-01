@@ -38,7 +38,7 @@ export default async function SchedulingPage() {
   const meetingTypeConfig = [
     { key: 'phone', label: 'Phone call', enabled: Boolean(user.enablePhone) },
     { key: 'video', label: 'Video call', enabled: Boolean(user.enableVideo) },
-    { key: 'inperson', label: 'In-person visit', enabled: Boolean(user.enableInPerson) },
+    { key: 'inperson', label: 'In-person visits', enabled: Boolean(user.enableInPerson) },
   ];
   const activeMeetingTypes = meetingTypeConfig.filter((entry) => entry.enabled);
   const allowedMeetingTypes = activeMeetingTypes.length ? activeMeetingTypes : meetingTypeConfig;

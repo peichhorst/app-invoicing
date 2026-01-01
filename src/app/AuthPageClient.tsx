@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Logo } from "@/components/Logo";
@@ -65,6 +65,8 @@ export default function AuthPageClient() {
   const [mode, setMode] = useState<Mode>("register");
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [googleReady, setGoogleReady] = useState(false);
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
   // Apply colors from localStorage or defaults to maintain consistency on auth page
   useEffect(() => {
@@ -160,6 +162,77 @@ export default function AuthPageClient() {
     }
   }, []);
 
+  const handleGoogleCredential = useCallback(
+    (credential: string) => {
+      setMessage(null);
+      if (!credential) return;
+
+      startTransition(async () => {
+        try {
+          const res = await fetch("/api/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idToken: credential }),
+          });
+
+          if (!res.ok) {
+            const text = await res.text();
+            setMessage(text || "Google sign-in failed. Please try again.");
+            return;
+          }
+
+          const data = await res.json();
+          const destination = data.registered ? "/dashboard/onboarding" : "/dashboard";
+          router.push(destination);
+          router.refresh();
+        } catch (error) {
+          console.error("Google login failed", error);
+          setMessage("Google sign-in failed. Please try again.");
+        }
+      });
+    },
+    [router, startTransition],
+  );
+
+  useEffect(() => {
+    if (!googleClientId || typeof window === "undefined") return;
+
+    const containerId = "google-signin-button";
+    const handleResponse = (response: { credential: string }) => {
+      handleGoogleCredential(response.credential);
+    };
+
+    const script = document.createElement("script");
+    script.id = "google-gsi-script";
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = () => {
+      setGoogleReady(true);
+      const accountsId = window.google?.accounts?.id;
+      accountsId?.initialize({
+        client_id: googleClientId,
+        callback: handleResponse,
+        ux_mode: "popup",
+      });
+
+      accountsId?.renderButton(document.getElementById(containerId), {
+        theme: "filled_blue",
+        size: "large",
+        width: "100%",
+      });
+    };
+
+    document.head.appendChild(script);
+
+    return () => {
+      const current = document.getElementById("google-gsi-script");
+      current?.remove();
+      window.google?.accounts?.id?.cancel?.();
+      setGoogleReady(false);
+    };
+  }, [googleClientId, handleGoogleCredential]);
+
   const handleSubmit = (form: FormData) => {
     setMessage(null);
     startTransition(async () => {
@@ -244,6 +317,28 @@ export default function AuthPageClient() {
           {isPending ? "Working..." : mode === "login" ? "Login" : "Create Account"}
         </button>
       </form>
+
+      <div className="space-y-2 pt-4">
+        <p className="text-xs text-white/70">Continue with:</p>
+        <div className="rounded-2xl border border-white/20 bg-white/10 p-4 shadow-inner shadow-black/20">
+          {googleClientId ? (
+            <div id="google-signin-button" className="w-full" />
+          ) : (
+            <p className="text-xs text-white/60">
+              Google sign-in is disabled until `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is configured.
+            </p>
+          )}
+          {googleClientId && !googleReady && (
+            <button
+              type="button"
+              onClick={() => window.google?.accounts?.id?.prompt?.()}
+              className="mt-2 w-full rounded-2xl border border-white/30 bg-white/10 px-3 py-2 text-xs text-white transition hover:bg-white/20"
+            >
+              Open Google prompt
+            </button>
+          )}
+        </div>
+      </div>
 
     </>,
   );

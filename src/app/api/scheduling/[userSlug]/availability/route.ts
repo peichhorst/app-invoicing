@@ -47,6 +47,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404, headers: corsHeaders });
   }
 
+  const hostTimezone = user.timezone ?? 'America/Los_Angeles';
+
   console.log('availability request', {
     slug: normalizedSlug,
     userId: user.id,
@@ -80,14 +82,34 @@ export async function GET(request: NextRequest) {
   console.log('bookings fetched', { count: bookings.length, userId: user.id, now: now.toISOString(), future: future.toISOString() });
 
   const bookedSlots = bookings
-    .map((booking) => ({
-      startTime: booking.startTime.toISOString(),
-      endTime: booking.endTime?.toISOString() ?? null,
-    }))
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    .map((booking) => {
+      const start = booking.startTime;
+      const date = start.toLocaleDateString('en-CA', { timeZone: hostTimezone });
+      const localTime = start.toLocaleTimeString('en-US', {
+        timeZone: hostTimezone,
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      });
+
+      return {
+        date,
+        startTime: start.toISOString(),
+        localTime,
+      };
+    })
+    .sort((a, b) => {
+      if (a.date !== b.date) {
+        return a.date.localeCompare(b.date);
+      }
+      if (a.startTime !== b.startTime) {
+        return a.startTime.localeCompare(b.startTime);
+      }
+      return 0;
+    });
 
   return NextResponse.json(
-    { availability, bookedSlots, hostTimezone: user.timezone ?? 'America/Los_Angeles' },
+    { availability, bookedSlots, hostTimezone },
     { headers: corsHeaders },
   );
 }

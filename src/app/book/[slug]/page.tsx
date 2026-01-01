@@ -150,7 +150,8 @@ async function loadAvailability(slug: string) {
       return {
         date,
         dayOfWeek,
-        startTime: localStart,
+        startTime: start.toISOString(),
+        localTime: localStart,
       };
     })
     .filter(

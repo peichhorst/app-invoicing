@@ -180,7 +180,7 @@ export default function CalendarPicker({
           bookedOut:
             "bg-rose-50 text-rose-700 font-semibold border border-rose-200 shadow-sm hover:bg-rose-100 !bg-rose-50 !text-rose-700 !border-rose-200",
           selected:
-            "bg-white text-brand-primary-600 !text-brand-primary-600 rounded-sm border border-brand-primary-200 shadow-sm transition-colors hover:!bg-white",
+            "bg-white text-brand-primary-600 text-base font-semibold rounded-full border border-brand-primary-200 shadow-lg transition duration-150 ease-out scale-105",
           outside:
             "bg-white text-zinc-400 opacity-80 hover:!bg-white pointer-events-none !border-transparent !bg-white",
         }}
@@ -197,7 +197,7 @@ export default function CalendarPicker({
           day_outside:
             "text-zinc-400 opacity-60 cursor-not-allowed bg-white border-transparent rounded-none",
           day_button:
-            "w-full h-full flex items-center justify-center transition duration-100 ease-in rounded-none",
+            "w-full h-full flex items-center justify-center transition duration-100 ease-in rounded-none transform",
           day_disabled:
             "cursor-not-allowed opacity-60 text-zinc-400 bg-white border-transparent rounded-none",
         }}

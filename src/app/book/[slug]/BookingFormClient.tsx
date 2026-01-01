@@ -17,8 +17,9 @@ type DayAvailability = {
 
 type BookedSlot = {
   date: string;
-  dayOfWeek: number;
+  dayOfWeek?: number;
   startTime: string;
+  localTime?: string;
 };
 
 type BookingFormProps = {
@@ -37,6 +38,31 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Thursday: 4,
   Friday: 5,
   Saturday: 6,
+};
+
+const buildDisabledSlotMap = (slots: BookedSlot[], timeZone: string) => {
+  const map = new Map<string, Set<string>>();
+  slots.forEach(({ startTime }) => {
+    if (!startTime) return;
+    const localDate = new Date(startTime);
+    const localTime = localDate.toLocaleTimeString('en-US', {
+      timeZone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const dateKey = localDate.toLocaleDateString('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    if (!map.has(dateKey)) {
+      map.set(dateKey, new Set());
+    }
+    map.get(dateKey)?.add(localTime);
+  });
+  return map;
 };
 
 export default function BookingFormClient({
@@ -70,32 +96,6 @@ export default function BookingFormClient({
     [hostTimezone],
   );
 
-  const buildDisabledMap = useCallback(
-    (slots: BookedSlot[]) => {
-      const map = new Map<string, Set<string>>();
-      slots.forEach(({ startTime }) => {
-        if (!startTime) return;
-        const localDate = new Date(startTime);
-        const localTime = localDate.toLocaleTimeString('en-US', {
-          timeZone: hostTimezone,
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        });
-        const dateKey = localDate.toLocaleDateString('en-CA', {
-          timeZone: hostTimezone,
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        });
-        if (!map.has(dateKey)) map.set(dateKey, new Set());
-        map.get(dateKey)?.add(localTime);
-      });
-      return map;
-    },
-    [hostTimezone],
-  );
-
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [selectedDayLabel, setSelectedDayLabel] = useState('');
   const [selectedDayOfWeek, setSelectedDayOfWeek] = useState<number | null>(null);
@@ -109,7 +109,7 @@ export default function BookingFormClient({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [liveBookedSlots, setLiveBookedSlots] = useState<BookedSlot[]>(bookedSlots);
   const [disabledSlots, setDisabledSlots] = useState<Map<string, Set<string>>>(() =>
-    buildDisabledMap(bookedSlots),
+    buildDisabledSlotMap(bookedSlots, hostTimezone),
   );
 
   const hasSlots = days.length > 0 && days.some((day) => day.slots.length > 0);
@@ -225,8 +225,8 @@ export default function BookingFormClient({
   }, [bookedSlots]);
 
   useEffect(() => {
-    setDisabledSlots(buildDisabledMap(liveBookedSlots));
-  }, [liveBookedSlots, buildDisabledMap]);
+    setDisabledSlots(buildDisabledSlotMap(liveBookedSlots, hostTimezone));
+  }, [liveBookedSlots, hostTimezone]);
 
   useEffect(() => {
     let isActive = true;
@@ -341,8 +341,8 @@ export default function BookingFormClient({
     const baseClasses = 'rounded-full px-3 py-1 text-xs font-semibold transition';
     const selectedClasses = 'border-brand-primary-600 bg-brand-primary-600 text-white';
     const defaultClasses = 'border-zinc-200 bg-zinc-50 text-zinc-600 hover:border-zinc-300';
-    const bookedClasses = 'opacity-50 bg-gray-200 cursor-not-allowed border border-zinc-200 text-zinc-500';
-    const pastClasses = 'opacity-60 bg-zinc-100 cursor-not-allowed border border-zinc-200 text-zinc-400';
+    const bookedClasses = 'opacity-50 bg-gray-200 cursor-not-allowed border border-zinc-200 text-zinc-500 animate-pulse';
+    const pastClasses = 'opacity-60 bg-zinc-100 cursor-not-allowed border border-zinc-200 text-zinc-400 transition duration-200 ease-out';
     const classes = isBooked
       ? `${baseClasses} ${bookedClasses}`
       : isPast
@@ -509,6 +509,8 @@ export default function BookingFormClient({
           <label className="text-xs text-zinc-500">
             Name
             <input
+              name="clientName"
+              autoComplete="name"
               type="text"
               value={name}
               onChange={(event) => setName(event.target.value)}
@@ -520,6 +522,8 @@ export default function BookingFormClient({
           <label className="text-xs text-zinc-500">
             Email
             <input
+              name="clientEmail"
+              autoComplete="email"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -531,6 +535,8 @@ export default function BookingFormClient({
           <label className="text-xs text-zinc-500">
             Phone
             <input
+              name="clientPhone"
+              autoComplete="tel"
               type="tel"
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
@@ -541,6 +547,8 @@ export default function BookingFormClient({
           <label className="text-xs text-zinc-500">
             Notes
             <textarea
+              name="notes"
+              autoComplete="off"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               rows={3}
