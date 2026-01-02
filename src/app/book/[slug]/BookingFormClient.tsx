@@ -282,14 +282,14 @@ export default function BookingFormClient({
     return slotDate;
   };
 
-  const buildHostIso = useCallback(
-    (hostDate: string, time: string): string => {
-      const [year, month, day] = hostDate.split('-').map(Number);
-      const [hour, minute] = time.split(':').map(Number);
-      const localDate = new Date(year, month - 1, day, hour, minute);
-      return new Date(localDate.toLocaleString('en-US', { timeZone: hostTimezone })).toISOString();
+  const buildSlotIsoFromDate = useCallback(
+    (date: Date, timeString: string): string => {
+      const slotDate = new Date(date);
+      const [hour, minute] = timeString.split(':').map(Number);
+      slotDate.setHours(hour, minute, 0, 0);
+      return slotDate.toISOString();
     },
-    [hostTimezone],
+    [],
   );
 
   const isPastSlot = (dateKey: string, timeKey: string): boolean => {
@@ -309,27 +309,12 @@ export default function BookingFormClient({
   }, [selectedDate, selectedDayLabel, formatDateLocal]);
 
   const selectedSlotLabel = useMemo(() => {
-    if (!selectedSlot) return 'Pick a slot above';
-    const slotDateIso =
-      selectedDate && selectedHostIso === null
-        ? hostIsoFormatter.format(selectedDate)
-        : selectedHostIso ?? '';
-    const startIso = slotDateIso ? buildHostIso(slotDateIso, selectedSlot.start) : '';
-    const endIso = slotDateIso ? buildHostIso(slotDateIso, selectedSlot.end) : '';
-    const slotTimeLabel =
-      startIso && endIso
-        ? `${formatTimeLocal(startIso)} - ${formatTimeLocal(endIso)}`
-        : selectedSlot.label;
+    if (!selectedSlot || !selectedDate) return 'Pick a slot above';
+    const startIso = buildSlotIsoFromDate(selectedDate, selectedSlot.start);
+    const endIso = buildSlotIsoFromDate(selectedDate, selectedSlot.end);
+    const slotTimeLabel = `${formatTimeLocal(startIso)} - ${formatTimeLocal(endIso)}`;
     return `${selectedDayFullLabel} · ${slotTimeLabel}`;
-  }, [
-    selectedDayFullLabel,
-    selectedSlot,
-    selectedDate,
-    selectedHostIso,
-    hostIsoFormatter,
-    buildHostIso,
-    formatTimeLocal,
-  ]);
+  }, [selectedDayFullLabel, selectedSlot, selectedDate, buildSlotIsoFromDate, formatTimeLocal]);
 
   const slotButton = (day: DayAvailability, slot: Slot): JSX.Element => {
     const slotDateKey = selectedDate
@@ -429,16 +414,20 @@ export default function BookingFormClient({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (submitDisabled || !selectedSlot || !selectedDayOfWeek) return;
+    if (submitDisabled || !selectedSlot || !selectedDate) return;
 
     setStatus('loading');
     setErrorMessage(null);
+    const slotDateKey = hostIsoFormatter.format(selectedDate);
     try {
-      const slotDateEntry = availableDateEntries.find((entry) => entry.dayOfWeek === selectedDayOfWeek);
-      const slotDateIso =
-        slotDateEntry?.iso ?? selectedHostIso ?? hostIsoFormatter.format(getSlotDate(selectedDayOfWeek));
-      const startIso = buildHostIso(slotDateIso, selectedSlot.start);
-      const endIso = buildHostIso(slotDateIso, selectedSlot.end);
+      const start = new Date(selectedDate);
+      const [startHour, startMinute] = selectedSlot.start.split(':').map(Number);
+      start.setHours(startHour, startMinute, 0, 0);
+      const end = new Date(selectedDate);
+      const [endHour, endMinute] = selectedSlot.end.split(':').map(Number);
+      end.setHours(endHour, endMinute, 0, 0);
+      const startIso = start.toISOString();
+      const endIso = end.toISOString();
       const response = await fetch(`/api/scheduling/${encodeURIComponent(slug)}/bookings`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -455,7 +444,7 @@ export default function BookingFormClient({
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         if (payload?.error?.toLowerCase().includes('already booked')) {
-          markSlotAsBooked(slotDateIso, selectedSlot.start);
+          markSlotAsBooked(slotDateKey, selectedSlot.start);
         }
         throw new Error(payload?.error ?? 'Failed to request booking.');
       }
