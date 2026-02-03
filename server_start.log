@@ -1,0 +1,211 @@
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.30.97.235:3000
+- Environments: .env.local, .env
+
+✓ Starting...
+✓ Ready in 1343ms
+Failed to create SQLite adapter: Could not locate the bindings file. Tried:
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/build/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/build/Debug/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/build/Release/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/out/Debug/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/Debug/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/out/Release/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/Release/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/build/default/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/compiled/24.13.0/linux/x64/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/addon-build/release/install-root/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/addon-build/debug/install-root/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/addon-build/default/install-root/better_sqlite3.node
+ → /home/petere2103/projects/app-invoicing/node_modules/.pnpm/better-sqlite3@12.6.2/node_modules/better-sqlite3/lib/binding/node-v137-linux-x64/better_sqlite3.node
+Attempting to create Prisma client without adapter...
+Creating Prisma client with getPrismaClient and URL: file:./dev.db
+Prisma client methods not available, using mock client
+ GET / 200 in 2.1s (compile: 1276ms, render: 818ms)
+Mock DB: Found user with id mock-user-1769907271935
+Mock DB: Created session with id f8f2dad8-2eaa-45c4-9073-70793cdba2ca
+ POST /api/auth/login 200 in 461ms (compile: 345ms, render: 116ms)
+Login failed SyntaxError: Expected property name or '}' in JSON at position 1 (line 1 column 2)
+    at JSON.parse (<anonymous>)
+ POST /api/auth/login 500 in 29ms (compile: 17ms, render: 12ms)
+ GET /api/messages/status 200 in 94ms (compile: 86ms, render: 9ms)
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async RootLayout (src/app/layout.tsx:42:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '4097028733'
+}
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async Page (src/app/page.tsx:7:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '1450642425'
+}
+ GET / 500 in 186ms (compile: 66ms, render: 121ms)
+✓ Compiled in 609ms
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async RootLayout (src/app/layout.tsx:42:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '3094504019'
+}
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async Page (src/app/page.tsx:7:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '2248104154'
+}
+ GET / 500 in 884ms (compile: 587ms, render: 297ms)
+✓ Compiled in 124ms
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async RootLayout (src/app/layout.tsx:42:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '1121168086'
+}
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async Page (src/app/page.tsx:7:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '3477394935'
+}
+ GET / 500 in 355ms (compile: 116ms, render: 238ms)
+✓ Compiled in 139ms
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async RootLayout (src/app/layout.tsx:42:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '1253696533'
+}
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async Page (src/app/page.tsx:7:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '4180220721'
+}
+ GET / 500 in 363ms (compile: 116ms, render: 247ms)
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async RootLayout (src/app/layout.tsx:42:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '2760496691'
+}
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async Page (src/app/page.tsx:7:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '2871368468'
+}
+ GET / 500 in 360ms (compile: 135ms, render: 225ms)
+✓ Compiled in 109ms
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+Mock DB: Found session with id 29d3e4ee-e2f4-4d4b-8fa9-cd6cf53eba9b
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async RootLayout (src/app/layout.tsx:42:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '2334959483'
+}
+⨯ TypeError: trialEndsAt.getTime is not a function
+    at ensureTrialState (src/lib/plan.ts:171:44)
+    at getCurrentUser (src/lib/auth.ts:179:41)
+    at async Page (src/app/page.tsx:7:16)
+  169 |
+  170 |   const trialEndsAt = user.proTrialEndsAt;
+> 171 |   const graceEndsAt = new Date(trialEndsAt.getTime() + GRACE_LENGTH_MS);
+      |                                            ^
+  172 |
+  173 |   if (now > graceEndsAt.getTime()) {
+  174 |     await archiveExcessClients(user.id); {
+  digest: '379640051'
+}
+ GET / 500 in 376ms (compile: 138ms, render: 238ms)
+[?25h

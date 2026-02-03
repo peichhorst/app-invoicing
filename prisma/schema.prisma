@@ -1,0 +1,758 @@
+generator client {
+  provider = "prisma-client-js"
+  output = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN // new: company-level manager (no billing)
+  OWNER // paying customer, full company + billing
+  SUPERADMIN // platform-wide (you only)
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SIGNED
+  COMPLETED
+  DECLINED
+}
+
+enum ProposalType {
+  PROPOSAL
+  CONTRACT
+}
+
+enum CompanyPosition {
+  EXECUTIVE
+  DIRECTOR
+  MANAGER
+  TEAM_LEAD
+  SENIOR
+  ASSOCIATE
+  JUNIOR
+  INTERN
+}
+
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED
+  DRAFT
+}
+
+enum ProductType {
+  ONE_TIME
+  SUBSCRIPTION
+}
+
+enum ProductInterval {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum PaymentProvider {
+  stripe
+  manual
+}
+
+enum PaymentStatus {
+  initiated
+  processing
+  succeeded
+  failed
+  canceled
+  refunded
+  partially_refunded
+}
+
+enum StripeAccountType {
+  standard
+  express
+  custom
+}
+
+enum StripeWebhookMode {
+  platform_managed
+  manual
+}
+
+enum StripeWebhookStatus {
+  verified
+  pending
+  error
+}
+
+model StripeWebhookEndpoint {
+  id            String   @id @default(cuid())
+  accountId     String   @unique
+  endpointId    String?
+  signingSecret String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model User {
+  id                      String                   @id @default(cuid())
+  name                    String
+  email                   String                   @unique
+  password                String
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  enableVideo             Boolean                  @default(true)
+  videoLink               String?
+  enablePhone             Boolean                  @default(true)
+  phoneNumber             String?
+  enableInPerson          Boolean                  @default(false)
+  location                String?
+  timezone                String                   @default("America/Los_Angeles")
+  companyName             String?
+  logoDataUrl             String?
+  signatureDataUrl        String?
+  phone                   String?
+  website                 String?
+  planTier                String                   @default("FREE")
+  role                    Role                     @default(USER)
+  position                CompanyPosition?
+  positionId              String?
+  positionCustom          Position?                @relation("PositionCustom", fields: [positionId], references: [id])
+  reportsToId             String?
+  reportsTo               User?                    @relation("ReportsTo", fields: [reportsToId], references: [id])
+  managedUsers            User[]                   @relation("ReportsTo")
+  companyId               String?
+  company                 Company?                 @relation("CompanyMembers", fields: [companyId], references: [id], onDelete: Cascade)
+  ownedCompany            Company?                 @relation("CompanyOwner")
+  mailToAddressEnabled    Boolean                  @default(false)
+  mailToAddressTo         String?
+  stripeAccountId         String?
+  stripePublishableKey    String?
+  venmoHandle             String?
+  zelleHandle             String?
+  stripeCustomerId        String?                  @unique
+  stripeSubscriptionId    String?                  @unique
+  trackdriveLeadToken     String?
+  trackdriveLeadEnabled   Boolean                  @default(false)
+  proTrialEndsAt          DateTime?                @map("pro_trial_ends_at")
+  proTrialReminderSent    Boolean                  @default(false)
+  defaultPaymentMethodId  String?
+  subscriptionCancelAt    DateTime?
+  isConfirmed             Boolean                  @default(false)
+  inviteToken             String?
+  inviteTokenExpires      DateTime?
+  emailChangeTokens       EmailChangeToken[]
+  assignedClients         Client[]                 @relation("ClientAssignments")
+  assignedLeads           Lead[]                   @relation("LeadAssignments")
+  invoices                Invoice[]
+  recurringInvoices       RecurringInvoice[]
+  opportunities           Opportunity[] // Added for opportunity tracking
+  Session                 Session[]
+  passwordResetTokens     PasswordResetToken[]
+  proposals               Proposal[]
+  contracts               Contract[]
+  pushSubscriptions       PushSubscription[]
+  sentMessages            Message[]                @relation("SentMessages")
+  readMessages            Message[]                @relation("ReadMessages")
+  resourceAcknowledgments ResourceAcknowledgment[]
+  availabilities          Availability[]
+  bookings                Booking[]
+  // Google Calendar OAuth fields
+  googleCalendarConnected Boolean                  @default(false)
+  googleRefreshToken      String? // Encrypted refresh token
+  googleAccessToken       String? // Short-lived access token (expires in 1 hour)
+  googleTokenExpiresAt    DateTime? // When access token expires
+  googleCalendarEmail     String? // Email of connected Google account
+  // Google Calendar Watch/Webhook fields
+  googleWatchChannelId    String? // Unique channel ID for push notifications
+  googleWatchResourceId   String? // Resource ID returned by Google
+  googleWatchExpiration   DateTime? // When the watch expires (need to renew)
+
+  // User-level onboarding
+  isOnboarded Boolean @default(false)
+}
+
+model Lead {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedToId String?
+  assignedTo   User?    @relation("LeadAssignments", fields: [assignedToId], references: [id])
+  name         String?
+  email        String?
+  website      String?
+  phone        String?
+  companyName  String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  source       String? // website, referral, ad, booking_form, etc.
+  notes        String?
+  status       String   @default("new") // new, contacted, proposal_sent, qualified, lost
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // When converted to client
+  clientId String? @unique
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  @@index([companyId])
+  @@index([assignedToId])
+}
+
+model Client {
+  id                String             @id @default(cuid())
+  companyId         String
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  assignedToId      String?
+  assignedTo        User?              @relation("ClientAssignments", fields: [assignedToId], references: [id])
+  companyName       String?
+  contactName       String?
+  email             String?
+  phone             String?
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  postalCode        String?
+  country           String?
+  notes             String?
+  convertedFromLead Boolean            @default(false)
+  source            String?
+  status            String?
+  isLead            Boolean            @default(true)
+  archived          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  // QuickBooks sync field
+  quickbooksId      String? // QB Customer ID
+  portalUser        ClientPortalUser?
+  invoices          Invoice[]
+  recurringInvoices RecurringInvoice[]
+  proposals         Proposal[]
+  contracts         Contract[]
+  opportunities     Opportunity[] // Added for opportunity tracking
+  lead              Lead? // one-to-one back to original lead (if converted)
+  payments          Payment[]
+
+  @@index([companyId])
+  @@index([assignedToId])
+}
+
+model Payment {
+  id                         String          @id @default(cuid())
+  clientId                   String
+  invoiceId                  String
+  client                     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoice                    Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  provider                   PaymentProvider @default(stripe)
+  status                     PaymentStatus   @default(initiated)
+  amount                     Float
+  currency                   String          @default("USD")
+  feeAmount                  Float?
+  netAmount                  Float?
+  refundedAmount             Float         @default(0)
+  paidAt                     DateTime?
+  stripeCheckoutSessionId    String?         @unique
+  stripePaymentIntentId      String?         @unique
+  stripeChargeId             String?
+  stripeCustomerId           String?
+  stripeBalanceTransactionId String?
+  lastError                  String?
+  metadata                   Json?
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @default(now()) @updatedAt
+
+  @@index([clientId])
+  @@index([invoiceId])
+}
+
+model Invoice {
+  id                    String            @id @default(cuid())
+  userId                String
+  clientId              String?
+  invoiceNumber         String
+  title                 String?
+  status                InvoiceStatus     @default(DRAFT)
+  issueDate             DateTime
+  dueDate               DateTime?
+  paidAt                DateTime?
+  currency              String            @default("USD")
+  subTotal              Float           @default(0)
+  taxRate               Float           @default(0)
+  taxAmount             Float           @default(0)
+  total                 Float           @default(0)
+  amountPaid            Float           @default(0)
+  amountRefunded        Float           @default(0)
+  stripePaymentIntentId String?
+  stripeChargeId        String?
+  sentCount             Int               @default(0)
+  shortCode             String?           @unique
+  lastReminderSentAt    DateTime?
+  notes                 String?
+  pdfUrl                String? // Permanent URL to the official PDF
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  // QuickBooks sync fields
+  quickbooksId          String? // QB Invoice ID
+  quickbooksSyncedAt    DateTime? // Last sync timestamp
+  quickbooksSyncError   String? // Last sync error message
+  client                Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items                 InvoiceItem[]
+  recurring             Boolean           @default(false)
+  recurringInterval     String?
+  recurringDayOfMonth   Int?
+  recurringDayOfWeek    Int?
+  nextOccurrence        DateTime?
+  parentInvoiceId       String?
+  parentInvoice         Invoice?          @relation("RecurringSeries", fields: [parentInvoiceId], references: [id])
+  childInvoices         Invoice[]         @relation("RecurringSeries")
+  recurringParentId     String?
+  recurringParent       RecurringInvoice? @relation("RecurringInvoiceGenerated", fields: [recurringParentId], references: [id])
+  proposalId            String?           @unique
+  proposal              Proposal?         @relation("InvoiceProposalOrigin", fields: [proposalId], references: [id])
+  convertedProposal     Proposal?         @relation("ProposalInvoiceConversion")
+  payments              Payment[]
+
+  @@unique([userId, invoiceNumber])
+  @@index([userId])
+  @@index([clientId])
+  @@index([parentInvoiceId])
+}
+
+model RecurringInvoice {
+  id                    String    @id @default(cuid())
+  userId                String
+  clientId              String
+  title                 String
+  amount                Float
+  currency              String    @default("USD")
+  interval              String
+  dayOfMonth            Int?
+  dayOfWeek             Int?
+  nextSendDate          DateTime
+  status                String    @default("PENDING") // PENDING, ACTIVE, PAUSED, CANCELLED
+  sendFirstNow          Boolean   @default(true)
+  firstPaidAt           DateTime?
+  autoPayEnabled        Boolean   @default(false)
+  stripePaymentMethodId String?
+  stripeCustomerId      String?
+  lastPaymentError      String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client                Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoices              Invoice[] @relation("RecurringInvoiceGenerated")
+
+  @@index([userId])
+  @@index([clientId])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  name        String
+  description String?
+  quantity    Int      @default(1)
+  unitPrice   Float  @default(0)
+  taxRate     Float? @default(0)
+  total       Float  @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Proposal {
+  id            String         @id @default(cuid())
+  userId        String
+  clientId      String
+  title         String
+  description   String?
+  scope         String? // rich text or JSON for detailed scope
+  status        ProposalStatus @default(DRAFT)
+  type          ProposalType   @default(PROPOSAL)
+  total         Float
+  currency      String         @default("USD")
+  lineItems     Json // array of { description, quantity, rate, amount }
+  notes         String?
+  validUntil    DateTime?
+  taxRate       Float?        // optional tax rate (%)
+  signedAt      DateTime? // when client signed
+  signedById    String? // client user who signed
+  signatureUrl  String?
+  completedAt   DateTime? // when work was marked complete
+  pdfUrl        String? // Permanent URL to the official PDF
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  invoiceId     String?        @unique // link to generated invoice
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  invoice       Invoice?       @relation("ProposalInvoiceConversion", fields: [invoiceId], references: [id])
+  originInvoice Invoice?       @relation("InvoiceProposalOrigin")
+  contract      Contract? // one-to-one: proposal can be converted to contract
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([invoiceId])
+}
+
+model Contract {
+  id                     String    @id @default(cuid())
+  proposalId             String?   @unique // links to the original proposal (for "convert to contract")
+  userId                 String
+  clientId               String?
+  title                  String
+  description            String?
+  scope                  String?
+  validUntil             DateTime?
+  notes                  String?
+  lineItems              Json?
+  total                  Float? // contract value
+  currency               String?   @default("USD")
+  taxRate                Float?
+  terms                  String // rich text for full T&C
+  paymentMilestones      Json? // array of {description, amount, dueDate}
+  timeline               Json? // startDate, endDate, milestones
+  revisionsIncluded      Int?
+  additionalRevisionRate Float?
+  ipOwnership            String? // "client", "freelancer", "shared"
+  cancellationTerms      String?
+  liabilityCap           Float?
+  governingLaw           String?
+  disputeResolution      String?
+  status                 String // draft, sent, signed, void
+  signedAt               DateTime?
+  signedById             String?
+  signatureUrl           String?
+  completedAt            DateTime?
+  pdfUrl                 String? // Permanent URL to the official PDF
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  // Relations
+  proposal Proposal? @relation(fields: [proposalId], references: [id])
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client   Client?   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([proposalId])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MagicLink {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  email     String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  @@index([email])
+  @@index([token])
+}
+
+model PushSubscription {
+  endpoint  String   @id
+  userId    String?
+  companyId String?
+  p256dh    String?
+  auth      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([companyId])
+}
+
+model ClientPortalUser {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  email       String?
+  portalToken String
+  createdAt   DateTime @default(now())
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Company {
+  id                           String               @id @default(cuid())
+  name                         String               @default("My Business")
+  logoUrl                      String?
+  website                      String?
+  email                        String?
+  phone                        String?
+  hasCustomDomain              Boolean              @default(false)
+  iconUrl                      String?
+  industry                     String?
+  isWhiteLabelEligible         Boolean              @default(false)
+  slogan                       String?
+  stripeAccountId              String?
+  stripePublishableKey         String?
+  stripeAccountType            StripeAccountType?
+  stripeWebhookMode            StripeWebhookMode?
+  stripeWebhookStatus          StripeWebhookStatus?
+  stripeWebhookLastError       String?
+  stripeWebhookPlatformManaged Boolean?
+  venmoHandle                  String?
+  zelleHandle                  String?
+  mailToAddressEnabled         Boolean              @default(false)
+  mailToAddressTo              String?
+  trackdriveLeadToken          String?
+  trackdriveLeadEnabled        Boolean              @default(false)
+  addressLine1                 String?
+  addressLine2                 String?
+  city                         String?
+  state                        String?
+  postalCode                   String?
+  country                      String?              @default("USA")
+  primaryColor                 String               @default("#1d4ed8")
+  useHeaderLogo                Boolean              @default(false)
+  isOnboarded                  Boolean              @default(false)
+  revenueGoalMonthly           Float?
+  revenueGoalQuarterly         Float?
+  revenueGoalYearly            Float?
+  // QuickBooks OAuth fields (company-level)
+  quickbooksRealmId            String? // Company ID in QuickBooks
+  quickbooksAccessToken        String? // Encrypted access token
+  quickbooksRefreshToken       String? // Encrypted refresh token
+  quickbooksTokenExpiry        DateTime? // When access token expires
+  quickbooksConnected          Boolean              @default(false)
+  ownerId                      String?              @unique
+  owner                        User?                @relation("CompanyOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  users                        User[]               @relation("CompanyMembers")
+  leads                        Lead[]
+  clients                      Client[]
+  positions                    Position[]
+  resources                    Resource[]
+  messages                     Message[]
+  pushSubscriptions            PushSubscription[]
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+}
+
+model Position {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order     Int
+  isCustom  Boolean  @default(true)
+  users     User[]   @relation("PositionCustom")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId, order])
+}
+
+model Product {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  description     String?
+  features        String
+  tags            String
+  type            ProductType
+  status          ProductStatus    @default(ACTIVE)
+  unitAmount      Int
+  currency        String           @default("usd")
+  interval        ProductInterval?
+  intervalCount   Int?
+  sortOrder       Int              @default(0)
+  stripeProductId String?
+  stripePriceId   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([type])
+}
+
+model Resource {
+  id                     String                   @id @default(cuid())
+  companyId              String
+  company                Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  title                  String
+  url                    String
+  description            String?
+  visibleToRoles         String
+  visibleToPositions     String
+  requiresAcknowledgment Boolean                  @default(false)
+  acknowledgedBy         String
+  acknowledgments        ResourceAcknowledgment[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+
+  @@index([companyId])
+  @@index([requiresAcknowledgment])
+}
+
+model ResourceAcknowledgment {
+  id             String   @id @default(cuid())
+  resourceId     String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+  resource       Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@unique([resourceId, userId])
+}
+
+model Availability {
+  id        String  @id @default(cuid())
+  userId    String
+  dayOfWeek Int // 0 = Sunday, 6 = Saturday
+  startTime String // e.g., "09:00"
+  endTime   String // e.g., "17:00"
+  duration  Int     @default(30) // minutes per slot
+  buffer    Int     @default(0) // minutes between slots
+  isActive  Boolean @default(true)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  userId      String
+  clientName  String
+  clientEmail String
+  clientPhone String?
+  startTime   DateTime
+  endTime     DateTime
+  notes       String?
+  status      String   @default("CONFIRMED")
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([startTime])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  companyId    String
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  fromId       String
+  from         User     @relation("SentMessages", fields: [fromId], references: [id], onDelete: Cascade)
+  text         String
+  fileUrl      String?
+  toAll        Boolean  @default(false)
+  toRoles      String
+  toPositions  String
+  toUserIds    String
+  contextType  String?
+  contextId    String?
+  participants String
+  parentId     String?
+  sentAt       DateTime @default(now())
+  readBy       User[]   @relation("ReadMessages")
+
+  @@index([contextType, contextId])
+  @@index([companyId])
+  @@index([fromId])
+}
+
+model EmailChangeToken {
+  id        String   @id @default(cuid())
+  userId    String
+  newEmail  String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Opportunity {
+  id                 String    @id @default(cuid())
+  userId             String
+  clientId           String
+  title              String
+  description        String?
+  value              Float   @default(0)
+  currency           String    @default("USD")
+  probability        Int       @default(0) // 0-100 percentage
+  stage              String    @default("prospect") // prospect, qualified, proposal_sent, negotiation, won, lost
+  pipelineId         String    @default("default")
+  assignedToId       String
+  estimatedCloseDate DateTime?
+  actualCloseDate    DateTime?
+  source             String    @default("direct") // referral, direct, social_media, website, event, partner, advertising
+  tags               String
+  priority           String    @default("medium") // low, medium, high, critical
+  nextActionDate     DateTime?
+  nextAction         String?
+  notes              String?
+  customFields       Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  lastActivityDate   DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([stage])
+  @@index([createdAt])
+  @@index([estimatedCloseDate])
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  SENT
+  VIEWED
+  SIGNED
+  COMPLETED
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+  PARTIALLY_REFUNDED
+  REFUNDED
+}

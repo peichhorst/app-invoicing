@@ -1,0 +1,14 @@
+
+> app-invoicing@0.1.0 dev
+> next dev --webpack
+
+⚠ Port 3000 is in use by an unknown process, using available port 3004 instead.
+▲ Next.js 16.1.6 (webpack)
+- Local:         http://localhost:3004
+- Network:       http://172.30.97.235:3004
+- Environments: .env.local, .env
+
+✓ Starting...
+⨯ Unable to acquire lock at /home/petere2103/projects/app-invoicing/.next/dev/lock, is another instance of next dev running?
+  Suggestion: If you intended to restart next dev, terminate the other process, and then try again.
+[?25h

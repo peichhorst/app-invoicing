@@ -1,0 +1,743 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model StripeWebhookEndpoint {
+  id            String   @id @default(cuid())
+  accountId     String   @unique
+  endpointId    String?
+  signingSecret String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model User {
+  id                      String                   @id @default(cuid())
+  name                    String
+  email                   String                   @unique
+  password                String
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  enableVideo             Boolean                  @default(true)
+  videoLink               String?
+  enablePhone             Boolean                  @default(true)
+  phoneNumber             String?
+  enableInPerson          Boolean                  @default(false)
+  location                String?
+  timezone                String                   @default("America/Los_Angeles")
+  companyName             String?
+  logoDataUrl             String?
+  signatureDataUrl        String?
+  phone                   String?
+  website                 String?
+  planTier                String                   @default("FREE")
+  role                    Role                     @default("USER")
+  position                CompanyPosition?
+  positionId              String?
+  reportsToId             String?
+  companyId               String?
+  mailToAddressEnabled    Boolean                  @default(false)
+  mailToAddressTo         String?
+  stripeAccountId         String?
+  stripePublishableKey    String?
+  venmoHandle             String?
+  zelleHandle             String?
+  stripeCustomerId        String?                  @unique
+  stripeSubscriptionId    String?                  @unique
+  trackdriveLeadToken     String?
+  trackdriveLeadEnabled   Boolean                  @default(false)
+  proTrialEndsAt          DateTime?                @map("pro_trial_ends_at")
+  proTrialReminderSent    Boolean                  @default(false)
+  defaultPaymentMethodId  String?
+  subscriptionCancelAt    DateTime?
+  isConfirmed             Boolean                  @default(false)
+  inviteToken             String?
+  inviteTokenExpires      DateTime?
+  googleCalendarConnected Boolean                  @default(false)
+  googleRefreshToken      String?
+  googleAccessToken       String?
+  googleTokenExpiresAt    DateTime?
+  googleCalendarEmail     String?
+  googleWatchChannelId    String?
+  googleWatchResourceId   String?
+  googleWatchExpiration   DateTime?
+  isOnboarded             Boolean                  @default(false)
+  availabilities          Availability[]
+  bookings                Booking[]
+  assignedClients         Client[]                 @relation("ClientAssignments")
+  ownedCompany            Company?                 @relation("CompanyOwner")
+  contracts               Contract[]
+  emailChangeTokens       EmailChangeToken[]
+  invoices                Invoice[]
+  assignedLeads           Lead[]                   @relation("LeadAssignments")
+  sentMessages            Message[]                @relation("SentMessages")
+  opportunities           Opportunity[]
+  passwordResetTokens     PasswordResetToken[]
+  proposals               Proposal[]
+  pushSubscriptions       PushSubscription[]
+  recurringInvoices       RecurringInvoice[]
+  resourceAcknowledgments ResourceAcknowledgment[]
+  Session                 Session[]
+  company                 Company?                 @relation("CompanyMembers", fields: [companyId], references: [id], onDelete: Cascade)
+  reportsTo               User?                    @relation("ReportsTo", fields: [reportsToId], references: [id])
+  managedUsers            User[]                   @relation("ReportsTo")
+  positionCustom          Position?                @relation("PositionCustom", fields: [positionId], references: [id])
+  readMessages            Message[]                @relation("ReadMessages")
+}
+
+model Lead {
+  id           String   @id @default(cuid())
+  companyId    String
+  assignedToId String?
+  name         String?
+  email        String?
+  website      String?
+  phone        String?
+  companyName  String?
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+  source       String?
+  notes        String?
+  status       String   @default("new")
+  archived     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  clientId     String?  @unique
+  client       Client?  @relation(fields: [clientId], references: [id])
+  assignedTo   User?    @relation("LeadAssignments", fields: [assignedToId], references: [id])
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([assignedToId])
+}
+
+model Client {
+  id                String             @id @default(cuid())
+  companyId         String
+  assignedToId      String?
+  companyName       String?
+  contactName       String?
+  email             String?
+  phone             String?
+  addressLine1      String?
+  addressLine2      String?
+  city              String?
+  state             String?
+  postalCode        String?
+  country           String?
+  notes             String?
+  convertedFromLead Boolean            @default(false)
+  source            String?
+  status            String?
+  isLead            Boolean            @default(true)
+  archived          Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  quickbooksId      String?
+  assignedTo        User?              @relation("ClientAssignments", fields: [assignedToId], references: [id])
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  portalUser        ClientPortalUser?
+  contracts         Contract[]
+  invoices          Invoice[]
+  lead              Lead?
+  opportunities     Opportunity[]
+  payments          Payment[]
+  proposals         Proposal[]
+  recurringInvoices RecurringInvoice[]
+
+  @@index([companyId])
+  @@index([assignedToId])
+}
+
+model Payment {
+  id                         String          @id @default(cuid())
+  clientId                   String
+  invoiceId                  String
+  provider                   PaymentProvider @default("stripe")
+  status                     PaymentStatus   @default("initiated")
+  amount                     Float
+  currency                   String          @default("USD")
+  feeAmount                  Float?
+  netAmount                  Float?
+  refundedAmount             Float           @default(0)
+  paidAt                     DateTime?
+  stripeCheckoutSessionId    String?         @unique
+  stripePaymentIntentId      String?         @unique
+  stripeChargeId             String?
+  stripeCustomerId           String?
+  stripeBalanceTransactionId String?
+  lastError                  String?
+  metadata                   Json?
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @default(now()) @updatedAt
+  invoice                    Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  client                     Client          @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([invoiceId])
+}
+
+model Invoice {
+  id                    String            @id @default(cuid())
+  userId                String
+  clientId              String?
+  invoiceNumber         String
+  title                 String?
+  status                InvoiceStatus     @default("DRAFT")
+  issueDate             DateTime
+  dueDate               DateTime?
+  paidAt                DateTime?
+  currency              String            @default("USD")
+  subTotal              Float             @default(0)
+  taxRate               Float             @default(0)
+  taxAmount             Float             @default(0)
+  total                 Float             @default(0)
+  amountPaid            Float             @default(0)
+  amountRefunded        Float             @default(0)
+  stripePaymentIntentId String?
+  stripeChargeId        String?
+  sentCount             Int               @default(0)
+  shortCode             String?           @unique
+  lastReminderSentAt    DateTime?
+  notes                 String?
+  pdfUrl                String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  quickbooksId          String?
+  quickbooksSyncedAt    DateTime?
+  quickbooksSyncError   String?
+  recurring             Boolean           @default(false)
+  recurringInterval     String?
+  recurringDayOfMonth   Int?
+  recurringDayOfWeek    Int?
+  nextOccurrence        DateTime?
+  parentInvoiceId       String?
+  recurringParentId     String?
+  proposalId            String?           @unique
+  proposal              Proposal?         @relation("InvoiceProposalOrigin", fields: [proposalId], references: [id])
+  recurringParent       RecurringInvoice? @relation("RecurringInvoiceGenerated", fields: [recurringParentId], references: [id])
+  parentInvoice         Invoice?          @relation("RecurringSeries", fields: [parentInvoiceId], references: [id])
+  childInvoices         Invoice[]         @relation("RecurringSeries")
+  user                  User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client                Client?           @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  items                 InvoiceItem[]
+  payments              Payment[]
+  convertedProposal     Proposal?         @relation("ProposalInvoiceConversion")
+
+  @@unique([userId, invoiceNumber])
+  @@index([userId])
+  @@index([clientId])
+  @@index([parentInvoiceId])
+}
+
+model RecurringInvoice {
+  id                    String    @id @default(cuid())
+  userId                String
+  clientId              String
+  title                 String
+  amount                Float
+  currency              String    @default("USD")
+  interval              String
+  dayOfMonth            Int?
+  dayOfWeek             Int?
+  nextSendDate          DateTime
+  status                String    @default("PENDING")
+  sendFirstNow          Boolean   @default(true)
+  firstPaidAt           DateTime?
+  autoPayEnabled        Boolean   @default(false)
+  stripePaymentMethodId String?
+  stripeCustomerId      String?
+  lastPaymentError      String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  invoices              Invoice[] @relation("RecurringInvoiceGenerated")
+  client                Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  name        String
+  description String?
+  quantity    Int      @default(1)
+  unitPrice   Float    @default(0)
+  taxRate     Float?   @default(0)
+  total       Float    @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Proposal {
+  id            String         @id @default(cuid())
+  userId        String
+  clientId      String
+  title         String
+  description   String?
+  scope         String?
+  status        ProposalStatus @default("DRAFT")
+  type          ProposalType   @default("PROPOSAL")
+  total         Float
+  currency      String         @default("USD")
+  lineItems     Json
+  notes         String?
+  validUntil    DateTime?
+  taxRate       Float?
+  signedAt      DateTime?
+  signedById    String?
+  signatureUrl  String?
+  completedAt   DateTime?
+  pdfUrl        String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  invoiceId     String?        @unique
+  contract      Contract?
+  originInvoice Invoice?       @relation("InvoiceProposalOrigin")
+  invoice       Invoice?       @relation("ProposalInvoiceConversion", fields: [invoiceId], references: [id])
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([invoiceId])
+}
+
+model Contract {
+  id                     String    @id @default(cuid())
+  proposalId             String?   @unique
+  userId                 String
+  clientId               String?
+  title                  String
+  description            String?
+  scope                  String?
+  validUntil             DateTime?
+  notes                  String?
+  lineItems              Json?
+  total                  Float?
+  currency               String?   @default("USD")
+  taxRate                Float?
+  terms                  String
+  paymentMilestones      Json?
+  timeline               Json?
+  revisionsIncluded      Int?
+  additionalRevisionRate Float?
+  ipOwnership            String?
+  cancellationTerms      String?
+  liabilityCap           Float?
+  governingLaw           String?
+  disputeResolution      String?
+  status                 String
+  signedAt               DateTime?
+  signedById             String?
+  signatureUrl           String?
+  completedAt            DateTime?
+  pdfUrl                 String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  client                 Client?   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  proposal               Proposal? @relation(fields: [proposalId], references: [id])
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([proposalId])
+}
+
+model Session {
+  id        String    @id @default(cuid())
+  token     String    @unique
+  userId    String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MagicLink {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  email     String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  used      Boolean  @default(false)
+
+  @@index([email])
+  @@index([token])
+}
+
+model PushSubscription {
+  endpoint  String   @id
+  userId    String?
+  companyId String?
+  p256dh    String?
+  auth      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([companyId])
+}
+
+model ClientPortalUser {
+  id          String   @id @default(cuid())
+  clientId    String   @unique
+  email       String?
+  portalToken String
+  createdAt   DateTime @default(now())
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  used      Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Company {
+  id                           String               @id @default(cuid())
+  name                         String               @default("My Business")
+  logoUrl                      String?
+  website                      String?
+  email                        String?
+  phone                        String?
+  hasCustomDomain              Boolean              @default(false)
+  iconUrl                      String?
+  industry                     String?
+  isWhiteLabelEligible         Boolean              @default(false)
+  slogan                       String?
+  stripeAccountId              String?
+  stripePublishableKey         String?
+  stripeAccountType            StripeAccountType?
+  stripeWebhookMode            StripeWebhookMode?
+  stripeWebhookStatus          StripeWebhookStatus?
+  stripeWebhookLastError       String?
+  stripeWebhookPlatformManaged Boolean?
+  venmoHandle                  String?
+  zelleHandle                  String?
+  mailToAddressEnabled         Boolean              @default(false)
+  mailToAddressTo              String?
+  trackdriveLeadToken          String?
+  trackdriveLeadEnabled        Boolean              @default(false)
+  addressLine1                 String?
+  addressLine2                 String?
+  city                         String?
+  state                        String?
+  postalCode                   String?
+  country                      String?              @default("USA")
+  primaryColor                 String               @default("#1d4ed8")
+  useHeaderLogo                Boolean              @default(false)
+  isOnboarded                  Boolean              @default(false)
+  revenueGoalMonthly           Float?
+  revenueGoalQuarterly         Float?
+  revenueGoalYearly            Float?
+  quickbooksRealmId            String?
+  quickbooksAccessToken        String?
+  quickbooksRefreshToken       String?
+  quickbooksTokenExpiry        DateTime?
+  quickbooksConnected          Boolean              @default(false)
+  ownerId                      String?              @unique
+  createdAt                    DateTime             @default(now())
+  updatedAt                    DateTime             @updatedAt
+  clients                      Client[]
+  owner                        User?                @relation("CompanyOwner", fields: [ownerId], references: [id])
+  leads                        Lead[]
+  messages                     Message[]
+  positions                    Position[]
+  pushSubscriptions            PushSubscription[]
+  resources                    Resource[]
+  users                        User[]               @relation("CompanyMembers")
+}
+
+model Position {
+  id        String   @id @default(cuid())
+  name      String
+  companyId String
+  order     Int
+  isCustom  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users     User[]   @relation("PositionCustom")
+
+  @@unique([companyId, name])
+  @@index([companyId, order])
+}
+
+model Product {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  description     String?
+  features        String
+  tags            String
+  type            ProductType
+  status          ProductStatus    @default("ACTIVE")
+  unitAmount      Int
+  currency        String           @default("usd")
+  interval        ProductInterval?
+  intervalCount   Int?
+  sortOrder       Int              @default(0)
+  stripeProductId String?
+  stripePriceId   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @default(now()) @updatedAt
+
+  @@index([status])
+  @@index([type])
+}
+
+model Resource {
+  id                     String                   @id @default(cuid())
+  companyId              String
+  title                  String
+  url                    String
+  description            String?
+  visibleToRoles         String
+  visibleToPositions     String
+  requiresAcknowledgment Boolean                  @default(false)
+  acknowledgedBy         String
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  company                Company                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  acknowledgments        ResourceAcknowledgment[]
+
+  @@index([companyId])
+  @@index([requiresAcknowledgment])
+}
+
+model ResourceAcknowledgment {
+  id             String   @id @default(cuid())
+  resourceId     String
+  userId         String
+  acknowledgedAt DateTime @default(now())
+  user           User     @relation(fields: [userId], references: [id])
+  resource       Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([resourceId, userId])
+}
+
+model Availability {
+  id        String  @id @default(cuid())
+  userId    String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  duration  Int     @default(30)
+  buffer    Int     @default(0)
+  isActive  Boolean @default(true)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayOfWeek])
+}
+
+model Booking {
+  id          String   @id @default(cuid())
+  userId      String
+  clientName  String
+  clientEmail String
+  clientPhone String?
+  startTime   DateTime
+  endTime     DateTime
+  notes       String?
+  status      String   @default("CONFIRMED")
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([startTime])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  companyId    String
+  fromId       String
+  text         String
+  fileUrl      String?
+  toAll        Boolean  @default(false)
+  toRoles      String
+  toPositions  String
+  toUserIds    String
+  contextType  String?
+  contextId    String?
+  participants String
+  parentId     String?
+  sentAt       DateTime @default(now())
+  from         User     @relation("SentMessages", fields: [fromId], references: [id], onDelete: Cascade)
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  readBy       User[]   @relation("ReadMessages")
+
+  @@index([contextType, contextId])
+  @@index([companyId])
+  @@index([fromId])
+}
+
+model EmailChangeToken {
+  id        String   @id @default(cuid())
+  userId    String
+  newEmail  String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Opportunity {
+  id                 String    @id @default(cuid())
+  title              String
+  description        String?
+  value              Float     @default(0)
+  currency           String    @default("USD")
+  probability        Int       @default(0)
+  stage              String    @default("prospect")
+  pipelineId         String    @default("default")
+  assignedToId       String
+  estimatedCloseDate DateTime?
+  actualCloseDate    DateTime?
+  source             String    @default("direct")
+  tags               String
+  priority           String    @default("medium")
+  nextActionDate     DateTime?
+  nextAction         String?
+  notes              String?
+  customFields       Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  lastActivityDate   DateTime?
+  userId             String
+  clientId           String
+  client             Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([assignedToId])
+  @@index([stage])
+  @@index([createdAt])
+  @@index([estimatedCloseDate])
+}
+
+enum Role {
+  USER
+  ADMIN
+  OWNER
+  SUPERADMIN
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  VIEWED
+  SIGNED
+  COMPLETED
+  DECLINED
+}
+
+enum ProposalType {
+  PROPOSAL
+  CONTRACT
+}
+
+enum CompanyPosition {
+  EXECUTIVE
+  DIRECTOR
+  MANAGER
+  TEAM_LEAD
+  SENIOR
+  ASSOCIATE
+  JUNIOR
+  INTERN
+}
+
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED
+  DRAFT
+}
+
+enum ProductType {
+  ONE_TIME
+  SUBSCRIPTION
+}
+
+enum ProductInterval {
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum PaymentProvider {
+  stripe
+  manual
+}
+
+enum PaymentStatus {
+  initiated
+  processing
+  succeeded
+  failed
+  canceled
+  refunded
+  partially_refunded
+}
+
+enum StripeAccountType {
+  standard
+  express
+  custom
+}
+
+enum StripeWebhookMode {
+  platform_managed
+  manual
+}
+
+enum StripeWebhookStatus {
+  verified
+  pending
+  error
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  SENT
+  VIEWED
+  SIGNED
+  COMPLETED
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  VOID
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
