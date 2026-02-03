@@ -18,20 +18,24 @@ const OpportunityForm: React.FC<OpportunityFormProps> = ({
   clients
 }) => {
   const { user } = useAuth();
-  const [formData, setFormData] = useState<Partial<Opportunity>>({
+  const defaultFormData: Partial<Opportunity> = {
     title: '',
     description: '',
     value: 0,
     currency: 'USD',
     probability: 10,
-    stage: 'prospect',
-    source: 'direct',
-    priority: 'medium',
-    estimatedCloseDate: '',
-    nextActionDate: '',
+    stage: OpportunityStage.PROSPECT,
+    source: OpportunitySource.DIRECT,
+    priority: OpportunityPriority.MEDIUM,
+    estimatedCloseDate: undefined,
+    nextActionDate: undefined,
     nextAction: '',
     notes: '',
     tags: [],
+  };
+
+  const [formData, setFormData] = useState<Partial<Opportunity>>({
+    ...defaultFormData,
     ...opportunity,
   });
   
@@ -41,19 +45,7 @@ const OpportunityForm: React.FC<OpportunityFormProps> = ({
   useEffect(() => {
     if (opportunity) {
       setFormData({
-        title: '',
-        description: '',
-        value: 0,
-        currency: 'USD',
-        probability: 10,
-        stage: 'prospect',
-        source: 'direct',
-        priority: 'medium',
-        estimatedCloseDate: '',
-        nextActionDate: '',
-        nextAction: '',
-        notes: '',
-        tags: [],
+        ...defaultFormData,
         ...opportunity,
       });
     }

@@ -1,11 +1,22 @@
-import type { PrismaClient } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
-import type { User } from '@prisma/client';
 
 export const ADMIN_ROLES = new Set(['ADMIN', 'OWNER', 'SUPERADMIN']);
+type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
+
+type ProductSlugClient = {
+  product: {
+    findFirst: (args: {
+      where: {
+        slug: string;
+        NOT?: { id: string };
+      };
+      select: { id: true };
+    }) => Promise<{ id: string } | null>;
+  };
+};
 
 export async function generateUniqueProductSlug(
-  prisma: PrismaClient,
+  prisma: ProductSlugClient,
   baseSlug: string,
   excludeId?: string
 ) {
@@ -25,7 +36,7 @@ export async function generateUniqueProductSlug(
   }
 }
 
-export async function requireAdminUser(): Promise<User | null> {
+export async function requireAdminUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user || !ADMIN_ROLES.has(user.role)) {
     return null;

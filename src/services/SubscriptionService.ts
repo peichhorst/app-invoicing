@@ -1,4 +1,5 @@
-import { Prisma, Invoice, RecurringInvoice, Prisma as PrismaTypes } from '@prisma/client';
+import { Prisma, RecurringInvoice, Prisma as PrismaTypes } from '@prisma/client';
+import { InvoiceStatus, Invoice } from '@/lib/prisma-types';
 import prisma from '@/lib/prisma';
 import { createInvoice } from './InvoiceService';
 import { sendInvoiceEmail } from '@/lib/email';
@@ -48,6 +49,14 @@ export async function createRecurringInvoice(input: CreateRecurringInvoiceInput)
 
   // Optionally create the first invoice immediately
   if (input.sendFirstNow !== false) {
+    const invoiceItems = input.items.map((item) => ({
+      name: item.name,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      taxRate: item.taxRate == null ? null : Number(item.taxRate),
+    }));
+
     // Generate a unique invoice number
     const invoiceCount = await prisma.invoice.count({
       where: { userId: input.userId }
@@ -60,8 +69,8 @@ export async function createRecurringInvoice(input: CreateRecurringInvoiceInput)
       issueDate: new Date(),
       dueDate: null, // Could be configurable
       notes: `Initial invoice for recurring series: ${input.title}`,
-      status: 'OPEN',
-      items: input.items,
+      status: InvoiceStatus.OPEN,
+      items: invoiceItems,
       recurring: true,
       recurringInterval: input.interval,
       recurringDayOfMonth: input.dayOfMonth || null,
@@ -150,7 +159,7 @@ export async function processDueRecurringInvoices(): Promise<{ processed: number
         name: recurringInvoice.title,
         description: `Recurring payment for ${recurringInvoice.title}`,
         quantity: 1,
-        unitPrice: recurringInvoice.amount,
+        unitPrice: Number(recurringInvoice.amount),
         taxRate: null, // Could be configured per recurring invoice
       }];
 
@@ -167,7 +176,7 @@ export async function processDueRecurringInvoices(): Promise<{ processed: number
         issueDate: now,
         dueDate: null, // Could be configurable
         notes: `Recurring invoice from series: ${recurringInvoice.title}`,
-        status: 'OPEN',
+        status: InvoiceStatus.OPEN,
         items,
         recurring: true,
         recurringInterval: recurringInvoice.interval,

@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Acknowledgment not required' }, { status: 400 });
     }
 
-    const alreadyAcked = resource.acknowledgments.some((ack) => ack.userId === user.id);
+    const alreadyAcked = resource.acknowledgments.some((ack: { userId: string }) => ack.userId === user.id);
     if (alreadyAcked) {
       return NextResponse.json({ success: true, alreadyAcknowledged: true });
     }

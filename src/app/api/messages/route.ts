@@ -40,14 +40,14 @@ export async function POST(request: Request) {
         where: { companyId: user.companyId },
         select: { id: true, email: true, name: true },
       });
-      all.forEach((u) => targetIds.add(u.id));
+      all.forEach((u: { id: string }) => targetIds.add(u.id));
     } else {
       if (toPositions.length > 0) {
         const byPos = await prisma.user.findMany({
           where: { companyId: user.companyId, positionId: { in: toPositions } },
           select: { id: true },
         });
-        byPos.forEach((u) => targetIds.add(u.id));
+        byPos.forEach((u: { id: string }) => targetIds.add(u.id));
       }
       if (toUserIds.length > 0) {
         toUserIds.forEach((id) => targetIds.add(id));
@@ -91,8 +91,8 @@ export async function POST(request: Request) {
       });
       await Promise.all(
         recipients
-          .filter((r) => r.email)
-          .map((r) =>
+          .filter((r: { email?: string | null }) => r.email)
+          .map((r: { email?: string | null; name?: string | null }) =>
             sendMessageEmail({
               to: r.email as string,
               fromName: user.name || user.email,

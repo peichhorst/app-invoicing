@@ -60,7 +60,7 @@ export async function GET() {
             fromId: lastMessage.fromId,
             fromName: lastMessage.from.name || lastMessage.from.email,
             sentAt: lastMessage.sentAt.getTime(),
-            isRead: lastMessage.readBy.some((r) => r.id === user.id),
+            isRead: lastMessage.readBy.some((r: { id: string }) => r.id === user.id),
           }
         : null,
     });

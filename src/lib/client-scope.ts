@@ -2,8 +2,8 @@ import type { Role } from '@prisma/client';
 
 type UserLike = {
   id: string;
-  role: Role;
-  companyId: string | null;
+  role: Role | string;
+  companyId?: string | null;
   company?: { id: string } | null;
 };
 

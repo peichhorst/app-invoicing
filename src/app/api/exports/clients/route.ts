@@ -33,7 +33,7 @@ export async function GET(_request: Request) {
     'Created at',
   ];
 
-  const rows = clients.map((client) =>
+  const rows = clients.map((client: any) =>
     [
       client.companyName,
       client.contactName,

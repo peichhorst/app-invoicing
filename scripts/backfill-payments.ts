@@ -26,7 +26,12 @@ async function backfillPayments() {
       continue;
     }
 
-    const amount = new Prisma.Decimal(invoice.total ?? 0);
+    const amount =
+      typeof invoice.total === 'number'
+        ? invoice.total
+        : invoice.total
+        ? Number(invoice.total)
+        : 0;
     const paidAt = invoice.paidAt ?? invoice.updatedAt;
 
     await prisma.payment.create({

@@ -4,7 +4,7 @@ import Stripe from 'stripe';
 import { getCurrentUser } from '@/lib/auth';
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-const stripe = stripeSecretKey ? new Stripe(stripeSecretKey, { apiVersion: '2025-12-15.clover' }) : null;
+const stripe = stripeSecretKey ? new Stripe(stripeSecretKey, { apiVersion: '2026-01-28.clover' }) : null;
 
 export async function POST() {
   const user = await getCurrentUser();

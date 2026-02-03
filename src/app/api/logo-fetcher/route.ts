@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import type { AnyNode } from 'domhandler';
 const USER_AGENT = 'LogoFetcher-Bot/1.0 (+https://yourapp.com)';
 const AXIOS_TIMEOUT_MS = 5000;
 const httpClient = axios.create({
@@ -86,7 +85,7 @@ function resolveAbsoluteUrl(base: URL, candidate: string) {
   }
 }
 
-function extractImageFromCheerio(element: cheerio.Cheerio<AnyNode>, base: URL) {
+function extractImageFromCheerio(element: cheerio.Cheerio<any>, base: URL) {
   for (const attr of IMAGE_ATTRS) {
     const value = element.attr(attr);
     if (typeof value === 'string' && value.trim()) {

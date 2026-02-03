@@ -3,6 +3,7 @@ import { Package, Plus } from 'lucide-react';
 import { getCurrentUser } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { formatCurrency, statusClasses } from './utils';
+import { parseProductList } from '@/lib/products';
 import { ProductActions } from './ProductActions';
 
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,10 @@ export default async function ProductsPage() {
       { updatedAt: 'desc' },
     ],
   });
+  const formattedProducts = products.map((product) => ({
+    ...product,
+    tags: parseProductList(product.tags),
+  }));
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -55,7 +60,7 @@ export default async function ProductsPage() {
         </div>
       </div>
 
-      {products.length === 0 ? (
+      {formattedProducts.length === 0 ? (
         <div className="rounded-lg border-2 border-dashed border-zinc-200 bg-white p-12 text-center">
           <Package className="mx-auto h-12 w-12 text-zinc-400" />
           <h3 className="mt-4 text-lg font-medium text-zinc-900">No products yet</h3>
@@ -85,7 +90,7 @@ export default async function ProductsPage() {
                 </tr>
               </thead>
             <tbody className="divide-y divide-zinc-200 bg-white text-sm">
-              {products.map((product) => (
+              {formattedProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-zinc-50">
                   <td className="whitespace-nowrap px-6 py-4">
                     <p className="font-medium text-brand-primary-600 hover:text-brand-primary-700">{product.name}</p>

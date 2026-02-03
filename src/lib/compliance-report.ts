@@ -109,12 +109,12 @@ export async function buildComplianceReport(companyId: string, since?: Date | nu
   resources.forEach((resource) => {
     const allowedSet = getAllowedIds(resource);
     allowedSet.forEach((userId) => {
-      const key = getPositionKey(userId);
+      const key = getPositionKey(String(userId));
       addPosition(key).total += 1;
     });
     resource.acknowledgments.forEach((ack) => {
       if (!allowedSet.has(ack.userId)) return;
-      const key = getPositionKey(ack.userId);
+      const key = getPositionKey(String(ack.userId));
       addPosition(key).acknowledged += 1;
     });
   });

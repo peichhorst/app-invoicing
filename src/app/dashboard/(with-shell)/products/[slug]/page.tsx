@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { ADMIN_ROLES } from '@/app/api/admin/products/utils';
 import { formatCurrency, statusClasses } from '../utils';
+import { parseProductList } from '@/lib/products';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,9 @@ export default async function ProductDetailPage({ params }: any) {
   if (!product) {
     notFound();
   }
+
+  const parsedTags = parseProductList(product.tags);
+  const parsedFeatures = parseProductList(product.features);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -84,9 +88,9 @@ export default async function ProductDetailPage({ params }: any) {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-2xl border border-zinc-200 bg-white/80 p-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Tags</p>
-          {product.tags.length ? (
+          {parsedTags.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              {product.tags.map((tag) => (
+              {parsedTags.map((tag) => (
                 <span key={tag} className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
                   {tag}
                 </span>
@@ -98,9 +102,9 @@ export default async function ProductDetailPage({ params }: any) {
         </div>
         <div className="rounded-2xl border border-zinc-200 bg-white/80 p-4 shadow-sm md:col-span-2">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Features</p>
-          {product.features.length ? (
+          {parsedFeatures.length ? (
             <ul className="mt-3 space-y-2 text-sm text-zinc-700">
-              {product.features.map((feature) => (
+              {parsedFeatures.map((feature) => (
                 <li key={feature} className="flex items-center gap-2">
                   <span className="h-1.5 w-1.5 rounded-full bg-zinc-500" />
                   <span>{feature}</span>

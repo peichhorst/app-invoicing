@@ -604,7 +604,7 @@ export default function BookingFormClient({
 
   if (status === 'success') {
     // Generate calendar links
-    let calendarLinks = null;
+    let calendarLinks: JSX.Element | null = null;
     if (bookingStartTime && bookingEndTime) {
       const calendarEvent: CalendarEvent = {
         title: `Meeting`,

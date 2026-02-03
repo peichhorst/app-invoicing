@@ -115,7 +115,7 @@ export default async function ClientPortalPage({ params, searchParams }: ClientP
               No invoices yet.
             </div>
           ) : (
-            portalUser.client.invoices.map((invoice) => {
+            portalUser.client.invoices.map((invoice: any) => {
               const total = new Intl.NumberFormat('en-US', {
                 style: 'currency',
                 currency: 'USD',
@@ -286,7 +286,7 @@ export default async function ClientPortalPage({ params, searchParams }: ClientP
                       No invoices yet.
                     </div>
                   ) : (
-                    portalUser.client.invoices.map((invoice) => {
+                    portalUser.client.invoices.map((invoice: any) => {
                       const total = new Intl.NumberFormat('en-US', {
                         style: 'currency',
                         currency: 'USD',

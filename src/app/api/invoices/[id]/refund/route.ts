@@ -7,7 +7,7 @@ import { InvoiceStatus, PaymentProvider, PaymentStatus, Prisma } from '@prisma/c
 import { reconcileInvoiceStatus } from '@/lib/payments';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
-  apiVersion: '2025-12-15.clover',
+  apiVersion: '2026-01-28.clover',
 });
 
 type RefundRouteHandlerContext = {
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest, context: RefundRouteHandlerContext)
   const balanceTransactionId =
     typeof refund.balance_transaction === 'string' ? refund.balance_transaction : undefined;
 
-  let payment = null;
+  let payment: any = null;
   if (paymentIntentId) {
     payment = await prisma.payment.findFirst({ where: { stripePaymentIntentId: paymentIntentId } });
   }

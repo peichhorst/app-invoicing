@@ -6,7 +6,7 @@ import { Payment, PaymentProvider, PaymentStatus, Prisma } from '@prisma/client'
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripe = stripeSecretKey
-  ? new Stripe(stripeSecretKey, { apiVersion: '2025-12-15.clover' })
+  ? new Stripe(stripeSecretKey, { apiVersion: '2026-01-28.clover' })
   : null;
 
 export async function POST(request: Request) {
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     const invoiceId = typeof body?.invoiceId === 'string' ? body.invoiceId : null;
     const amountFromBody = Number(body?.amount);
 
-    let targetUser = null;
+    let targetUser: any = null;
     let amount = amountFromBody;
     let invoiceTotal = 0;
     let invoiceCurrency = 'USD';

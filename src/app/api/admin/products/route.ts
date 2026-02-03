@@ -1,7 +1,7 @@
 import { ProductStatus, ProductType } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { normalizeProductPayload } from '@/lib/products';
+import { buildProductListContainsFilter, normalizeProductPayload, parseProductList } from '@/lib/products';
 import { ZodError } from 'zod';
 import { generateUniqueProductSlug, requireAdminUser } from './utils';
 
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     where.type = typeParam as ProductType;
   }
   if (tag) {
-    where.tags = { array_contains: [tag] };
+    where.tags = buildProductListContainsFilter(tag);
   }
   if (q) {
     where.OR = [
@@ -41,7 +41,13 @@ export async function GET(request: Request) {
       { updatedAt: 'desc' },
     ],
   });
-  return NextResponse.json(products);
+  return NextResponse.json(
+    products.map((product) => ({
+      ...product,
+      tags: parseProductList(product.tags),
+      features: parseProductList(product.features),
+    })),
+  );
 }
 
 export async function POST(request: Request) {
@@ -57,7 +63,11 @@ export async function POST(request: Request) {
     const product = await prisma.product.create({
       data: { ...normalized, slug: uniqueSlug },
     });
-    return NextResponse.json(product);
+    return NextResponse.json({
+      ...product,
+      tags: parseProductList(product.tags),
+      features: parseProductList(product.features),
+    });
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 });

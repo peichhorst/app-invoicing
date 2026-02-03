@@ -2,14 +2,16 @@ import React from 'react';
 import { headers } from 'next/headers';
 
 interface SourcePageProps {
-  searchParams?: { path?: string };
+  searchParams?: Promise<{ path?: string | string[] }>;
 }
 
 /**
  * Renders a simple source viewer for chat citations.
  */
 const SourcePage = async ({ searchParams }: SourcePageProps) => {
-  const path = searchParams?.path ?? '';
+  const resolvedParams = (await searchParams) ?? {};
+  const rawPath = resolvedParams.path;
+  const path = Array.isArray(rawPath) ? rawPath[0] : rawPath ?? '';
 
   if (!path) {
     return (
@@ -22,7 +24,7 @@ const SourcePage = async ({ searchParams }: SourcePageProps) => {
     );
   }
 
-  const headerList = headers();
+  const headerList = await headers();
   const host = headerList.get('host') ?? 'localhost:3000';
   const protocol = headerList.get('x-forwarded-proto') ?? 'http';
   const baseUrl = `${protocol}://${host}`;

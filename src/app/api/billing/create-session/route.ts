@@ -14,7 +14,7 @@ export async function POST() {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (!stripeSecret) return NextResponse.json({ error: 'Stripe secret key not configured' }, { status: 500 });
 
-    const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
+    const stripe = new Stripe(stripeSecret, { apiVersion: '2026-01-28.clover' });
 
     let customerId = user.stripeCustomerId || undefined;
     if (!customerId) {

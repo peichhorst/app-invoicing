@@ -1,7 +1,7 @@
 import { ProductStatus } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { normalizeProductPayload } from '@/lib/products';
+import { normalizeProductPayload, parseProductList } from '@/lib/products';
 import { generateUniqueProductSlug, requireAdminUser } from '../utils';
 import { ZodError } from 'zod';
 
@@ -24,7 +24,11 @@ export async function GET(request: Request) {
   if (!product) {
     return NextResponse.json({ error: 'Product not found' }, { status: 404 });
   }
-  return NextResponse.json(product);
+  return NextResponse.json({
+    ...product,
+    tags: parseProductList(product.tags),
+    features: parseProductList(product.features),
+  });
 }
 
 export async function PATCH(request: Request) {
@@ -49,7 +53,11 @@ export async function PATCH(request: Request) {
       where: { id: existing.id },
       data: { ...normalized, slug: uniqueSlug },
     });
-    return NextResponse.json(updated);
+    return NextResponse.json({
+      ...updated,
+      tags: parseProductList(updated.tags),
+      features: parseProductList(updated.features),
+    });
   } catch (error) {
     if (error instanceof ZodError) {
       return NextResponse.json({ error: error.issues }, { status: 400 });

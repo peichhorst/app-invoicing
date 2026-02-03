@@ -83,8 +83,8 @@ export async function createInvoiceAction(
     name: item.description,
     description: item.description,
     quantity: item.quantity,
-    unitPrice: new Prisma.Decimal(item.unitPrice),
-    taxRate: item.taxRate ? new Prisma.Decimal(item.taxRate) : null,
+    unitPrice: item.unitPrice,
+    taxRate: item.taxRate ?? null,
   }));
 
   // Generate invoice number
@@ -98,7 +98,7 @@ export async function createInvoiceAction(
     issueDate: new Date(payload.issueDate),
     dueDate: payload.dueDate ? new Date(payload.dueDate) : null,
     notes: payload.notes || undefined,
-    status: payload.status,
+    status: payload.status as any,
     items,
     recurring: payload.recurring ?? false,
     recurringInterval: payload.recurringInterval ?? null,
@@ -111,17 +111,25 @@ export async function createInvoiceAction(
 
   // If recurring, create the recurring invoice using SubscriptionService
   if (payload.recurring && payload.recurringInterval && payload.nextOccurrence) {
+    const recurringItems = payload.items.map((item) => ({
+      name: item.description,
+      description: item.description,
+      quantity: item.quantity,
+      unitPrice: new Prisma.Decimal(item.unitPrice),
+      taxRate: item.taxRate ? new Prisma.Decimal(item.taxRate) : null,
+    }));
+
     await createRecurringInvoice({
       userId: user.id,
       clientId: payload.clientId,
       title: payload.notes?.trim() || payload.title?.trim() || 'Recurring invoice',
-      amount: invoice.total,
+      amount: new Prisma.Decimal(invoice.total),
       currency: 'USD',
       interval: payload.recurringInterval as any,
       dayOfMonth: payload.recurringDayOfMonth,
       dayOfWeek: payload.recurringDayOfWeek,
       nextSendDate: new Date(payload.nextOccurrence),
-      status: 'PENDING',
+      items: recurringItems,
       sendFirstNow: false, // First invoice already created above
     });
   }

@@ -1,6 +1,7 @@
 import { ProductStatus } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { parseProductList } from '@/lib/products';
 
 const SAFE_PRODUCT_FIELDS = {
   select: {
@@ -36,7 +37,14 @@ export async function GET(
   if (!product) {
     return NextResponse.json({ error: 'Product not found' }, { status: 404 });
   }
-  return NextResponse.json(product, {
-    headers: { 'Cache-Control': 'public, max-age=60' },
-  });
+  return NextResponse.json(
+    {
+      ...product,
+      tags: parseProductList(product.tags),
+      features: parseProductList(product.features),
+    },
+    {
+      headers: { 'Cache-Control': 'public, max-age=60' },
+    }
+  );
 }

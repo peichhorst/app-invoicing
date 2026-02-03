@@ -1,5 +1,5 @@
 // src/app/api/invoices/[id]/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Prisma } from '@prisma/client';
@@ -28,7 +28,7 @@ async function getInvoiceHandler(user: AuthenticatedUser, id: string) {
   return NextResponse.json(invoice);
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
@@ -211,7 +211,7 @@ async function updateInvoiceHandler(request: Request, user: AuthenticatedUser, i
   }
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
@@ -219,7 +219,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
   return updateInvoiceHandler(request, user, id);
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
+import prisma from '@/lib/prisma';
 import { OpportunityService } from '@/services/OpportunityService';
 import { OpportunitySearchParams } from '@/types/opportunity';
 
@@ -94,11 +95,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify client belongs to user
-    const client = await import('@prisma/client').then(({ prisma }) => 
-      prisma.client.findFirst({
-        where: { id: clientId, userId: user.id }
-      })
-    );
+    const client = await prisma.client.findFirst({
+      where: { id: clientId, userId: user.id }
+    });
 
     if (!client) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 });

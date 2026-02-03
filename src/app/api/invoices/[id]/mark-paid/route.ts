@@ -94,7 +94,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
   const emailInvoice = {
     ...updated,
     dueDays,
-    items: updated.items.map((item) => ({
+    items: (updated.items as any[]).map((item: any) => ({
       ...item,
       amount: item.total ?? Number(item.unitPrice) * Number(item.quantity),
     })),

@@ -10,7 +10,7 @@ interface User {
   password?: string;
   role?: string;
   planTier?: string;
-  proTrialEndsAt?: Date | string;
+  proTrialEndsAt?: Date | string | null;
   proTrialReminderSent?: boolean;
   companyId?: string;
   stripeSubscriptionId?: string | null;

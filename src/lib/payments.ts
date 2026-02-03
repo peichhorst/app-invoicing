@@ -69,7 +69,7 @@ export async function reconcileInvoiceStatus(invoiceId: string): Promise<Invoice
   const updates: Prisma.InvoiceUpdateInput = {};
 
   if (needsAmountUpdate) {
-    updates.amountPaid = paidAmount;
+    updates.amountPaid = paidAmount.toNumber();
   }
 
   if (invoice.status !== nextStatus) {

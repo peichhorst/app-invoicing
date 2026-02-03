@@ -13,7 +13,7 @@ export async function POST(_request: Request) {
 
     const customerId = await ensureStripeCustomer(user);
 
-    let price = null;
+    let price: any = null;
     if (PRICE_ID) {
       try {
         price = await stripe.prices.retrieve(PRICE_ID);

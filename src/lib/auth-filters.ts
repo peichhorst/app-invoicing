@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { User } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
 
 export type UserRole = 'USER' | 'ADMIN' | 'OWNER' | 'SUPERADMIN';
 
-export interface AuthenticatedUser extends User {
-  role: UserRole;
+type CurrentUser = Awaited<ReturnType<typeof getCurrentUser>>;
+
+export type AuthenticatedUser = NonNullable<CurrentUser> & {
+  role: UserRole | string;
   companyId?: string | null;
-}
+};
 
 /**
  * Higher-order function to wrap API routes with authentication and authorization

@@ -45,7 +45,7 @@ async function handle(request: Request) {
     const emailInvoice = {
       ...invoice,
       dueDays,
-      items: invoice.items.map((item) => ({
+      items: (invoice.items as any[]).map((item: any) => ({
         ...item,
         amount: item.total ?? Number(item.unitPrice) * Number(item.quantity),
       })),

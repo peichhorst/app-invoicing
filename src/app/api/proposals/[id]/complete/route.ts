@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { sendInvoiceEmail } from '@/lib/email';
-import type { Prisma } from '@prisma/client';
 
 type RouteContext = {
   params: Promise<{ id: string }>;
@@ -68,7 +67,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
   dueDate.setDate(dueDate.getDate() + 30); // 30 day payment terms
 
   // Create invoice and update proposal in transaction
-  const result = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  const result = await prisma.$transaction(async (tx: any) => {
     const invoice = await tx.invoice.create({
       data: {
         userId: proposal.userId,

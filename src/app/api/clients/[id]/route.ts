@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { withAuth, getScopedDb, AuthenticatedUser } from '@/lib/auth-filters';
@@ -61,10 +61,7 @@ async function getClientHandler(user: AuthenticatedUser, id: string) {
   return NextResponse.json(client);
 }
 
-export async function GET(
-  _request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
 
@@ -157,10 +154,7 @@ async function updateClientHandler(
   }
 }
 
-export async function PUT(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return unauthorized();
 
@@ -168,10 +162,7 @@ export async function PUT(
   return updateClientHandler(request, user, id);
 }
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // PATCH handler mirrors PUT logic for partial updates
   const user = await getCurrentUser();
   if (!user) return unauthorized();
@@ -180,10 +171,7 @@ export async function PATCH(
   return updateClientHandler(request, user, id);
 }
 
-export async function DELETE(
-  _request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const user = await getCurrentUser();
     if (!user) return unauthorized();

@@ -30,7 +30,7 @@ export default async function AdminUsersPage() {
     orderBy: [{ company: { name: 'asc' } }, { name: 'asc' }, { email: 'asc' }],
   });
 
-  const withPlan = users.map((user) => ({
+  const withPlan = users.map((user: any) => ({
     ...user,
     planTier: user.company?.owner?.planTier ?? null,
   }));

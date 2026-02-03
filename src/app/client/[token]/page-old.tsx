@@ -187,7 +187,7 @@ export default async function ClientPortalPage(props: ClientPortalPageProps) {
                   No invoices yet.
                 </div>
               ) : (
-                portalUser.client.invoices.map((invoice) => {
+                portalUser.client.invoices.map((invoice: any) => {
                   const total = new Intl.NumberFormat('en-US', {
                     style: 'currency',
                     currency: 'USD',

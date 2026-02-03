@@ -5,7 +5,7 @@ import { headers } from 'next/headers';
  * FAQ page powered by the docs/faq.md source file.
  */
 const FaqPage = async () => {
-  const headerList = headers();
+  const headerList = await headers();
   const host = headerList.get('host') ?? 'localhost:3000';
   const protocol = headerList.get('x-forwarded-proto') ?? 'http';
   const baseUrl = `${protocol}://${host}`;

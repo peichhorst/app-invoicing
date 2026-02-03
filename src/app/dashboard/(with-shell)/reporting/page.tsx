@@ -61,10 +61,11 @@ export default async function ReportingPage() {
     period: 'yearly',
   };
 
-  const [initialSummary, statusOptions] = await Promise.all([
+  const [initialSummary, statusOptionsRaw] = await Promise.all([
     getReportingSummary(reportingScope, initialFilters),
     getInvoiceStatuses(reportingScope),
   ]);
+  const statusOptions = statusOptionsRaw as string[];
 
   // Get years that have invoices
   const invoiceYears = await prisma.invoice.findMany({
@@ -76,7 +77,8 @@ export default async function ReportingPage() {
   
   const yearsWithData = [...new Set(
     invoiceYears.map(inv => new Date(inv.createdAt).getFullYear())
-  )].sort((a, b) => b - a);
+  )] as number[];
+  yearsWithData.sort((a, b) => Number(b) - Number(a));
 
   // Always include up to ten years back from current year
   const currentYear = today.getFullYear();
@@ -86,7 +88,7 @@ export default async function ReportingPage() {
       yearsWithData.push(year);
     }
   }
-  yearsWithData.sort((a, b) => b - a);
+  yearsWithData.sort((a, b) => Number(b) - Number(a));
 
   let teamInitialSummary: ReportingSummary | null = null;
   if (canSeeTeam) {

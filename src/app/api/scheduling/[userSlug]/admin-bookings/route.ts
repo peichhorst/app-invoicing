@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Role } from "@prisma/client";
-
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 
@@ -20,7 +18,7 @@ const findUser = async (slug: string) => {
   });
 };
 
-const AUTHORIZED_ROLES: Set<Role> = new Set([Role.ADMIN, Role.OWNER, Role.SUPERADMIN]);
+const AUTHORIZED_ROLES = new Set(["ADMIN", "OWNER", "SUPERADMIN"]);
 
 export async function GET(request: NextRequest) {
   const currentUser = await getCurrentUser();

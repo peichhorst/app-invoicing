@@ -64,7 +64,7 @@ export async function GET(request: Request) {
     'Updated at',
   ];
 
-  const rows = invoices.map((invoice) => {
+  const rows = invoices.map((invoice: any) => {
     const total = typeof invoice.total === 'number' ? invoice.total : 0;
     return [
       invoice.invoiceNumber,

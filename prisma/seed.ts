@@ -105,7 +105,7 @@ async function main() {
       },
     ];
 
-    const createdClients = [];
+    const createdClients: any[] = [];
     for (const clientData of clients) {
       const existing = await prisma.client.findFirst({
         where: {

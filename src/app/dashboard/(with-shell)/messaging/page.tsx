@@ -210,19 +210,19 @@ export default async function MessagesPage({ searchParams }: PageProps) {
   };
   for (const [id, label] of clientsById.entries()) {
     contextMetaByKey[`CLIENT:${id}`] = {
-      label,
+      label: String(label),
       href: `/dashboard/clients/${id}`,
     };
   }
   for (const [id, label] of invoicesById.entries()) {
     contextMetaByKey[`INVOICE:${id}`] = {
-      label,
+      label: String(label),
       href: `/dashboard/invoices/${id}`,
     };
   }
   for (const [id, label] of proposalsById.entries()) {
     contextMetaByKey[`PROPOSAL:${id}`] = {
-      label,
+      label: String(label),
       href: `/dashboard/proposals/${id}`,
     };
   }

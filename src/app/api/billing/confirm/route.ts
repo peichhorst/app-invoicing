@@ -15,7 +15,7 @@ export async function GET(request: Request) {
     const sessionId = url.searchParams.get('session_id');
     if (!sessionId) return NextResponse.json({ error: 'Missing session_id' }, { status: 400 });
 
-    const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
+    const stripe = new Stripe(stripeSecret, { apiVersion: '2026-01-28.clover' });
     const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['subscription'] });
 
     const subscription = session.subscription && typeof session.subscription === 'object' ? session.subscription : null;

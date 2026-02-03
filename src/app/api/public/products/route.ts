@@ -1,6 +1,7 @@
 import { ProductStatus, ProductType } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { buildProductListContainsFilter, parseProductList } from '@/lib/products';
 
 const SAFE_PRODUCT_FIELDS = {
   select: {
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
   if (tagParam) {
     const tags = tagParam.split(',').map((tag) => tag.trim()).filter(Boolean);
     if (tags.length) {
-      where.tags = { array_contains: tags };
+      where.AND = tags.map((tag) => ({ tags: buildProductListContainsFilter(tag) }));
     }
   }
 
@@ -55,7 +56,14 @@ export async function GET(request: Request) {
     ...SAFE_PRODUCT_FIELDS,
   });
 
-  return NextResponse.json(products, {
-    headers: { 'Cache-Control': 'public, max-age=60' },
-  });
+  return NextResponse.json(
+    products.map((product) => ({
+      ...product,
+      tags: parseProductList(product.tags),
+      features: parseProductList(product.features),
+    })),
+    {
+      headers: { 'Cache-Control': 'public, max-age=60' },
+    }
+  );
 }

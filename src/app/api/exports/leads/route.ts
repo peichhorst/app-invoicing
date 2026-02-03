@@ -30,7 +30,7 @@ export async function GET(_request: Request) {
     'Converted to Client',
   ];
 
-  const rows = leads.map((lead) =>
+  const rows = leads.map((lead: any) =>
     [
       lead.name,
       lead.companyName,

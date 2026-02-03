@@ -20,12 +20,14 @@ export async function POST(request: Request) {
       select: { id: true, readBy: { select: { id: true } } },
     });
 
-    return NextResponse.json({
-      receipts: messages.map((message) => ({
+    const receipts = (messages as Array<{ id: string; readBy: Array<{ id: string }> }>).map(
+      (message) => ({
         id: message.id,
         readByIds: message.readBy.map((reader) => reader.id),
-      })),
-    });
+      })
+    );
+
+    return NextResponse.json({ receipts });
   } catch (error) {
     console.error('Read receipts fetch failed', error);
     return NextResponse.json({ error: 'Unable to fetch receipts' }, { status: 500 });

@@ -19,6 +19,7 @@ interface User {
   companyId?: string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
+  [key: string]: any;
 }
 
 interface Company {
@@ -27,6 +28,7 @@ interface Company {
   ownerId: string;
   createdAt?: Date | string;
   updatedAt?: Date | string;
+  [key: string]: any;
 }
 
 interface Position {

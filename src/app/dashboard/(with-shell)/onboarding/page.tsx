@@ -85,7 +85,7 @@ export default async function DashboardOnboardingPage({ searchParams }: PageProp
             primaryColor: (company as any).primaryColor ?? null,
             useHeaderLogo: company.useHeaderLogo ?? null,
             industry: company.industry ?? '',
-            updatedAt: company.updatedAt?.toISOString?.() ?? '',
+            updatedAt: company.updatedAt ? new Date(company.updatedAt).toISOString() : '',
             stripeAccountId: company.stripeAccountId ?? null,
             stripePublishableKey: company.stripePublishableKey ?? null,
             venmoHandle: company.venmoHandle ?? null,

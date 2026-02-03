@@ -61,7 +61,7 @@ export async function PUT(request: Request) {
     const body = (await request.json()) as ProfilePayload;
 
     const normalizedState = normalizeStateValue(body.state ?? user.company?.state ?? undefined);
-    const data: Parameters<typeof prisma.user.update>[0]['data'] = {
+    const data: Record<string, any> = {
       name: body.name || user.name,
       companyName: body.companyName ?? null,
       logoDataUrl: sanitizeLogoUrl(body.logoDataUrl),
@@ -159,7 +159,7 @@ export async function PUT(request: Request) {
       }
     }
 
-    const companyUpdate: Parameters<typeof prisma.company.update>[0]['data'] = {};
+    const companyUpdate: Record<string, any> = {};
     const appendTrimmed = (value?: string | null) => (value ? value.trim() : '');
     if (body.addressLine1 !== undefined) {
       companyUpdate.addressLine1 = appendTrimmed(body.addressLine1) || null;

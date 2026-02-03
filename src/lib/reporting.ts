@@ -1,4 +1,4 @@
-import { prisma } from './prisma';
+import prisma from './prisma';
 
 // Define Prisma-like types locally
 type PrismaQueryRaw = any;

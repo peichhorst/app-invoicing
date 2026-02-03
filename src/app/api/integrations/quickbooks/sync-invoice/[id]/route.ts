@@ -86,7 +86,7 @@ export async function POST(
 
     // Build QuickBooks invoice object
     const qbInvoice: any = {
-      Line: invoice.items.map((item, index) => ({
+      Line: (invoice.items as any[]).map((item: any, index: number) => ({
         DetailType: 'SalesItemLineDetail',
         Amount: item.total,
         Description: item.description || item.name,

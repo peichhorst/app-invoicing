@@ -5,7 +5,8 @@ import { Prisma } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
 import { clientVisibilityWhere } from '@/lib/client-scope';
 import { createInvoice } from '@/services/InvoiceService';
-import { createRecurringInvoice } from '@/services/SubscriptionService';
+import { createRecurringInvoiceSchedule } from '@/services/SubscriptionService';
+import { InvoiceStatus } from '@/lib/prisma-types';
 
 export async function POST(request: Request) {
   try {
@@ -33,7 +34,7 @@ export async function POST(request: Request) {
       issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
       notes: body.notes,
-      status: 'UNPAID',
+      status: InvoiceStatus.UNPAID,
       items: body.items || [],
       recurring: Boolean(body.recurring),
       recurringInterval: body.recurringInterval ?? null,
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
         userId: currentUser.id,
         title: (body.title?.trim() || body.notes?.trim()) || 'Recurring invoice',
         amount: new Prisma.Decimal(invoice.total),
-        currency: invoice.currency,
+        currency: invoice.currency ?? 'USD',
         interval: body.recurringInterval,
         dayOfMonth:
           body.recurringInterval && ['month', 'quarter', 'year'].includes(body.recurringInterval)

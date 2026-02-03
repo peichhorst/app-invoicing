@@ -248,7 +248,7 @@ export async function handleStripeEvent(event: Stripe.Event) {
           : PaymentStatus.partially_refunded;
 
       const updated = await updatePaymentAndReconcile(payment.id, {
-        refundedAmount: refundedDecimal,
+        refundedAmount: refundedDecimal.toNumber(),
         status,
         stripePaymentIntentId: paymentIntentId ?? payment.stripePaymentIntentId,
         stripeChargeId: chargeId ?? payment.stripeChargeId,
