@@ -35,10 +35,10 @@ Welcome to the ClientWave documentation. This documentation covers all aspects o
 ## Additional Resources
 
 ### Integration Guides
-- [Google Calendar Setup](./GOOGLE_CALENDAR_SETUP.md) - Calendar integration guide
-- [QuickBooks Setup](./QUICKBOOKS_SETUP.md) - Accounting software integration
-- [Autopay Implementation](./AUTOPAY_IMPLEMENTATION.md) - Payment automation
-- [Calendar Integration Guide](./CALENDAR_INTEGRATION_GUIDE.md) - Complete calendar setup
+- [Google Calendar Setup](./google-calendar-setup.md) - Calendar integration guide
+- [QuickBooks Setup](./quickbooks-setup.md) - Accounting software integration
+- [Autopay Implementation](./autopay-implementation.md) - Payment automation
+- [Calendar Integration Guide](./calendar-integration-guide.md) - Complete calendar setup
 
 ### Documentation Index
 For a complete overview of all documentation, see our [Documentation Index](../DOCS_INDEX.md).

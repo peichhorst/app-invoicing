@@ -12,12 +12,8 @@ interface KnowledgeContext {
 }
 
 export const KNOWLEDGE_FILES = [
-  'README.md',
   'DOCUMENTATION.md',
   'DOCS_INDEX.md',
-  'supabase_schema.sql',
-  'prisma/schema.prisma',
-  'docs/README.md',
   'docs/overview.md',
   'docs/quick-start.md',
   'docs/account-setup.md',
@@ -35,15 +31,15 @@ export const KNOWLEDGE_FILES = [
   'docs/troubleshooting.md',
   'docs/faq.md',
   'docs/support.md',
-  'docs/GOOGLE_CALENDAR_SETUP.md',
-  'docs/QUICKBOOKS_SETUP.md',
-  'docs/AUTOPAY_IMPLEMENTATION.md',
-  'docs/CALENDAR_INTEGRATION_GUIDE.md'
+  'docs/google-calendar-setup.md',
+  'docs/quickbooks-setup.md',
+  'docs/autopay-implementation.md',
+  'docs/calendar-integration-guide.md'
 ];
 
 const MAX_CHUNK_CHARS = 1200;
 const MAX_CONTEXT_CHUNKS = 6;
-const META_SOURCES = new Set(['README.md', 'DOCUMENTATION.md', 'DOCS_INDEX.md', 'docs/README.md']);
+const META_SOURCES = new Set(['DOCUMENTATION.md', 'DOCS_INDEX.md']);
 const QUERY_OVERRIDES = [
   {
     pattern: /\b(getting started|quick start|quick-start)\b/i,
@@ -187,7 +183,7 @@ const isCacheValid = async () => {
 };
 
 /**
- * Builds a lightweight knowledge context from docs, README, and schema files.
+ * Builds a lightweight knowledge context from docs and reference files.
  */
 export const getKnowledgeContext = async (query: string): Promise<KnowledgeContext> => {
   if (!(await isCacheValid())) {
@@ -219,9 +215,9 @@ export const getKnowledgeContext = async (query: string): Promise<KnowledgeConte
   scored = scored.slice(0, MAX_CONTEXT_CHUNKS);
 
   if (scored.length === 0) {
-    const fallback = (cachedChunks ?? []).find(
-      (chunk) => chunk.source === 'docs/README.md' || chunk.source === 'README.md',
-    );
+    const fallback =
+      (cachedChunks ?? []).find((chunk) => chunk.source === 'docs/overview.md') ??
+      (cachedChunks ?? []).find((chunk) => chunk.source === 'DOCUMENTATION.md');
     return { chunks: fallback ? [fallback] : [] };
   }
 

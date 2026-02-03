@@ -26,3 +26,16 @@
 2026-02-03: Removed docs/sdks.md from the chat knowledge base sources list.
 2026-02-03: Added knowledge base cache invalidation for file list changes and fallback to README when no chunks match.
 2026-02-03: Added query overrides/meta filtering for more precise sources, added a /docs/faq page, and labeled chat sources with friendly titles.
+2026-02-03: Initialized git, committed, and force-pushed main to the GitHub repo.
+2026-02-03: Fixed the reporting prisma import and adjusted clients/invoices route param typing for Next build.
+2026-02-03: Switched clients/invoices route params to Promise-based typing to match existing Next route handler signatures.
+2026-02-03: Exported named prisma and aligned docs source page searchParams typing with Next expectations.
+2026-02-03: Normalized product list serialization/parsing to match string storage, updated product APIs/UI, and adjusted tag filtering.
+2026-02-03: Added payment support to the Prisma wrapper and made product normalization parse string tag/feature lists.
+2026-02-03: Fixed backfill-payments script to coerce Decimal totals to numbers for Prisma payment creation.
+2026-02-03: Added a magicLink getter with mock fallback storage to PrismaWrapper to satisfy missing prisma.magicLink build errors.
+2026-02-03: Renamed the PrismaWrapper internal client field to avoid accessor recursion and made magicLink a concrete delegate property for type-checking.
+2026-02-03: Removed README sources from the chat knowledge base and source maps so chat answers no longer cite README files.
+2026-02-03: Removed schema sources from the chat knowledge base so chat answers no longer cite schema files.
+2026-02-03: Renamed uppercase docs files to kebab-case and updated docs index/readme/knowledge base references.
+2026-02-03: Fixed SubscriptionService invoice status typing/Decimal conversions by aligning mock InvoiceStatus and using enum values, then got a clean Next.js build.

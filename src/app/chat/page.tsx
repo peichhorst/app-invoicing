@@ -13,8 +13,6 @@ interface Message {
 }
 
 const SOURCE_ROUTE_MAP: Record<string, string> = {
-  'docs/README.md': '/docs',
-  'README.md': '/docs',
   'DOCUMENTATION.md': '/docs',
   'DOCS_INDEX.md': '/docs',
   'docs/overview.md': '/docs',
@@ -29,8 +27,6 @@ const SOURCE_ROUTE_MAP: Record<string, string> = {
 };
 
 const SOURCE_TITLES: Record<string, string> = {
-  'docs/README.md': 'Documentation Overview',
-  'README.md': 'Documentation Overview',
   'DOCUMENTATION.md': 'Documentation Overview',
   'DOCS_INDEX.md': 'Documentation Overview',
   'docs/overview.md': 'Documentation Overview',

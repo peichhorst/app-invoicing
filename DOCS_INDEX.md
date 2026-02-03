@@ -24,10 +24,10 @@
 - [Reporting & Analytics](./docs/reporting.md) - Analytics and reporting features
 
 ## 🔌 **Integration Guides**
-- [Google Calendar Setup](./docs/GOOGLE_CALENDAR_SETUP.md) - Calendar integration guide
-- [QuickBooks Setup](./docs/QUICKBOOKS_SETUP.md) - Accounting software integration
-- [Autopay Implementation](./docs/AUTOPAY_IMPLEMENTATION.md) - Payment automation
-- [Calendar Integration Guide](./docs/CALENDAR_INTEGRATION_GUIDE.md) - Complete calendar setup
+- [Google Calendar Setup](./docs/google-calendar-setup.md) - Calendar integration guide
+- [QuickBooks Setup](./docs/quickbooks-setup.md) - Accounting software integration
+- [Autopay Implementation](./docs/autopay-implementation.md) - Payment automation
+- [Calendar Integration Guide](./docs/calendar-integration-guide.md) - Complete calendar setup
 
 ## 💻 **Developer Resources**
 - [API Reference](./docs/api-reference.md) - Complete API documentation
