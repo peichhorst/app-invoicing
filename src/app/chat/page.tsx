@@ -1,15 +1,24 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 interface Message {
   id: string;
   text: string;
-  sender: 'user' | 'bot';
+  sender: 'user' | 'bot' | 'superadmin';
   timestamp: Date;
   sources?: string[];
   fallback?: boolean;
+}
+
+interface OnlineUser {
+  id: string;
+  name: string | null;
+  email: string | null;
+  role: string | null;
+  lastSeen: string | null;
 }
 
 const SOURCE_ROUTE_MAP: Record<string, string> = {
@@ -63,7 +72,89 @@ const SimpleChatBot = () => {
   ]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [superAdminOnline, setSuperAdminOnline] = useState(false);
+  const [superAdminText, setSuperAdminText] = useState('');
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastSupportSyncRef = useRef<string | null>(null);
+  const searchParams = useSearchParams();
+  const chatIdParam = searchParams.get('chatId') || searchParams.get('chat_id');
+
+  const activeChatId = useMemo(() => {
+    if (!currentUserId) return null;
+    if (currentUserRole === 'SUPERADMIN' && chatIdParam) {
+      return chatIdParam;
+    }
+    return currentUserId;
+  }, [currentUserId, currentUserRole, chatIdParam]);
+  const canSuperAdminReply =
+    superAdminOnline && currentUserRole === 'SUPERADMIN' && Boolean(activeChatId);
+
+  const mergeMessages = useCallback((existing: Message[], incoming: Message[]) => {
+    const byId = new Map(existing.map((message) => [message.id, message]));
+    for (const message of incoming) {
+      const current = byId.get(message.id);
+      byId.set(message.id, current ? { ...current, ...message } : message);
+    }
+    return Array.from(byId.values()).sort(
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+    );
+  }, []);
+
+  const loadSupportMessages = useCallback(async () => {
+    if (!activeChatId || !currentUserId) return;
+    try {
+      const params = new URLSearchParams();
+      if (currentUserRole === 'SUPERADMIN') {
+        params.set('chatId', activeChatId);
+      }
+      if (lastSupportSyncRef.current) {
+        params.set('since', lastSupportSyncRef.current);
+      }
+      const url = params.toString() ? `/api/chat/messages?${params.toString()}` : '/api/chat/messages';
+      const response = await fetch(url);
+      if (!response.ok) return;
+      const payload = await response.json();
+      const incoming = Array.isArray(payload?.messages) ? payload.messages : [];
+      if (!incoming.length) return;
+
+      const mapped = incoming.map((item: any) => ({
+        id: String(item.id),
+        text: String(item.text ?? ''),
+        sender:
+          item.fromRole === 'SUPERADMIN'
+            ? 'superadmin'
+            : item.fromId === currentUserId
+            ? 'user'
+            : 'superadmin',
+        timestamp: new Date(item.sentAt),
+      })) as Message[];
+
+      setMessages((prev) => mergeMessages(prev, mapped));
+
+      const newest = mapped.reduce((latest, message) => {
+        return message.timestamp > latest ? message.timestamp : latest;
+      }, mapped[0].timestamp);
+      lastSupportSyncRef.current = newest.toISOString();
+    } catch (error) {
+      // Swallow polling errors to avoid UI spam
+    }
+  }, [activeChatId, currentUserId, currentUserRole, mergeMessages]);
+
+  const loadOnlineUsers = useCallback(async () => {
+    if (currentUserRole !== 'SUPERADMIN') return;
+    try {
+      const response = await fetch('/api/chat/online-users');
+      if (!response.ok) return;
+      const payload = await response.json();
+      const users = Array.isArray(payload?.users) ? payload.users : [];
+      setOnlineUsers(users);
+    } catch (error) {
+      // Ignore errors to keep UI responsive
+    }
+  }, [currentUserRole]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -73,34 +164,157 @@ const SimpleChatBot = () => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSendMessage = async () => {
-    if (!inputText.trim()) return;
+  useEffect(() => {
+    let isActive = true;
+    const loadCurrentUser = async () => {
+      try {
+        const response = await fetch('/api/me');
+        if (!response.ok) {
+          if (isActive) setSuperAdminOnline(false);
+          return;
+        }
+        const payload = await response.json();
+        if (isActive) {
+          setSuperAdminOnline(Boolean(payload?.isSuperAdmin));
+          setCurrentUserId(typeof payload?.id === 'string' ? payload.id : null);
+          setCurrentUserRole(typeof payload?.role === 'string' ? payload.role : null);
+        }
+      } catch (error) {
+        if (isActive) setSuperAdminOnline(false);
+      }
+    };
+    loadCurrentUser();
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
-    // Add user message
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: inputText,
-      sender: 'user',
+  useEffect(() => {
+    if (!activeChatId || !currentUserId) return;
+    lastSupportSyncRef.current = null;
+    loadSupportMessages();
+    const interval = setInterval(() => {
+      loadSupportMessages();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeChatId, currentUserId, loadSupportMessages]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    let isActive = true;
+    const ping = async () => {
+      if (!isActive) return;
+      try {
+        await fetch('/api/presence/ping', { method: 'POST' });
+      } catch (error) {
+        // Ignore ping failures
+      }
+    };
+    ping();
+    const interval = setInterval(() => {
+      ping();
+    }, 30000);
+    return () => {
+      isActive = false;
+      clearInterval(interval);
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (currentUserRole !== 'SUPERADMIN') {
+      setOnlineUsers([]);
+      return;
+    }
+    loadOnlineUsers();
+    const interval = setInterval(() => {
+      loadOnlineUsers();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [currentUserRole, loadOnlineUsers]);
+
+  const createTempMessage = (text: string, sender: Message['sender']) => {
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const tempMessage: Message = {
+      id: tempId,
+      text,
+      sender,
       timestamp: new Date(),
     };
+    setMessages((prev) => [...prev, tempMessage]);
+    return tempId;
+  };
 
-    const historySnapshot = messages.map((message) => ({
-      role: message.sender === 'user' ? 'user' : 'assistant',
-      content: message.text
-    }));
+  const persistSupportMessage = async (
+    text: string,
+    tempId: string,
+    sender: Message['sender'],
+  ) => {
+    if (!activeChatId) return;
+    try {
+      const response = await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: activeChatId,
+          content: text,
+          role: sender,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Unable to save message');
+      }
+      const saved = payload?.message;
+      if (!saved?.id) return;
+      const savedMessage: Message = {
+        id: String(saved.id),
+        text: String(saved.text ?? text),
+        sender:
+          saved.fromRole === 'SUPERADMIN'
+            ? 'superadmin'
+            : saved.fromId === currentUserId
+            ? 'user'
+            : sender,
+        timestamp: new Date(saved.sentAt),
+      };
+      setMessages((prev) => {
+        const withoutTemp = prev.filter((message) => message.id !== tempId);
+        return mergeMessages(withoutTemp, [savedMessage]);
+      });
+    } catch (error) {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === tempId ? { ...message, fallback: true } : message,
+        ),
+      );
+    }
+  };
 
-    setMessages(prev => [...prev, userMessage]);
+  const handleSendMessage = async () => {
+    const text = inputText.trim();
+    if (!text) return;
+
+    const tempId = createTempMessage(text, 'user');
     setInputText('');
     setIsLoading(true);
+
+    persistSupportMessage(text, tempId, 'user');
+
+    const historySnapshot = [...messages, { id: tempId, text, sender: 'user', timestamp: new Date() }]
+      .filter((message) => message.sender !== 'superadmin')
+      .map((message) => ({
+        role: message.sender === 'user' ? 'user' : 'assistant',
+        content: message.text,
+      }));
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: userMessage.text,
-          history: historySnapshot
-        })
+          message: text,
+          history: historySnapshot,
+        }),
       });
 
       const payload = await response.json();
@@ -112,7 +326,7 @@ const SimpleChatBot = () => {
         sources: Array.isArray(payload?.sources) ? payload.sources : [],
         fallback: Boolean(payload?.fallback),
       };
-      setMessages(prev => [...prev, botMessage]);
+      setMessages((prev) => [...prev, botMessage]);
     } catch (error) {
       const botMessage: Message = {
         id: Date.now().toString(),
@@ -122,16 +336,33 @@ const SimpleChatBot = () => {
         sources: [],
         fallback: true,
       };
-      setMessages(prev => [...prev, botMessage]);
+      setMessages((prev) => [...prev, botMessage]);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendSuperAdminMessage = async () => {
+    if (!canSuperAdminReply) return;
+    const text = superAdminText.trim();
+    if (!text) return;
+
+    const tempId = createTempMessage(text, 'superadmin');
+    setSuperAdminText('');
+    persistSupportMessage(text, tempId, 'superadmin');
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  const handleAdminKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendSuperAdminMessage();
     }
   };
 
@@ -155,11 +386,26 @@ const SimpleChatBot = () => {
                 className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                   message.sender === 'user'
                     ? 'bg-blue-500 text-white'
+                    : message.sender === 'superadmin'
+                    ? 'bg-emerald-600 text-white'
                     : 'bg-gray-200 text-gray-800'
                 }`}
               >
+                {message.sender === 'superadmin' && (
+                  <div className="text-[10px] uppercase tracking-wide text-emerald-100">
+                    Superadmin
+                  </div>
+                )}
                 <div className="text-sm">{message.text}</div>
-                <div className={`text-xs mt-1 ${message.sender === 'user' ? 'text-blue-200' : 'text-gray-500'}`}>
+                <div
+                  className={`text-xs mt-1 ${
+                    message.sender === 'user'
+                      ? 'text-blue-200'
+                      : message.sender === 'superadmin'
+                      ? 'text-emerald-100'
+                      : 'text-gray-500'
+                  }`}
+                >
                   {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </div>
                 {message.sender === 'bot' && message.sources && message.sources.length > 0 && (
@@ -197,7 +443,45 @@ const SimpleChatBot = () => {
       </div>
 
       <div className="bg-white border-t p-4 fixed bottom-0 left-0 right-0">
-        <div className="max-w-4xl mx-auto flex space-x-2">
+        <div className="max-w-4xl mx-auto flex flex-wrap items-center gap-2">
+          {canSuperAdminReply && (
+            <div className="flex flex-1 flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <textarea
+                  value={superAdminText}
+                  onChange={(e) => setSuperAdminText(e.target.value)}
+                  onKeyPress={handleAdminKeyPress}
+                  placeholder="Superadmin reply..."
+                  className="flex-1 border border-emerald-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  rows={1}
+                />
+                <button
+                  onClick={handleSendSuperAdminMessage}
+                  disabled={!superAdminText.trim()}
+                  className="bg-emerald-600 text-white rounded-lg px-3 py-2 text-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+                >
+                  Reply
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  Online
+                </span>
+                {onlineUsers.length ? (
+                  onlineUsers.map((user) => (
+                    <span
+                      key={user.id}
+                      className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-emerald-700"
+                    >
+                      {user.name || user.email || 'User'}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-gray-400">No users online</span>
+                )}
+              </div>
+            </div>
+          )}
           <textarea
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
@@ -213,6 +497,15 @@ const SimpleChatBot = () => {
           >
             Send
           </button>
+          {superAdminOnline && (
+            <div className="ml-auto flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
+              <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+              Superadmin online
+              {currentUserRole === 'SUPERADMIN' && chatIdParam ? (
+                <span className="text-emerald-600/80">Chat ID: {chatIdParam}</span>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
     </div>

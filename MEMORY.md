@@ -39,3 +39,10 @@
 2026-02-03: Removed schema sources from the chat knowledge base so chat answers no longer cite schema files.
 2026-02-03: Renamed uppercase docs files to kebab-case and updated docs index/readme/knowledge base references.
 2026-02-03: Fixed SubscriptionService invoice status typing/Decimal conversions by aligning mock InvoiceStatus and using enum values, then got a clean Next.js build.
+2026-02-03: Added PgBouncer query params to pooled DATABASE_URL settings and documented pooled vs direct URLs in env examples.
+2026-02-03: Added a chat bar superadmin online indicator based on /api/me so the chat UI can show when a superadmin is logged in.
+2026-02-03: Added a local-only superadmin reply input in the chat bar to echo superadmin messages into the chat stream.
+2026-02-03: Wired support chat persistence via /api/chat/messages with polling-based updates, and excluded support chat messages from the internal messaging inbox/status checks.
+2026-02-03: Moved the superadmin online badge to the right of the chat send button.
+2026-02-03: Added a superadmin-only online users list for support chat, backed by a new /api/chat/online-users endpoint.
+2026-02-03: Added user presence tracking (lastSeenAt), a /api/presence/ping endpoint, and superadmin online-user list driven by lastSeenAt with chat-side heartbeat pings.

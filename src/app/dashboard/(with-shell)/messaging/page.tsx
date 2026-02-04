@@ -47,6 +47,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
   const rawMessages = await prisma.message.findMany({
     where: {
       companyId: user.companyId,
+      contextType: { not: 'SUPPORT_CHAT' },
       OR: [
         { fromId: user.id },
         { toAll: true },

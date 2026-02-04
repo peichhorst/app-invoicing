@@ -19,6 +19,7 @@ interface User {
   role: string;
   planTier: string;
   proTrialEndsAt?: string; // ISO string
+  lastSeenAt?: string; // ISO string
   createdAt: string; // ISO string
   updatedAt: string; // ISO string
   companyId?: string;

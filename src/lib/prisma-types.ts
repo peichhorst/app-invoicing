@@ -45,6 +45,7 @@ export interface User {
   planTier: PlanTier | string;
   proTrialEndsAt?: Date | string | null;
   proTrialReminderSent: boolean;
+  lastSeenAt?: Date | string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
   companyId?: string;

@@ -143,6 +143,7 @@ model User {
   proTrialReminderSent    Boolean                  @default(false)
   defaultPaymentMethodId  String?
   subscriptionCancelAt    DateTime?
+  lastSeenAt              DateTime?
   isConfirmed             Boolean                  @default(false)
   inviteToken             String?
   inviteTokenExpires      DateTime?

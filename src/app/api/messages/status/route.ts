@@ -16,6 +16,7 @@ export async function GET() {
     const messages = await prisma.message.findMany({
       where: {
         companyId: user.companyId,
+        contextType: { not: 'SUPPORT_CHAT' },
         OR: [
           { toAll: true },
           { toRoles: buildListContainsFilter(user.role) },
@@ -35,6 +36,7 @@ export async function GET() {
     const unreadCount = await prisma.message.count({
       where: {
         companyId: user.companyId,
+        contextType: { not: 'SUPPORT_CHAT' },
         OR: [
           { toAll: true },
           { toRoles: buildListContainsFilter(user.role) },
