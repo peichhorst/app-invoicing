@@ -68,12 +68,53 @@ class PrismaWrapper {
   };
 
   constructor() {
-    if (realPrismaAvailable && RealPrismaClient) {
+    const ensureQueryParam = (url: string, key: string, value: string) => {
+      try {
+        const parsed = new URL(url);
+        if (!parsed.searchParams.has(key)) {
+          parsed.searchParams.set(key, value);
+        }
+        return parsed.toString();
+      } catch {
+        return url;
+      }
+    };
+
+    const normalizeDatabaseUrl = (url?: string) => {
+      if (!url) return url;
+      try {
+        const parsed = new URL(url);
+        const isSupabasePooler = parsed.hostname.endsWith('.pooler.supabase.com');
+        const usesTransactionPooler =
+          parsed.port === '6543' || parsed.searchParams.get('pgbouncer') === 'true';
+        if (isSupabasePooler && usesTransactionPooler) {
+          let normalized = ensureQueryParam(url, 'pgbouncer', 'true');
+          normalized = ensureQueryParam(normalized, 'statement_cache_size', '0');
+          return normalized;
+        }
+      } catch {
+        return url;
+      }
+      return url;
+    };
+
+    const resolvedDatabaseUrl = normalizeDatabaseUrl(
+      process.env.DATABASE_URL || process.env.DIRECT_URL,
+    );
+    const forceMock = process.env.USE_MOCK_DB === 'true';
+
+    if (!forceMock && realPrismaAvailable && RealPrismaClient) {
       // Use real Prisma client
       this.prismaClient = new RealPrismaClient({
         log: ['error', 'warn'],
+        ...(resolvedDatabaseUrl
+          ? { datasources: { db: { url: resolvedDatabaseUrl } } }
+          : {}),
       });
     } else {
+      if (forceMock) {
+        console.warn('Using mock Prisma client (USE_MOCK_DB or file-based DATABASE_URL).');
+      }
       // Use mock Prisma client
       this.prismaClient = new MockPrismaClient();
     }

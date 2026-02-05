@@ -76,6 +76,24 @@ interface Subscription {
   updatedAt: string; // ISO string
 }
 
+interface Message {
+  id: string;
+  companyId: string;
+  fromId: string;
+  text: string;
+  fileUrl?: string | null;
+  toAll: boolean;
+  toRoles: string;
+  toPositions: string;
+  toUserIds: string;
+  contextType?: string | null;
+  contextId?: string | null;
+  participants: string;
+  parentId?: string | null;
+  sentAt: string;
+  readBy: string[];
+}
+
 interface MockData {
   sessions: Session[];
   users: User[];
@@ -84,6 +102,7 @@ interface MockData {
   clients: Client[];
   opportunities: Opportunity[];
   subscriptions: Subscription[];
+  messages: Message[];
 }
 
 // Simple file-based mock Prisma client for development
@@ -100,7 +119,8 @@ class MockPrismaClient {
       invoices: [],
       clients: [],
       opportunities: [],
-      subscriptions: []
+      subscriptions: [],
+      messages: []
     };
     this.initData();
   }
@@ -108,11 +128,31 @@ class MockPrismaClient {
   private async initData() {
     try {
       const fileContent = await fs.readFile(this.dataFile, 'utf-8');
-      this.data = JSON.parse(fileContent);
+      const raw = JSON.parse(fileContent);
+      this.data = this.normalizeData(raw);
     } catch (error) {
       // File doesn't exist, initialize with empty data
       await this.saveData();
     }
+  }
+
+  private normalizeCollection<T>(value: any): T[] {
+    if (Array.isArray(value)) return value;
+    if (value && typeof value === 'object') return Object.values(value);
+    return [];
+  }
+
+  private normalizeData(raw: any): MockData {
+    return {
+      sessions: this.normalizeCollection<Session>(raw?.sessions),
+      users: this.normalizeCollection<User>(raw?.users),
+      companies: this.normalizeCollection<Company>(raw?.companies),
+      invoices: this.normalizeCollection<Invoice>(raw?.invoices),
+      clients: this.normalizeCollection<Client>(raw?.clients),
+      opportunities: this.normalizeCollection<Opportunity>(raw?.opportunities),
+      subscriptions: this.normalizeCollection<Subscription>(raw?.subscriptions),
+      messages: this.normalizeCollection<Message>(raw?.messages),
+    };
   }
 
   private async saveData() {
@@ -599,6 +639,232 @@ class MockPrismaClient {
       return filteredInvoices.length;
     }
   };
+
+  // Message operations
+  message = {
+    findUnique: async ({
+      where,
+      include,
+      select,
+    }: {
+      where: { id?: string };
+      include?: any;
+      select?: any;
+    }) => {
+      if (!where?.id) return null;
+      const message = this.data.messages.find((m) => m.id === where.id);
+      if (!message) return null;
+      return this.applyMessageSelect(this.attachMessageRelations(message, include), select);
+    },
+
+    findMany: async ({
+      where,
+      orderBy,
+      include,
+      select,
+      take,
+    }: {
+      where?: any;
+      orderBy?: any;
+      include?: any;
+      select?: any;
+      take?: number;
+    }) => {
+      let messages = [...this.data.messages];
+      if (where) {
+        messages = messages.filter((message) => this.matchesMessageWhere(message, where));
+      }
+
+      if (orderBy) {
+        const sortField = Object.keys(orderBy)[0];
+        const sortOrder = orderBy[sortField];
+        messages.sort((a, b) => {
+          const aValue = (a as any)[sortField];
+          const bValue = (b as any)[sortField];
+          if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+          if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+          return 0;
+        });
+      }
+
+      if (typeof take === 'number') {
+        messages = messages.slice(0, take);
+      }
+
+      return messages.map((message) =>
+        this.applyMessageSelect(this.attachMessageRelations(message, include), select),
+      );
+    },
+
+    create: async ({ data, include }: { data: any; include?: any }) => {
+      const now = new Date().toISOString();
+      const readBy = this.normalizeReadBy(data.readBy);
+      const message: Message = {
+        id: data.id || randomUUID(),
+        companyId: data.companyId,
+        fromId: data.fromId,
+        text: data.text,
+        fileUrl: data.fileUrl ?? null,
+        toAll: Boolean(data.toAll),
+        toRoles: data.toRoles ?? '[]',
+        toPositions: data.toPositions ?? '[]',
+        toUserIds: data.toUserIds ?? '[]',
+        contextType: data.contextType ?? null,
+        contextId: data.contextId ?? null,
+        participants: data.participants ?? '[]',
+        parentId: data.parentId ?? null,
+        sentAt: (data.sentAt ? new Date(data.sentAt).toISOString() : now),
+        readBy,
+      };
+      this.data.messages.push(message);
+      await this.saveData();
+      return this.attachMessageRelations(message, include);
+    },
+
+    update: async ({ where, data }: { where: { id?: string }; data: any }) => {
+      if (!where?.id) return null;
+      const index = this.data.messages.findIndex((m) => m.id === where.id);
+      if (index === -1) return null;
+
+      const existing = this.data.messages[index];
+      const updated: Message = {
+        ...existing,
+        ...data,
+      };
+
+      if (data.readBy) {
+        const readBy = new Set(existing.readBy ?? []);
+        if (data.readBy.connect) {
+          const connectIds = Array.isArray(data.readBy.connect)
+            ? data.readBy.connect.map((entry: any) => entry.id)
+            : [data.readBy.connect.id];
+          connectIds.filter(Boolean).forEach((id: string) => readBy.add(id));
+        }
+        if (data.readBy.disconnect) {
+          const disconnectIds = Array.isArray(data.readBy.disconnect)
+            ? data.readBy.disconnect.map((entry: any) => entry.id)
+            : [data.readBy.disconnect.id];
+          disconnectIds.filter(Boolean).forEach((id: string) => readBy.delete(id));
+        }
+        if (data.readBy.set) {
+          const setIds = Array.isArray(data.readBy.set)
+            ? data.readBy.set.map((entry: any) => entry.id)
+            : [data.readBy.set.id];
+          readBy.clear();
+          setIds.filter(Boolean).forEach((id: string) => readBy.add(id));
+        }
+        updated.readBy = Array.from(readBy);
+      }
+
+      this.data.messages[index] = updated;
+      await this.saveData();
+      return updated;
+    },
+
+    deleteMany: async ({ where }: { where?: any }) => {
+      const before = this.data.messages.length;
+      if (!where) {
+        this.data.messages = [];
+      } else {
+        this.data.messages = this.data.messages.filter(
+          (message) => !this.matchesMessageWhere(message, where),
+        );
+      }
+      const removed = before - this.data.messages.length;
+      await this.saveData();
+      return { count: removed };
+    },
+
+    count: async ({ where }: { where?: any }) => {
+      const messages = where
+        ? this.data.messages.filter((message) => this.matchesMessageWhere(message, where))
+        : this.data.messages;
+      return messages.length;
+    },
+  };
+
+  private matchesMessageWhere(message: Message, where: any): boolean {
+    if (!where) return true;
+    if (where.OR && Array.isArray(where.OR)) {
+      return where.OR.some((condition: any) => this.matchesMessageWhere(message, condition));
+    }
+    if (where.id) {
+      if (typeof where.id === 'string' && message.id !== where.id) return false;
+      if (where.id.in && Array.isArray(where.id.in) && !where.id.in.includes(message.id)) {
+        return false;
+      }
+    }
+    if (where.companyId && message.companyId !== where.companyId) return false;
+    if (where.fromId && message.fromId !== where.fromId) return false;
+    if (typeof where.toAll === 'boolean' && message.toAll !== where.toAll) return false;
+    if (where.contextType && message.contextType !== where.contextType) return false;
+    if (where.contextId && message.contextId !== where.contextId) return false;
+    if (where.sentAt?.gt) {
+      if (new Date(message.sentAt).getTime() <= new Date(where.sentAt.gt).getTime()) return false;
+    }
+    if (where.sentAt?.lte) {
+      if (new Date(message.sentAt).getTime() > new Date(where.sentAt.lte).getTime()) return false;
+    }
+    if (where.toRoles?.contains && !message.toRoles.includes(where.toRoles.contains)) return false;
+    if (where.toPositions?.contains && !message.toPositions.includes(where.toPositions.contains)) return false;
+    if (where.toUserIds?.contains && !message.toUserIds.includes(where.toUserIds.contains)) return false;
+    if (where.readBy?.none?.id) {
+      if ((message.readBy ?? []).includes(where.readBy.none.id)) return false;
+    }
+    return true;
+  }
+
+  private attachMessageRelations(message: Message, include?: any) {
+    if (!include) return message;
+    const result: any = { ...message };
+    if (include.from) {
+      const user = this.data.users.find((u) => u.id === message.fromId);
+      if (user) {
+        result.from = include.from.select
+          ? this.applySelect(user, include.from.select)
+          : user;
+      } else {
+        result.from = null;
+      }
+    }
+    if (include.readBy) {
+      const entries = (message.readBy ?? []).map((id) => ({ id }));
+      result.readBy = include.readBy.select
+        ? entries.map((entry) => this.applySelect(entry, include.readBy.select))
+        : entries;
+    }
+    return result;
+  }
+
+  private applyMessageSelect(message: any, select?: any) {
+    if (!select) return message;
+    const selected: any = {};
+    for (const key of Object.keys(select)) {
+      if (select[key]) {
+        selected[key] = message[key];
+      }
+    }
+    return selected;
+  }
+
+  private applySelect<T extends Record<string, any>>(record: T, select?: Record<string, boolean>) {
+    if (!select) return record;
+    return Object.keys(select).reduce((acc, key) => {
+      if (select[key]) acc[key] = record[key];
+      return acc;
+    }, {} as Record<string, any>);
+  }
+
+  private normalizeReadBy(readBy: any): string[] {
+    if (!readBy) return [];
+    if (readBy.connect) {
+      const connectIds = Array.isArray(readBy.connect)
+        ? readBy.connect.map((entry: any) => entry.id)
+        : [readBy.connect.id];
+      return connectIds.filter(Boolean);
+    }
+    return [];
+  }
 
   // Client operations
   client = {

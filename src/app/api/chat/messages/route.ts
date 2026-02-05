@@ -18,10 +18,7 @@ const parseSince = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const resolveChatId = async (user: { id: string; role?: string | null; companyId?: string | null }, chatId?: string | null) => {
-  if (!user.companyId) {
-    return { error: 'Unauthorized', status: 403 as const };
-  }
+const resolveChatId = async (user: { id: string; role?: string | null }, chatId?: string | null) => {
   const isSuperAdmin = user.role === 'SUPERADMIN';
   if (!isSuperAdmin) {
     if (chatId && chatId !== user.id) {
@@ -34,14 +31,29 @@ const resolveChatId = async (user: { id: string; role?: string | null; companyId
   if (targetId !== user.id) {
     const target = await prisma.user.findUnique({
       where: { id: targetId },
-      select: { id: true, companyId: true },
+      select: { id: true },
     });
-    if (!target || target.companyId !== user.companyId) {
+    if (!target) {
       return { error: 'Chat not found', status: 404 as const };
     }
   }
 
   return { chatId: targetId };
+};
+
+const resolveCompanyId = async (
+  user: { id: string; role?: string | null; companyId?: string | null },
+  chatId: string,
+) => {
+  if (user.companyId) return user.companyId;
+  if (user.role === 'SUPERADMIN') {
+    const target = await prisma.user.findUnique({
+      where: { id: chatId },
+      select: { companyId: true },
+    });
+    return target?.companyId ?? null;
+  }
+  return null;
 };
 
 export async function GET(request: Request) {
@@ -60,9 +72,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: resolved.error }, { status: resolved.status });
   }
 
+  const resolvedCompanyId = await resolveCompanyId(user, resolved.chatId);
+
   const messages = await prisma.message.findMany({
     where: {
-      companyId: user.companyId,
+      ...(resolvedCompanyId ? { companyId: resolvedCompanyId } : {}),
       contextType: SUPPORT_CONTEXT,
       contextId: resolved.chatId,
       ...(since ? { sentAt: { gt: since } } : {}),
@@ -111,11 +125,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: resolved.error }, { status: resolved.status });
     }
 
+    const resolvedCompanyId = await resolveCompanyId(user, resolved.chatId);
+    if (!resolvedCompanyId) {
+      return NextResponse.json({ error: 'Missing company for chat' }, { status: 400 });
+    }
+
     const participants = Array.from(new Set([user.id, resolved.chatId]));
 
     const message = await prisma.message.create({
       data: {
-        companyId: user.companyId as string,
+        companyId: resolvedCompanyId,
         fromId: user.id,
         text: content,
         fileUrl: null,
@@ -145,6 +164,22 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error('Support chat message failed', error);
-    return NextResponse.json({ error: 'Unable to save message' }, { status: 500 });
+    const devMode = process.env.NODE_ENV !== 'production';
+    const canExpose = devMode || user.role === 'SUPERADMIN';
+    const err = error as { message?: string; code?: string; meta?: unknown };
+    const details = canExpose
+      ? err?.message || (typeof error === 'string' ? error : JSON.stringify(error))
+      : undefined;
+    const code = canExpose ? err?.code : undefined;
+    const meta = canExpose ? err?.meta : undefined;
+    return NextResponse.json(
+      {
+        error: 'Unable to save message',
+        ...(details ? { details } : {}),
+        ...(code ? { code } : {}),
+        ...(meta ? { meta } : {}),
+      },
+      { status: 500 },
+    );
   }
 }

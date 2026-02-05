@@ -77,8 +77,12 @@ const SimpleChatBot = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [superAdminAvailable, setSuperAdminAvailable] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSupportSyncRef = useRef<string | null>(null);
+  const supportPollInFlight = useRef(false);
+  const onlinePollInFlight = useRef(false);
+  const superadminPollInFlight = useRef(false);
   const searchParams = useSearchParams();
   const chatIdParam = searchParams.get('chatId') || searchParams.get('chat_id');
 
@@ -105,6 +109,8 @@ const SimpleChatBot = () => {
 
   const loadSupportMessages = useCallback(async () => {
     if (!activeChatId || !currentUserId) return;
+    if (supportPollInFlight.current) return;
+    supportPollInFlight.current = true;
     try {
       const params = new URLSearchParams();
       if (currentUserRole === 'SUPERADMIN') {
@@ -140,11 +146,15 @@ const SimpleChatBot = () => {
       lastSupportSyncRef.current = newest.toISOString();
     } catch (error) {
       // Swallow polling errors to avoid UI spam
+    } finally {
+      supportPollInFlight.current = false;
     }
   }, [activeChatId, currentUserId, currentUserRole, mergeMessages]);
 
   const loadOnlineUsers = useCallback(async () => {
     if (currentUserRole !== 'SUPERADMIN') return;
+    if (onlinePollInFlight.current) return;
+    onlinePollInFlight.current = true;
     try {
       const response = await fetch('/api/chat/online-users');
       if (!response.ok) return;
@@ -153,6 +163,8 @@ const SimpleChatBot = () => {
       setOnlineUsers(users);
     } catch (error) {
       // Ignore errors to keep UI responsive
+    } finally {
+      onlinePollInFlight.current = false;
     }
   }, [currentUserRole]);
 
@@ -190,35 +202,47 @@ const SimpleChatBot = () => {
   }, []);
 
   useEffect(() => {
-    if (!activeChatId || !currentUserId) return;
-    lastSupportSyncRef.current = null;
-    loadSupportMessages();
-    const interval = setInterval(() => {
-      loadSupportMessages();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [activeChatId, currentUserId, loadSupportMessages]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      setSuperAdminAvailable(false);
+      return;
+    }
     let isActive = true;
-    const ping = async () => {
-      if (!isActive) return;
+    const loadSuperadminStatus = async () => {
+      if (superadminPollInFlight.current) return;
+      superadminPollInFlight.current = true;
       try {
-        await fetch('/api/presence/ping', { method: 'POST' });
+        const response = await fetch('/api/chat/superadmin-status');
+        if (!response.ok) {
+          if (isActive) setSuperAdminAvailable(false);
+          return;
+        }
+        const payload = await response.json();
+        if (isActive) setSuperAdminAvailable(Boolean(payload?.superadminOnline));
       } catch (error) {
-        // Ignore ping failures
+        if (isActive) setSuperAdminAvailable(false);
+      } finally {
+        superadminPollInFlight.current = false;
       }
     };
-    ping();
+    loadSuperadminStatus();
     const interval = setInterval(() => {
-      ping();
-    }, 30000);
+      loadSuperadminStatus();
+    }, 15000);
     return () => {
       isActive = false;
       clearInterval(interval);
     };
   }, [currentUserId]);
+
+  useEffect(() => {
+    if (!activeChatId || !currentUserId) return;
+    lastSupportSyncRef.current = null;
+    loadSupportMessages();
+    const interval = setInterval(() => {
+      loadSupportMessages();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [activeChatId, currentUserId, loadSupportMessages]);
 
   useEffect(() => {
     if (currentUserRole !== 'SUPERADMIN') {
@@ -228,7 +252,7 @@ const SimpleChatBot = () => {
     loadOnlineUsers();
     const interval = setInterval(() => {
       loadOnlineUsers();
-    }, 10000);
+    }, 15000);
     return () => clearInterval(interval);
   }, [currentUserRole, loadOnlineUsers]);
 
@@ -469,12 +493,13 @@ const SimpleChatBot = () => {
                 </span>
                 {onlineUsers.length ? (
                   onlineUsers.map((user) => (
-                    <span
+                    <Link
                       key={user.id}
-                      className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-emerald-700"
+                      href={`/chat?chatId=${encodeURIComponent(user.id)}`}
+                      className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-emerald-700 hover:border-emerald-200 hover:bg-emerald-100"
                     >
                       {user.name || user.email || 'User'}
-                    </span>
+                    </Link>
                   ))
                 ) : (
                   <span className="text-gray-400">No users online</span>
@@ -497,7 +522,7 @@ const SimpleChatBot = () => {
           >
             Send
           </button>
-          {superAdminOnline && (
+          {superAdminAvailable && (
             <div className="ml-auto flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
               <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
               Superadmin online

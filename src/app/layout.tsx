@@ -13,6 +13,7 @@ import { InviteConfirmListener } from "@/components/InviteConfirmListener";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import FloatingChatButton from "@/components/FloatingChatButton";
+import { PresencePing } from "@/components/PresencePing";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -130,6 +131,7 @@ export default async function RootLayout({
           <InviteConfirmListener userId={user?.id} />
           <ScrollToTop />
             <MobileSidebarProvider>
+            {user && <PresencePing />}
             {user && (
             <AppHeader
               key={`${user.name}-${user.company?.isOnboarded}`}

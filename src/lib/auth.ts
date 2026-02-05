@@ -74,12 +74,28 @@ export async function createSession(userId: string) {
 }
 
 export function sessionCookieOptions() {
+  const cookieDomain =
+    process.env.COOKIE_DOMAIN ||
+    (() => {
+      try {
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+        if (!appUrl) return undefined;
+        const hostname = new URL(appUrl).hostname;
+        if (hostname.endsWith('.clientwave.app') || hostname === 'clientwave.app') {
+          return '.clientwave.app';
+        }
+        return hostname;
+      } catch {
+        return undefined;
+      }
+    })();
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production', // Only secure in production
     sameSite: 'lax' as const,
     path: '/',
     maxAge: SESSION_MAX_AGE,
+    ...(cookieDomain ? { domain: cookieDomain } : {}),
   };
 }
 

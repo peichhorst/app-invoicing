@@ -16,7 +16,7 @@ const updateLastSeen = async (userId: string) => {
 
 export async function POST() {
   const user = await getCurrentUser();
-  if (!user || !user.companyId) {
+  if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 

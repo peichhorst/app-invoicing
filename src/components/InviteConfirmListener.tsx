@@ -52,6 +52,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   const messageCountRef = useRef<number | null>(null);
   const lastMessageIdRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
+  const isVisibleRef = useRef(true);
   const recentKeysRef = useRef<Map<string, number>>(new Map());
   const bookingToastKeysRef = useRef<Set<string>>(new Set());
   const processedBookingKeysRef = useRef<Set<string>>(new Set());
@@ -90,11 +91,15 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
     setLocalTabId(window.sessionStorage.getItem('cw-tab-id'));
   }, []);
 
-  // Debug: Log when component mounts
   useEffect(() => {
-    console.log('🔔 InviteConfirmListener mounted');
+    if (typeof document === 'undefined') return;
+    const updateVisibility = () => {
+      isVisibleRef.current = document.visibilityState === 'visible';
+    };
+    updateVisibility();
+    document.addEventListener('visibilitychange', updateVisibility);
     return () => {
-      console.log('🔕 InviteConfirmListener unmounted');
+      document.removeEventListener('visibilitychange', updateVisibility);
     };
   }, []);
 
@@ -249,33 +254,18 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
       }
       if (type === 'invoice-paid') {
         const { invoiceId, invoiceNumber, clientName, reverted } = payload || {};
-
-        // DEBUG LOGGING
-        console.log('📊 Processing invoice-paid event:', {
-          source,
-          invoiceId,
-          invoiceNumber,
-          reverted,
-          newCount
-        });
-        
         // Use invoiceId for key (most reliable)
         const key = invoiceId ? `invoice-${invoiceId}` : 'unknown';
         
         // Create fingerprint using count and reverted state ONLY (ignore invoice details)
         // This way both broadcast and polling will generate the same fingerprint
         const changeFingerprint = `count:${newCount}:${reverted ? 'rev' : 'paid'}`;
-        
-        console.log('🔑 Fingerprint:', changeFingerprint, 'Already processed?', processedCountChangesRef.current.has(changeFingerprint));
-        
+
         // If we've already processed this exact change, skip it
         if (processedCountChangesRef.current.has(changeFingerprint)) {
-          console.log('⏭️ SKIPPED - already processed');
           return;
         }
-        
-        console.log('✅ SHOWING TOAST');
-        
+
         // Mark this change as processed
         processedCountChangesRef.current.add(changeFingerprint);
         
@@ -326,9 +316,10 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
 
   // Polling fallback to catch updates across devices/browsers
   useEffect(() => {
-    if (!countsHydrated) return;
+    if (!countsHydrated || !userId) return;
     const poll = async () => {
       if (pollingRef.current) return;
+      if (!isVisibleRef.current) return;
       pollingRef.current = true;
       try {
         // Invites
@@ -442,10 +433,10 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
       }
     };
 
-    const interval = setInterval(poll, 4000);
+    const interval = setInterval(poll, 15000);
     void poll();
     return () => clearInterval(interval);
-  }, [processEvent, countsHydrated]);
+  }, [processEvent, countsHydrated, userId]);
 
   const showPermissionPrompt =
     isMounted && notificationPermission === 'default' && typeof Notification !== 'undefined';

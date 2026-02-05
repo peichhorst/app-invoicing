@@ -16,35 +16,39 @@ export async function GET(request: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
-  if (user.role !== 'SUPERADMIN') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
 
   const url = new URL(request.url);
   const windowMinutes = clampWindowMinutes(url.searchParams.get('window'));
   const since = new Date(Date.now() - windowMinutes * 60 * 1000);
 
   try {
-    const users = await prisma.user.findMany({
+    const superadmins = await prisma.user.findMany({
       where: {
-        role: { not: 'SUPERADMIN' },
+        role: 'SUPERADMIN',
         lastSeenAt: { gt: since },
       },
-      select: { id: true, name: true, email: true, role: true, lastSeenAt: true },
+      select: { id: true, name: true, email: true, lastSeenAt: true },
       orderBy: { lastSeenAt: 'desc' },
+      take: 1,
     });
 
-    const payload = users.map((entry) => ({
-      id: entry.id,
-      name: entry.name ?? null,
-      email: entry.email ?? null,
-      role: entry.role ?? null,
-      lastSeen: entry.lastSeenAt ? entry.lastSeenAt.toISOString() : null,
-    }));
+    if (!superadmins.length) {
+      return NextResponse.json({ superadminOnline: false, windowMinutes });
+    }
 
-    return NextResponse.json({ users: payload, windowMinutes });
+    const current = superadmins[0];
+    return NextResponse.json({
+      superadminOnline: true,
+      superadmin: {
+        id: current.id,
+        name: current.name ?? null,
+        email: current.email ?? null,
+        lastSeen: current.lastSeenAt ? current.lastSeenAt.toISOString() : null,
+      },
+      windowMinutes,
+    });
   } catch (error) {
-    console.error('Online users lookup failed', error);
-    return NextResponse.json({ users: [], windowMinutes });
+    console.error('Superadmin status lookup failed', error);
+    return NextResponse.json({ superadminOnline: false, windowMinutes });
   }
 }
