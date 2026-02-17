@@ -12,8 +12,9 @@ export async function GET() {
       return NextResponse.json({ messageCount: 0 }, { status: 200 });
     }
 
-    // Get count of unread messages for this user
-    const messages = await prisma.message.findMany({
+    // Get the most recent message with an explicit field list.
+    // This avoids selecting newly-added columns that may not exist yet in a drifted DB.
+    const lastMessage = await prisma.message.findFirst({
       where: {
         companyId: user.companyId,
         contextType: { not: 'SUPPORT_CHAT' },
@@ -24,12 +25,15 @@ export async function GET() {
           { toUserIds: buildListContainsFilter(user.id) },
         ],
       },
-      include: {
+      select: {
+        id: true,
+        text: true,
+        fromId: true,
+        sentAt: true,
         readBy: { select: { id: true } },
         from: { select: { name: true, email: true } },
       },
       orderBy: { sentAt: 'desc' },
-      take: 1, // Get the most recent message
     });
 
     // Count unread messages (not in readBy list)
@@ -50,8 +54,6 @@ export async function GET() {
         },
       },
     });
-
-    const lastMessage = messages[0];
 
     return NextResponse.json({
       messageCount: unreadCount,

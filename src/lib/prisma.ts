@@ -1,22 +1,13 @@
-// Import the mock client we created
-import { MockPrismaClient } from './mock-prisma';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg as PrismaPgAdapter } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
-// Try to import the real Prisma client, but fall back gracefully
-let RealPrismaClient: any = null;
-let realPrismaAvailable = false;
+const RealPrismaClient = PrismaClient;
+const PrismaPg = PrismaPgAdapter;
+const pg = { Pool };
+const realPrismaAvailable = true;
 
-try {
-  // Dynamically import Prisma to handle compatibility issues
-  const { PrismaClient } = require('@prisma/client');
-  RealPrismaClient = PrismaClient;
-  realPrismaAvailable = true;
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.warn('Real Prisma client not available, using mock implementation:', message);
-  realPrismaAvailable = false;
-}
-
-// Create a wrapper class that can use either real or mock Prisma
+// Create a wrapper class around Prisma client initialization and delegates.
 class PrismaWrapper {
   [key: string]: any;
   private prismaClient: any;
@@ -101,31 +92,48 @@ class PrismaWrapper {
     const resolvedDatabaseUrl = normalizeDatabaseUrl(
       process.env.DATABASE_URL || process.env.DIRECT_URL,
     );
-    const forceMock = process.env.USE_MOCK_DB === 'true';
 
-    if (!forceMock && realPrismaAvailable && RealPrismaClient) {
-      // Use real Prisma client
-      this.prismaClient = new RealPrismaClient({
-        log: ['error', 'warn'],
-        ...(resolvedDatabaseUrl
-          ? { datasources: { db: { url: resolvedDatabaseUrl } } }
-          : {}),
-      });
-    } else {
-      if (forceMock) {
-        console.warn('Using mock Prisma client (USE_MOCK_DB or file-based DATABASE_URL).');
+    if (realPrismaAvailable && RealPrismaClient && PrismaPg && pg) {
+      let connectionString = resolvedDatabaseUrl || process.env.DATABASE_URL;
+
+      if (!connectionString) {
+        this.prismaClient = this.createUnavailableClient('DATABASE_URL is not configured');
+      } else {
+        connectionString = connectionString.replace(/[?&]sslmode=[^&]*/g, '');
+
+        const needsSSL = connectionString.includes('supabase') ||
+          connectionString.includes('amazonaws') ||
+          !connectionString.includes('localhost');
+
+        const poolConfig: any = {
+          connectionString,
+          connectionTimeoutMillis: 10000,
+        };
+
+        if (needsSSL) {
+          poolConfig.ssl = { rejectUnauthorized: false };
+        }
+
+        const pool = new pg.Pool(poolConfig);
+        const adapter = new PrismaPg(pool);
+
+        this.prismaClient = new RealPrismaClient({
+          adapter,
+          log: ['error', 'warn'],
+        });
       }
-      // Use mock Prisma client
-      this.prismaClient = new MockPrismaClient();
+    } else {
+      this.prismaClient = this.createUnavailableClient(
+        'Prisma dependencies are unavailable at runtime',
+      );
     }
 
-    this.magicLink = this.prismaClient.magicLink ?? this.createMagicLinkDelegate();
-    this.product = this.prismaClient.product ?? this.createProductDelegate();
-    this.passwordResetToken =
-      this.prismaClient.passwordResetToken ?? this.createPasswordResetTokenDelegate();
-    this.position = this.prismaClient.position ?? this.createPositionDelegate();
-    this.booking = this.prismaClient.booking ?? this.createBookingDelegate();
-    this.availability = this.prismaClient.availability ?? this.createAvailabilityDelegate();
+    this.magicLink = this.getDelegateOrUnavailable('magicLink');
+    this.product = this.getDelegateOrUnavailable('product');
+    this.passwordResetToken = this.getDelegateOrUnavailable('passwordResetToken');
+    this.position = this.getDelegateOrUnavailable('position');
+    this.booking = this.getDelegateOrUnavailable('booking');
+    this.availability = this.getDelegateOrUnavailable('availability');
   }
 
   // Proxy all properties to the underlying client
@@ -138,109 +146,65 @@ class PrismaWrapper {
   }
 
   get company() {
-    if (this.prismaClient.company) {
-      return this.prismaClient.company;
-    }
-    
-    // If company methods don't exist in mock, create them
-    return {
-      findUnique: async ({ where, include }: { where: { id?: string; name?: string }; include?: any }) => {
-        // Placeholder implementation - would need to be implemented in MockPrismaClient
-        console.warn('Company findUnique not implemented in mock');
-        return null;
-      },
-      create: async ({ data }: { data: any }) => {
-        console.warn('Company create not implemented in mock');
-        return { ...data, id: 'mock-company-id' };
-      },
-      update: async ({ where, data }: { where: any; data: any }) => {
-        console.warn('Company update not implemented in mock');
-        return { ...data };
-      }
-    };
+    return this.getDelegateOrUnavailable('company');
   }
 
   get invoice() {
-    if (this.prismaClient.invoice) {
-      return this.prismaClient.invoice;
-    }
-    
-    return {
-      findMany: async ({ where, include, orderBy }: { where?: any; include?: any; orderBy?: any }) => {
-        console.warn('Invoice findMany not implemented in mock');
-        return [];
-      },
-      create: async ({ data }: { data: any }) => {
-        console.warn('Invoice create not implemented in mock');
-        return { ...data, id: 'mock-invoice-id' };
-      },
-      update: async ({ where, data }: { where: any; data: any }) => {
-        console.warn('Invoice update not implemented in mock');
-        return { ...data };
-      },
-      delete: async ({ where }: { where: any }) => {
-        console.warn('Invoice delete not implemented in mock');
-        return { id: 'mock-invoice-id' };
-      }
-    };
+    return this.getDelegateOrUnavailable('invoice');
   }
 
   get client() {
-    if (this.prismaClient.client) {
-      return this.prismaClient.client;
-    }
-    
-    return {
-      findMany: async ({ where, include }: { where?: any; include?: any }) => {
-        console.warn('Client findMany not implemented in mock');
-        return [];
-      },
-      create: async ({ data }: { data: any }) => {
-        console.warn('Client create not implemented in mock');
-        return { ...data, id: 'mock-client-id' };
-      },
-      update: async ({ where, data }: { where: any; data: any }) => {
-        console.warn('Client update not implemented in mock');
-        return { ...data };
-      }
-    };
+    return this.getDelegateOrUnavailable('client');
   }
 
   get payment() {
-    if (this.prismaClient.payment) {
-      return this.prismaClient.payment;
-    }
+    return this.getDelegateOrUnavailable('payment');
+  }
 
-    return {
-      findMany: async () => {
-        console.warn('Payment findMany not implemented in mock');
-        return [];
+  private getDelegateOrUnavailable(delegateName: string) {
+    const delegate = this.prismaClient?.[delegateName];
+    if (delegate) {
+      return delegate;
+    }
+    return this.createUnavailableClient(`Prisma delegate "${delegateName}" is unavailable`)[delegateName];
+  }
+
+  private createUnavailableClient(reason: string) {
+    const makeError = () => new Error(`Database unavailable: ${reason}. Mock data is disabled.`);
+
+    const throwingDelegate = new Proxy(
+      {},
+      {
+        get: (_target, prop) => {
+          if (typeof prop !== 'string') return undefined;
+          return async () => {
+            throw makeError();
+          };
+        },
       },
-      findFirst: async () => {
-        console.warn('Payment findFirst not implemented in mock');
-        return null;
+    );
+
+    return new Proxy(
+      {
+        __databaseUnavailable: true,
+        __databaseUnavailableReason: reason,
+        $connect: async () => {
+          throw makeError();
+        },
+        $disconnect: async () => undefined,
+        $transaction: async () => {
+          throw makeError();
+        },
       },
-      findUnique: async () => {
-        console.warn('Payment findUnique not implemented in mock');
-        return null;
+      {
+        get: (target, prop) => {
+          if (prop in target) {
+            return (target as any)[prop];
+          }
+          return throwingDelegate;
+        },
       },
-      create: async ({ data }: { data: any }) => {
-        console.warn('Payment create not implemented in mock');
-        return { ...data, id: 'mock-payment-id' };
-      },
-      update: async ({ data }: { data: any }) => {
-        console.warn('Payment update not implemented in mock');
-        return { ...data };
-      },
-      deleteMany: async () => {
-        console.warn('Payment deleteMany not implemented in mock');
-        return { count: 0 };
-      },
-      aggregate: async () => {
-        console.warn('Payment aggregate not implemented in mock');
-        return { _sum: { amount: 0 } };
-      },
-    };
+    );
   }
 
   private createMagicLinkDelegate() {

@@ -3,41 +3,24 @@ import { NextResponse } from 'next/server';
 import { createSession, hashPassword, sessionCookieOptions } from '@/lib/auth';
 import { TRIAL_LENGTH_MS } from '@/lib/plan';
 import { sendRegistrationAlert } from '@/lib/email';
-import { Role } from '@prisma/client';
+import prisma from '@/lib/prisma';
 
 type RegisterPayload = {
   email?: string;
   password?: string;
 };
 
-// Helper function to get Prisma client
-async function getPrisma() {
-  try {
-    const { default: prisma } = await import('@/lib/prisma');
-    
-    // Check if the prisma client has the expected methods (Prisma v5 compatibility)
-    if (prisma && typeof prisma.user?.findUnique === 'function') {
-      return prisma;
-    } else {
-      console.warn('Prisma client methods not available', {
-        hasUser: !!prisma?.user,
-        hasFindUnique: typeof prisma?.user?.findUnique === 'function',
-        hasCreate: typeof prisma?.user?.create === 'function',
-        prismaType: typeof prisma,
-        availableMethods: prisma ? Object.keys(prisma) : []
-      });
-      return null;
-    }
-  } catch (error) {
-    console.error('Failed to import Prisma client:', {
-      error: error instanceof Error ? error.message : String(error),
-      stack: error instanceof Error ? error.stack : null,
-      databaseUrlSet: !!process.env.DATABASE_URL,
-      connectionStringValid: process.env.DATABASE_URL?.includes('supabase.co') || process.env.DATABASE_URL?.includes('localhost') || process.env.DATABASE_URL?.includes('postgresql')
-    });
-    return null;
-  }
-}
+type PrismaCandidate = {
+  __databaseUnavailable?: boolean;
+  __databaseUnavailableReason?: string;
+  user?: {
+    findUnique?: unknown;
+    create?: unknown;
+  };
+  company?: {
+    create?: unknown;
+  };
+};
 
 export async function POST(request: Request) {
   try {
@@ -51,94 +34,47 @@ export async function POST(request: Request) {
       });
     }
 
-    const prisma = await getPrisma();
+    const prismaCandidate = prisma as PrismaCandidate | null;
     
     // Check if the Prisma client actually has the methods we need before attempting database operations
-    if (!prisma || typeof prisma.user?.findUnique !== 'function' || typeof prisma.user?.create !== 'function') {
+    if (
+      !prismaCandidate ||
+      prismaCandidate.__databaseUnavailable ||
+      typeof prismaCandidate.user?.findUnique !== 'function' ||
+      typeof prismaCandidate.user?.create !== 'function' ||
+      typeof prismaCandidate.company?.create !== 'function'
+    ) {
       // Log detailed error information for debugging
       console.error('Prisma client initialization failed:', {
-        prismaExists: !!prisma,
-        userMethodsExist: prisma ? !!prisma.user : false,
-        findUniqueMethodExists: prisma ? typeof prisma.user?.findUnique === 'function' : false,
-        createMethodExists: prisma ? typeof prisma.user?.create === 'function' : false,
+        prismaExists: !!prismaCandidate,
+        databaseUnavailable: !!prismaCandidate?.__databaseUnavailable,
+        databaseUnavailableReason: prismaCandidate?.__databaseUnavailableReason ?? null,
+        userMethodsExist: !!prismaCandidate?.user,
+        findUniqueMethodExists: typeof prismaCandidate?.user?.findUnique === 'function',
+        createMethodExists: typeof prismaCandidate?.user?.create === 'function',
+        companyCreateMethodExists: typeof prismaCandidate?.company?.create === 'function',
         databaseUrlSet: !!process.env.DATABASE_URL,
         nodeEnv: process.env.NODE_ENV,
         error: 'Prisma client methods not available'
       });
       
-      // If Prisma methods aren't available, use mock behavior in development
-      if (process.env.NODE_ENV === 'development') {
-        console.warn('Prisma client methods not available, proceeding with mock registration');
-        const mockPrisma = prisma ?? (await import('@/lib/prisma')).default;
-        
-        // Create a mock user object
-        const mockUser = {
-          id: crypto.randomUUID(),
-          email,
-          name: email.split('@')[0] || 'Invoice User',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          role: 'OWNER', // Using string instead of enum to avoid import issues
-          planTier: 'PRO_TRIAL',
-          proTrialEndsAt: new Date(Date.now() + TRIAL_LENGTH_MS),
-          proTrialReminderSent: false,
-          // ... other fields
-        };
-        
-        // Try to save the user to the mock database if possible
-        try {
-          // Create user in mock database
-          await mockPrisma.user.create({
-            data: {
-              id: mockUser.id,
-              email: mockUser.email,
-              name: mockUser.name,
-              password: await hashPassword(password), // Hash the password for consistency
-              planTier: mockUser.planTier,
-              role: mockUser.role,
-              proTrialEndsAt: mockUser.proTrialEndsAt,
-              proTrialReminderSent: mockUser.proTrialReminderSent,
-            },
-          });
-          
-          // Create a mock company for the user
-          const mockCompany = await mockPrisma.company.create({
-            data: {
-              name: `${mockUser.name}'s Workspace`,
-              ownerId: mockUser.id,
-            },
-          });
-          
-          // Update the user with the company ID
-          await mockPrisma.user.update({
-            where: { id: mockUser.id },
-            data: { companyId: mockCompany.id },
-          });
-        } catch (error) {
-          console.warn('Could not save mock user to database:', error);
+      return new Response(
+        `Database unavailable. Details:\n` +
+        `- Prisma client exists: ${!!prismaCandidate}\n` +
+        `- Prisma marked unavailable: ${!!prismaCandidate?.__databaseUnavailable}\n` +
+        `- Prisma unavailable reason: ${prismaCandidate?.__databaseUnavailableReason ?? 'n/a'}\n` +
+        `- User methods available: ${!!prismaCandidate?.user}\n` +
+        `- findUnique method: ${typeof prismaCandidate?.user?.findUnique === 'function'}\n` +
+        `- create method: ${typeof prismaCandidate?.user?.create === 'function'}\n` +
+        `- company.create method: ${typeof prismaCandidate?.company?.create === 'function'}\n` +
+        `- DATABASE_URL configured: ${!!process.env.DATABASE_URL}\n` +
+        `- Environment: ${process.env.NODE_ENV}\n\n` +
+        `Please check your database configuration and ensure your Supabase connection is working.`,
+        {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
         }
-        
-        const { token } = await createSession(mockUser.id);
-        
-        const res = NextResponse.json({ success: true, user: mockUser });
-        res.cookies.set('session_token', token, sessionCookieOptions());
-        return res;
-      } else {
-        return new Response(
-          `Database unavailable. Details:\n` +
-          `- Prisma client exists: ${!!prisma}\n` +
-          `- User methods available: ${!!prisma?.user}\n` +
-          `- findUnique method: ${typeof prisma?.user?.findUnique === 'function'}\n` +
-          `- create method: ${typeof prisma?.user?.create === 'function'}\n` +
-          `- DATABASE_URL configured: ${!!process.env.DATABASE_URL}\n` +
-          `- Environment: ${process.env.NODE_ENV}\n\n` +
-          `Please check your database configuration and ensure your Supabase connection is working.`,
-          {
-            status: 503,
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-          }
-        );
-      }
+      );
     }
 
     // If we have a working Prisma client, perform the actual registration
@@ -168,10 +104,8 @@ export async function POST(request: Request) {
 
     const company = await prisma.company.create({
       data: {
-        name: `${defaultName}'s Workspace`, // Use template literal instead of potentially undefined user.companyName
+        name: `${defaultName}'s Workspace`,
         ownerId: user.id,
-        // Handle the users connect differently for our mock implementation
-        // In a real Prisma client this would connect the user to the company
       },
     });
 
@@ -193,9 +127,16 @@ export async function POST(request: Request) {
     return res;
   } catch (error: unknown) {
     console.error('Registration failed', error);
-    return new Response('Registration failed. Please try again.', {
-      status: 500,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-    });
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorStack = error instanceof Error ? error.stack : '';
+    
+    return new Response(
+      `Registration failed. Please try again.\n\nDebug info:\n${errorMessage}\n\n${process.env.NODE_ENV === 'development' ? errorStack : ''}`,
+      {
+        status: 500,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      }
+    );
   }
 }

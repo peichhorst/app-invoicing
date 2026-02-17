@@ -49,6 +49,56 @@ This guide provides solutions for common issues you may encounter while using Cl
 5. **Firewall**: Check if corporate firewall is blocking connections
 6. **Retry Sync**: Manually trigger a sync in Integration settings
 
+## Database Issues
+
+### "Database unavailable" During Registration
+**Symptom**: `/api/auth/register` returns `503 Database unavailable` and signup cannot continue
+
+**What changed**:
+1. ClientWave no longer falls back to mock/file-based persistence for auth
+2. Registration now requires a working Prisma + PostgreSQL connection in every environment
+3. If the database is unavailable, auth fails fast instead of writing local mock files
+
+**Solutions**:
+1. **Set `DATABASE_URL`**: Confirm it is present in your runtime environment (local + deploy)
+2. **Check Connectivity**: Ensure the URL points to a reachable PostgreSQL instance
+3. **Run Migrations**: Apply schema migrations to the target database
+4. **Verify Runtime Env**: Confirm your hosting provider actually injected the expected env vars
+5. **Verify Runtime Packages**: Ensure `@prisma/client` is installed in `dependencies` (not only `devDependencies`)
+6. **Redeploy After Dependency Changes**: A fresh deploy is required after moving Prisma packages
+7. **Read Detailed Reason**: If response includes `Prisma unavailable reason: Prisma dependencies are unavailable at runtime`, the runtime cannot load Prisma modules and needs a clean redeploy/install
+8. **Prisma 7 Runtime Utils**: If logs show `Cannot find module '@prisma/client-runtime-utils'`, add `@prisma/client-runtime-utils` to runtime dependencies and redeploy
+
+**Usage Example**:
+```bash
+# Validate the app has a DB URL at runtime
+echo "$DATABASE_URL"
+
+# Registration now requires a real DB; if DB is unavailable, this returns 503
+curl -i -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@example.com","password":"StrongPass123!"}'
+```
+
+### "Column does not exist" Errors
+**Symptom**: A Prisma error mentions a missing column (for example, `Contract.pdfUrl`)
+
+**Solutions**:
+1. **Check DB Target**: Confirm which database the app is using (`DATABASE_URL`)
+2. **Apply Migrations**: Run migrations against the correct environment
+3. **Verify Columns**: Query `information_schema.columns` to confirm the column exists
+4. **Regenerate Client**: Run `npx prisma generate` if the schema changed
+5. **Review Checklist**: Follow the migration checklist in `docs/database/README.md`
+
+**Usage Example (Message sender role drift)**:
+```bash
+# Apply pending migrations to production target
+npx prisma migrate deploy
+
+# If migration deploy is blocked, apply the missing column manually
+psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderRole" TEXT;'
+```
+
 ## Performance Issues
 
 ### Slow Loading Times
