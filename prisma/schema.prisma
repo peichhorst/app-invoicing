@@ -5,7 +5,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum Role {
@@ -678,13 +677,14 @@ model Message {
   text         String
   fileUrl      String?
   toAll        Boolean  @default(false)
-  toRoles      String
-  toPositions  String
-  toUserIds    String
+  toRoles      String[] @default([])
+  toPositions  String[] @default([])
+  toUserIds    String[] @default([])
   contextType  String?
   contextId    String?
-  participants String
+  participants String[] @default([])
   parentId     String?
+  senderRole   String?  // Explicit role for display: 'USER', 'OWNER', 'ADMIN', 'SUPERADMIN', 'BOT'
   sentAt       DateTime @default(now())
   readBy       User[]   @relation("ReadMessages")
 
