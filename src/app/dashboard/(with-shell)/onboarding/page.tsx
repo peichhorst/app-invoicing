@@ -113,12 +113,12 @@ export default async function DashboardOnboardingPage({ searchParams }: PageProp
     showEmbedSnippet ? getEmbedSnippet({ userId: user.id, meetingTypes, baseUrl: undefined }) : null;
 
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950 px-4 py-10 sm:px-8">
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className="space-y-2 rounded-3xl border border-brand-primary-100 bg-white/80 p-6 shadow-sm">
+        <div className="space-y-2 rounded-3xl border border-brand-primary-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900 p-6 shadow-sm">
           <p className="text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Welcome aboard to ClientWave!</p>
-          <h1 className="text-3xl font-semibold text-zinc-900">Finish setting up your workspace</h1>
-          <p className="text-sm text-zinc-600">
+          <h1 className="text-3xl font-semibold text-zinc-900 dark:text-zinc-100">Finish setting up your workspace</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Before getting started, we just need a few details.
           </p>
         </div>

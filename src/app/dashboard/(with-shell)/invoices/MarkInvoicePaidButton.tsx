@@ -30,8 +30,18 @@ export function MarkInvoicePaidButton({
     try {
       const res = await fetch(`/api/invoices/${invoiceId}/mark-paid`, { method: targetMethod });
       if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt || 'Failed to update paid status');
+        const contentType = res.headers.get('content-type') ?? '';
+        let message = 'Failed to update paid status';
+
+        if (contentType.includes('application/json')) {
+          const data = await res.json().catch(() => null);
+          message = data?.error || data?.message || message;
+        } else {
+          const txt = await res.text();
+          message = txt || message;
+        }
+
+        throw new Error(message);
       }
 
       try {

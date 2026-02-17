@@ -123,7 +123,7 @@ export function OnboardingWizard({
           className={`rounded-xl border-2 px-6 py-4 text-center transition ${
             step === 1
               ? 'border-brand-primary-600 bg-brand-primary-600 text-white shadow-lg'
-              : 'border-zinc-200 bg-white text-zinc-600 hover:border-brand-primary-300 hover:bg-brand-primary-50'
+              : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-brand-primary-300 hover:bg-brand-primary-50 dark:hover:bg-zinc-700'
           }`}
           aria-current={step === 1 ? 'step' : undefined}
         >
@@ -139,7 +139,7 @@ export function OnboardingWizard({
             className={`rounded-xl border-2 px-6 py-4 text-center transition ${
               step === 2
                 ? 'border-brand-primary-600 bg-brand-primary-600 text-white shadow-lg'
-                : 'border-zinc-200 bg-white text-zinc-600 hover:border-brand-primary-300 hover:bg-brand-primary-50'
+                : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-brand-primary-300 hover:bg-brand-primary-50 dark:hover:bg-zinc-700'
             }`}
             aria-current={step === 2 ? 'step' : undefined}
           >
@@ -155,7 +155,7 @@ export function OnboardingWizard({
           className={`rounded-xl border-2 px-6 py-4 text-center transition ${
             step === (showBusiness ? 3 : 2)
               ? 'border-brand-primary-600 bg-brand-primary-600 text-white shadow-lg'
-              : 'border-zinc-200 bg-white text-zinc-600 hover:border-brand-primary-300 hover:bg-brand-primary-50'
+              : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:border-brand-primary-300 hover:bg-brand-primary-50 dark:hover:bg-zinc-700'
           }`}
           aria-current={step === (showBusiness ? 3 : 2) ? 'step' : undefined}
         >
@@ -167,7 +167,7 @@ export function OnboardingWizard({
       </div>
 
       {step === 1 && (
-        <div className="rounded-3xl border border-brand-primary-100 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-3xl border border-brand-primary-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900 p-6 shadow-sm">
           <ProfileForm
             initial={{
               name: user.name ?? '',
@@ -203,7 +203,7 @@ export function OnboardingWizard({
       )}
 
       {showBusiness && step === 2 && company && (
-        <div className="rounded-3xl border border-brand-primary-100 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-3xl border border-brand-primary-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900 p-6 shadow-sm">
           <CompanySettings
             key={`${company.id}-${company.updatedAt ?? ''}`}
             initialName={company.name ?? ''}
@@ -240,7 +240,7 @@ export function OnboardingWizard({
       )}
 
       {step === (showBusiness ? 3 : 2) && (
-        <div className="rounded-3xl border border-brand-primary-100 bg-white/80 p-6 shadow-sm">
+        <div className="rounded-3xl border border-brand-primary-100 dark:border-zinc-800 bg-white/80 dark:bg-zinc-900 p-6 shadow-sm">
           <SchedulingForm
             availability={availability}
             bookingLink={bookingLink}

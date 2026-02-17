@@ -28,6 +28,7 @@ The Invoices module allows you to create, send, and track professional invoices 
 
 ### Line Items
 - **Description**: Clear explanation of goods/services provided
+- **Name**: Defaults to the description for internal records and integrations
 - **Quantity**: Amount of goods or time spent
 - **Rate**: Price per unit or hourly rate
 - **Amount**: Calculated total for each line item

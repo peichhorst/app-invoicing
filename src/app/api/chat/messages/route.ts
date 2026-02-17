@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { serializeRecipientList } from '@/lib/messageRecipients';
+import { normalizeList } from '@/lib/messageRecipients';
+import { debugLog } from '@/lib/debugLog';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,7 @@ const resolveCompanyId = async (
   user: { id: string; role?: string | null; companyId?: string | null },
   chatId: string,
 ) => {
-  if (user.companyId) return user.companyId;
+  // For SUPERADMIN, always resolve to the target user's company
   if (user.role === 'SUPERADMIN') {
     const target = await prisma.user.findUnique({
       where: { id: chatId },
@@ -53,7 +54,8 @@ const resolveCompanyId = async (
     });
     return target?.companyId ?? null;
   }
-  return null;
+  // For regular users, use their own company
+  return user.companyId ?? null;
 };
 
 export async function GET(request: Request) {
@@ -61,6 +63,8 @@ export async function GET(request: Request) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
+
+  debugLog('[CHAT_MSG_GET_START]', { userId: user.id, userRole: user.role });
 
   const url = new URL(request.url);
   const chatIdParam = url.searchParams.get('chatId') || url.searchParams.get('chat_id');
@@ -73,6 +77,8 @@ export async function GET(request: Request) {
   }
 
   const resolvedCompanyId = await resolveCompanyId(user, resolved.chatId);
+
+  debugLog('[CHAT_MSG_GET_RESOLVED]', { chatId: resolved.chatId, companyId: resolvedCompanyId, userRole: user.role });
 
   const messages = await prisma.message.findMany({
     where: {
@@ -87,6 +93,20 @@ export async function GET(request: Request) {
     orderBy: { sentAt: 'asc' },
   });
 
+  debugLog('[CHAT_MSG_GET_FETCHED]', { count: messages.length, chatId: resolved.chatId });
+
+  // Debug: log what we're returning
+  debugLog('[CHAT_MSG_GET_RESPONSE]', {
+    messageCount: messages.length,
+    messages: messages.map((m) => ({
+      id: m.id,
+      fromId: m.fromId,
+      fromRole: m.from?.role,
+      fromName: m.from?.name,
+      text: m.text?.substring(0, 30),
+    })),
+  });
+
   return NextResponse.json({
     messages: messages.map((message) => ({
       id: message.id,
@@ -94,7 +114,7 @@ export async function GET(request: Request) {
       sentAt: message.sentAt.toISOString(),
       fromId: message.fromId,
       fromName: message.from?.name ?? message.from?.email ?? null,
-      fromRole: message.from?.role ?? null,
+      fromRole: message.senderRole ?? message.from?.role ?? null,
       chatId: message.contextId ?? null,
     })),
   });
@@ -114,6 +134,8 @@ export async function POST(request: Request) {
       text?: string;
       role?: string;
     };
+    
+    debugLog('[CHAT_MSG_POST_START]', { userId: user.id, userRole: user.role, body });
 
     const content = String(body.content ?? body.text ?? '').trim();
     if (!content) {
@@ -130,7 +152,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing company for chat' }, { status: 400 });
     }
 
-    const participants = Array.from(new Set([user.id, resolved.chatId]));
+    // Validate that the Company actually exists to avoid foreign key constraint errors
+    const company = await prisma.company.findUnique({
+      where: { id: resolvedCompanyId },
+      select: { id: true },
+    });
+
+    if (!company) {
+      console.error('Support chat message failed: Company not found', {
+        userId: user.id,
+        companyId: resolvedCompanyId,
+        chatId: resolved.chatId,
+      });
+      return NextResponse.json(
+        { error: 'Invalid company reference. Please contact support.' },
+        { status: 400 },
+      );
+    }
+
+    const participants = Array.from(new Set(normalizeList([user.id, resolved.chatId])));
+    const toUserIds = normalizeList([resolved.chatId]);
+    
+    // Determine sender role: either from body.role (for BOT) or user.role
+    const senderRole = body.role?.toUpperCase() === 'BOT' ? 'BOT' : (user.role || 'USER');
+
+    debugLog('[CHAT_MSG_BEFORE_CREATE]', { resolvedChatId: resolved.chatId, resolvedCompanyId, participants, toUserIds, senderRole });
 
     const message = await prisma.message.create({
       data: {
@@ -139,16 +185,24 @@ export async function POST(request: Request) {
         text: content,
         fileUrl: null,
         toAll: false,
-        toRoles: serializeRecipientList([]),
-        toPositions: serializeRecipientList([]),
-        toUserIds: serializeRecipientList([resolved.chatId]),
-        participants: serializeRecipientList(participants),
         contextType: SUPPORT_CONTEXT,
         contextId: resolved.chatId,
+        senderRole,
+        ...(toUserIds.length ? { toUserIds } : {}),
+        ...(participants.length ? { participants } : {}),
       },
       include: {
         from: { select: { id: true, name: true, email: true, role: true } },
       },
+    });
+
+    debugLog('[CHAT_MSG_CREATED]', { 
+      messageId: message.id, 
+      fromId: message.fromId, 
+      fromRole: message.from?.role,
+      contextId: message.contextId,
+      senderRole: user.role,
+      senderName: user.name,
     });
 
     return NextResponse.json({
@@ -158,17 +212,17 @@ export async function POST(request: Request) {
         sentAt: message.sentAt.toISOString(),
         fromId: message.fromId,
         fromName: message.from?.name ?? message.from?.email ?? null,
-        fromRole: message.from?.role ?? null,
+        fromRole: message.senderRole ?? message.from?.role ?? null,
         chatId: message.contextId ?? null,
       },
     });
   } catch (error) {
-    console.error('Support chat message failed', error);
+    const err = error as { message?: string; code?: string; meta?: unknown };
+    debugLog('[CHAT_MSG_ERROR]', { message: err?.message, code: err?.code, userId: user.id, userRole: user.role });
     const devMode = process.env.NODE_ENV !== 'production';
     const canExpose = devMode || user.role === 'SUPERADMIN';
-    const err = error as { message?: string; code?: string; meta?: unknown };
     const details = canExpose
-      ? err?.message || (typeof error === 'string' ? error : JSON.stringify(error))
+      ? err?.message || (typeof error === 'string' ? error : String(error))
       : undefined;
     const code = canExpose ? err?.code : undefined;
     const meta = canExpose ? err?.meta : undefined;

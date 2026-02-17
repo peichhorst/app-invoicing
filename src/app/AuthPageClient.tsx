@@ -7,7 +7,6 @@ import { Logo } from "@/components/Logo";
 import AppHeader from "@/components/AppHeader";
 import { GoogleIcon } from "@/components/GoogleIcon";
 import { InstallPromptButton } from "@/app/InstallPromptButton";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Mode = "login" | "register";
 
@@ -126,7 +125,6 @@ export default function AuthPageClient() {
   return (
     <>
       <AppHeader user={null} />
-      <ThemeToggle />
       {heroWrapper(
         <>
           {heroCopy}

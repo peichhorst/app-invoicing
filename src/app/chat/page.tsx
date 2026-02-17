@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { DebugPanel } from '@/components/DebugPanel';
 
 interface Message {
   id: string;
@@ -77,6 +78,7 @@ const SimpleChatBot = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [userMessages, setUserMessages] = useState<Record<string, any[]>>({});
   const [superAdminAvailable, setSuperAdminAvailable] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastSupportSyncRef = useRef<string | null>(null);
@@ -130,11 +132,13 @@ const SimpleChatBot = () => {
         id: String(item.id),
         text: String(item.text ?? ''),
         sender:
-          item.fromRole === 'SUPERADMIN'
+          item.fromId === currentUserId
+            ? currentUserRole === 'SUPERADMIN' ? 'superadmin' : 'user'
+            : item.fromRole === 'BOT'
+            ? 'bot'
+            : item.fromRole === 'SUPERADMIN'
             ? 'superadmin'
-            : item.fromId === currentUserId
-            ? 'user'
-            : 'superadmin',
+            : 'user',
         timestamp: new Date(item.sentAt),
       })) as Message[];
 
@@ -160,7 +164,31 @@ const SimpleChatBot = () => {
       if (!response.ok) return;
       const payload = await response.json();
       const users = Array.isArray(payload?.users) ? payload.users : [];
-      setOnlineUsers(users);
+      const sortedUsers = [...users].sort((a, b) => {
+        const aSeen = a?.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+        const bSeen = b?.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+        if (aSeen !== bSeen) return bSeen - aSeen;
+        return String(a?.id).localeCompare(String(b?.id));
+      });
+      setOnlineUsers(sortedUsers);
+      
+      // Fetch messages for each user
+      const messagesMap: Record<string, any[]> = {};
+      for (const user of sortedUsers) {
+        try {
+          const msgResponse = await fetch(`/api/chat/messages?chatId=${encodeURIComponent(user.id)}`);
+          if (msgResponse.ok) {
+            const msgPayload = await msgResponse.json();
+            const rawMessages = Array.isArray(msgPayload?.messages) ? msgPayload.messages : [];
+            messagesMap[user.id] = rawMessages.filter(
+              (msg: any) => msg?.fromId === user.id && msg?.fromRole !== 'SUPERADMIN',
+            );
+          }
+        } catch (err) {
+          // Ignore individual message fetch errors
+        }
+      }
+      setUserMessages(messagesMap);
     } catch (error) {
       // Ignore errors to keep UI responsive
     } finally {
@@ -206,6 +234,10 @@ const SimpleChatBot = () => {
       setSuperAdminAvailable(false);
       return;
     }
+    if (process.env.NEXT_PUBLIC_DISABLE_POLLING === 'true') {
+      setSuperAdminAvailable(false);
+      return;
+    }
     let isActive = true;
     const loadSuperadminStatus = async () => {
       if (superadminPollInFlight.current) return;
@@ -236,6 +268,7 @@ const SimpleChatBot = () => {
 
   useEffect(() => {
     if (!activeChatId || !currentUserId) return;
+    if (process.env.NEXT_PUBLIC_DISABLE_POLLING === 'true') return;
     lastSupportSyncRef.current = null;
     loadSupportMessages();
     const interval = setInterval(() => {
@@ -245,7 +278,18 @@ const SimpleChatBot = () => {
   }, [activeChatId, currentUserId, loadSupportMessages]);
 
   useEffect(() => {
+    if (currentUserRole !== 'SUPERADMIN') return;
+    if (!activeChatId) return;
+    lastSupportSyncRef.current = null;
+    setMessages([]);
+  }, [activeChatId, currentUserRole]);
+
+  useEffect(() => {
     if (currentUserRole !== 'SUPERADMIN') {
+      setOnlineUsers([]);
+      return;
+    }
+    if (process.env.NEXT_PUBLIC_DISABLE_POLLING === 'true') {
       setOnlineUsers([]);
       return;
     }
@@ -294,11 +338,13 @@ const SimpleChatBot = () => {
         id: String(saved.id),
         text: String(saved.text ?? text),
         sender:
-          saved.fromRole === 'SUPERADMIN'
+          saved.fromId === currentUserId
+            ? currentUserRole === 'SUPERADMIN' ? 'superadmin' : 'user'
+            : saved.fromRole === 'BOT'
+            ? 'bot'
+            : saved.fromRole === 'SUPERADMIN'
             ? 'superadmin'
-            : saved.fromId === currentUserId
-            ? 'user'
-            : sender,
+            : 'user',
         timestamp: new Date(saved.sentAt),
       };
       setMessages((prev) => {
@@ -342,25 +388,35 @@ const SimpleChatBot = () => {
       });
 
       const payload = await response.json();
+      const botText = payload?.response || 'Sorry, I had trouble responding.';
+      const botTempId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const botMessage: Message = {
-        id: Date.now().toString(),
-        text: payload?.response || 'Sorry, I had trouble responding.',
+        id: botTempId,
+        text: botText,
         sender: 'bot',
         timestamp: new Date(),
         sources: Array.isArray(payload?.sources) ? payload.sources : [],
         fallback: Boolean(payload?.fallback),
       };
       setMessages((prev) => [...prev, botMessage]);
+      
+      // Persist bot message to database
+      persistSupportMessage(botText, botTempId, 'bot');
     } catch (error) {
+      const botText = 'Sorry, I had trouble responding. Please try again.';
+      const botTempId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const botMessage: Message = {
-        id: Date.now().toString(),
-        text: 'Sorry, I had trouble responding. Please try again.',
+        id: botTempId,
+        text: botText,
         sender: 'bot',
         timestamp: new Date(),
         sources: [],
         fallback: true,
       };
       setMessages((prev) => [...prev, botMessage]);
+      
+      // Persist error message to database
+      persistSupportMessage(botText, botTempId, 'bot');
     } finally {
       setIsLoading(false);
     }
@@ -394,10 +450,63 @@ const SimpleChatBot = () => {
     <div className="flex flex-col h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-4xl mx-auto px-4 py-4">
-          <h1 className="text-xl font-semibold text-gray-800">ClientWave Assistant</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-semibold text-gray-800">ClientWave Assistant</h1>
+            {currentUserRole !== 'SUPERADMIN' && superAdminAvailable && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Live Agent Online
+              </span>
+            )}
+          </div>
           <p className="text-sm text-gray-600">Ask me anything about ClientWave</p>
         </div>
       </div>
+
+      {currentUserRole === 'SUPERADMIN' && (
+        <div className="bg-white border-b p-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="flex flex-col gap-2 text-xs text-gray-600">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                Online Users
+              </span>
+              {onlineUsers.length ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {onlineUsers.map((user) => (
+                    <div key={user.id} className="rounded-lg border border-emerald-100 bg-emerald-50 p-2">
+                      <Link
+                        href={`/chat?chatId=${encodeURIComponent(user.id)}`}
+                        className="rounded-full border border-emerald-100 bg-emerald-100 px-2 py-0.5 text-emerald-700 hover:border-emerald-200 hover:bg-emerald-100 inline-block"
+                      >
+                        {user.name || user.email || 'User'}
+                      </Link>
+                      <div className="mt-2 text-xs text-emerald-600 bg-white rounded p-2 max-h-24 overflow-y-auto">
+                        {userMessages[user.id]?.length ? (
+                          [...userMessages[user.id]]
+                            .sort(
+                              (a, b) =>
+                                new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime(),
+                            )
+                            .map((msg, idx) => (
+                              <div key={idx} className="border-b border-emerald-100 pb-1 mb-1 last:border-b-0">
+                                <span className="text-[10px] text-emerald-500">{new Date(msg.sentAt).toLocaleTimeString()}</span>
+                                <p className="text-xs text-emerald-700 break-words">{msg.text}</p>
+                              </div>
+                            ))
+                        ) : (
+                          <span className="text-emerald-500 italic">No messages</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-gray-400">No users online</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto p-4 pb-20">
         <div className="max-w-4xl mx-auto space-y-4">
@@ -487,52 +596,30 @@ const SimpleChatBot = () => {
                   Reply
                 </button>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                  Online
-                </span>
-                {onlineUsers.length ? (
-                  onlineUsers.map((user) => (
-                    <Link
-                      key={user.id}
-                      href={`/chat?chatId=${encodeURIComponent(user.id)}`}
-                      className="rounded-full border border-emerald-100 bg-emerald-50 px-2 py-0.5 text-emerald-700 hover:border-emerald-200 hover:bg-emerald-100"
-                    >
-                      {user.name || user.email || 'User'}
-                    </Link>
-                  ))
-                ) : (
-                  <span className="text-gray-400">No users online</span>
-                )}
-              </div>
             </div>
           )}
-          <textarea
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message..."
-            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-            rows={1}
-          />
-          <button
-            onClick={handleSendMessage}
-            disabled={isLoading || !inputText.trim()}
-            className="bg-blue-500 text-white rounded-lg px-4 py-2 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-          >
-            Send
-          </button>
-          {superAdminAvailable && (
-            <div className="ml-auto flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700">
-              <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-              Superadmin online
-              {currentUserRole === 'SUPERADMIN' && chatIdParam ? (
-                <span className="text-emerald-600/80">Chat ID: {chatIdParam}</span>
-              ) : null}
-            </div>
+          {currentUserRole !== 'SUPERADMIN' && (
+            <>
+              <textarea
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Type your message..."
+                className="flex-1 border border-gray-300 rounded-lg px-4 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={1}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={isLoading || !inputText.trim()}
+                className="bg-blue-500 text-white rounded-lg px-4 py-2 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                Send
+              </button>
+            </>
           )}
         </div>
       </div>
+      <DebugPanel />
     </div>
   );
 };

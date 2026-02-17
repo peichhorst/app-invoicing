@@ -112,6 +112,23 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning style={htmlStyle as React.CSSProperties}>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  var theme = localStorage.getItem('clientwave-theme');
+                  if (theme === 'dark' || theme === 'light') {
+                    document.documentElement.classList.remove('light', 'dark');
+                    document.documentElement.classList.add(theme);
+                  } else {
+                    document.documentElement.classList.add('light');
+                  }
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
         <link rel="icon" href="/icon-192.png" type="image/png" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <script

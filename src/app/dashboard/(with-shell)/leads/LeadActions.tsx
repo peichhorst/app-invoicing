@@ -45,6 +45,8 @@ export function LeadActions({ leadId, status, hasClient }: LeadActionsProps) {
 
   const handleConvertToClient = async () => {
     setBusyAction('Converting');
+    setShowConvertConfirm(false);
+    
     try {
       const res = await fetch(`/api/leads/${leadId}/convert-to-client`, { method: 'POST' });
       if (!res.ok) {
@@ -53,19 +55,16 @@ export function LeadActions({ leadId, status, hasClient }: LeadActionsProps) {
       }
 
       const result = await res.json();
-      alert('Lead successfully converted to client!');
+      
       // Redirect to the specific client page
       if (result.clientId) {
         router.push(`/dashboard/clients/${result.clientId}`);
       } else {
         router.push(`/dashboard/clients`);
       }
-      router.refresh();
     } catch (error: any) {
       alert(error.message || 'Something went wrong');
-    } finally {
       setBusyAction(null);
-      setShowConvertConfirm(false);
     }
   };
 

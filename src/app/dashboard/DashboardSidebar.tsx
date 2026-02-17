@@ -238,19 +238,8 @@ export function DashboardSidebar({ className }: { className?: string }) {
     >
       <div className="relative flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <div>
-            {!collapsed && (
-              <>
-                <div className="flex items-center gap-2">
-                  {className?.includes('pt-4') && <Logo size="sm" showText={false} />}
-                  <h2 className={`mt-1 text-lg font-small pb-2 ${sidebarTheme === 'dark' ? 'text-zinc-100' : ''}`} style={sidebarTheme === 'dark' ? {} : { color: 'var(--color-brand-logo-text)' }}>
-                    Control Center
-                  </h2>
-                </div>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
+          
+          <div className={`flex ${collapsed ? 'flex-col' : 'flex-row'} items-center gap-2`}>
             <button
               type="button"
               onClick={() => setCollapsed((prev) => !prev)}

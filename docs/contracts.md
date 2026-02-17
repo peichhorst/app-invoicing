@@ -87,6 +87,7 @@ A contract in ClientWave serves as the formal agreement that defines the relatio
 - **Audit Trail**: Complete record of signing process
 - **Tamper Detection**: Cryptographic protection against alterations
 - **Legal Compliance**: Adherence to electronic signature laws
+- **PDF Storage**: Executed contracts are stored as a PDF for later retrieval
 
 ## Contract Administration
 

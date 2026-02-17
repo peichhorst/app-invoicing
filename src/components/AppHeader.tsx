@@ -157,12 +157,15 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
                 type="button"
                 ref={buttonRef}
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="inline-flex items-center gap-2 rounded-full bg-white/90 dark:bg-zinc-800/90 px-3 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-700 dark:text-zinc-200 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary-700"
+                className="inline-flex items-center gap-2 rounded-full bg-zinc-100 dark:bg-zinc-900 px-3 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-700 dark:text-zinc-200 shadow-sm border border-zinc-200 dark:border-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary-700"
                 aria-haspopup="true"
                 aria-expanded={menuOpen}
               >
                 <span className="ring-1 ring-brand-primary-100 dark:ring-zinc-700 rounded-full">{avatar}</span>
-                <ChevronDown size={18} style={{ color: themeLogoColor }} />
+                <ChevronDown 
+                  size={18} 
+                  style={{ color: theme === 'dark' ? 'white' : themeLogoColor }} 
+                />
               </button>
               {menuOpen && (
                 <div

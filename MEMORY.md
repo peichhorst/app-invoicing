@@ -13,6 +13,18 @@
 - Message recipient lists are stored as JSON-encoded strings with parse/serialize helpers.
 
 ## Latest Update
+2026-02-04: Added NEXT_PUBLIC_DISABLE_POLLING gates to presence, chat, and invite polling so local reloads can be isolated.
+2026-02-04: Scoped auth cookie domain to production only so localhost logins aren’t broken by the .clientwave.app domain.
+2026-02-04: Made invoice numbers optional in InvoiceService and auto-generated them when missing to prevent invoice creation errors.
+2026-02-04: Deleted BOOTSTRAP.md per workspace rules and pushed commit 2b6f76b with the auth cookie and chat/presence fixes.
+2026-02-04: Added optional cookie domain support (defaulting to .clientwave.app when applicable) so auth cookies work across www/apex hosts.
+2026-02-04: Adjusted Prisma pooler URL normalization to only force pgBouncer params for transaction pooler (port 6543) so session pooler connections remain clean.
+2026-02-04: Normalized Supabase pooler URLs in the Prisma wrapper to auto-apply pgBouncer params and allowed superadmins to see support chat save error details.
+2026-02-04: Reduced InviteConfirmListener polling frequency, paused polling when the tab is hidden, and removed debug logs to reduce constant rendering noise.
+2026-02-04: Added a migration for Invoice pdfUrl, applied the column to Supabase via psql, and cleaned up the temporary SQL file.
+2026-02-04: Switched local dev back to Postgres, restored the Prisma schema provider, updated .env.local to use the Supabase transaction pooler (pgbouncer/statement_cache_size=0), and regenerated the Prisma client.
+2026-02-04: Enabled USE_MOCK_DB in .env.local and commented the SQLite URL to avoid Prisma schema validation errors with the Postgres-only schema.
+2026-02-04: Switched local dev back to SQLite (file-based DATABASE_URL) and updated Prisma wrapper to use the mock client only when USE_MOCK_DB is enabled.
 2026-02-03: Normalized core MD files to ASCII, filled missing USER.md fields, curated MEMORY.md, expanded SOUL.md with app-invoicing priorities, narrowed the JSDoc rule, wired chat to a doc-backed OpenAI agent with env config, added chat source links with a viewer endpoint, and deduped returned sources.
 2026-02-03: Removed duplicate docs sidebars by simplifying docs overview and opportunities pages to rely on the shared layout.
 2026-02-03: Replaced inline "->" markers with &rarr; entities in docs pages to fix JSX parse errors.
@@ -46,3 +58,27 @@
 2026-02-03: Moved the superadmin online badge to the right of the chat send button.
 2026-02-03: Added a superadmin-only online users list for support chat, backed by a new /api/chat/online-users endpoint.
 2026-02-03: Added user presence tracking (lastSeenAt), a /api/presence/ping endpoint, and superadmin online-user list driven by lastSeenAt with chat-side heartbeat pings.
+2026-02-03: Removed the SQLite DATABASE_URL from .env so Prisma no longer defaults to file-based dev DB.
+2026-02-03: Added superadmin presence lookup for chat so non-superadmins can see when a superadmin is online.
+2026-02-03: Moved presence heartbeat to a global PresencePing component in the root layout so lastSeenAt updates on any authenticated page.
+2026-02-03: Relaxed presence and online-user lookups to be global (no companyId filter) so superadmin online status and online user lists work across companies.
+2026-02-03: Made the superadmin online user chips link to /chat?chatId=<userId> for quick replies.
+2026-02-03: Throttled chat polling and added in-flight guards to reduce concurrent Prisma connections.
+2026-02-03: Updated support chat message endpoints to avoid companyId gating and resolve companyId from the target user for superadmin chats.
+2026-02-03: Added dev error details to support chat message POST responses to surface underlying save failures.
+2026-02-03: Expanded dev error output for support chat message saves to include Prisma code/meta when POST fails.
+2026-02-03: Prisma client now prefers DIRECT_URL in non-production to avoid pooler connection issues during local dev.
+2026-02-03: Switched Prisma dev client back to prefer DATABASE_URL and increased pooler connection limits/timeouts in .env.local for stability.
+2026-02-03: Reduced Supabase pooler connection_limit to 1 and forced statement_cache_size=0 to avoid protocol errors with PgBouncer.
+2026-02-03: Added sslmode=require to Supabase pooler URLs in .env.local to stabilize PgBouncer connections.
+2026-02-03: Switched local DATABASE_URL to Supabase session pooler (5432) with sslmode=require and higher connection_limit.
+2026-02-05: Logged a docs gap that polling status/configuration is not documented.
+2026-02-05: Logged a docs gap that invoice item creation errors (missing required name) are not documented.
+2026-02-05: Mapped invoice API line items to include a name fallback and documented that line item names default to descriptions.
+2026-02-05: Ran vitest for invoice submit tests (passed).
+2026-02-05: Logged a docs gap for missing Contract.pdfUrl column errors in the contracts list.
+2026-02-05: Logged a docs gap for whether a local database is expected/configured.
+2026-02-05: Added a migration for Contract.pdfUrl, applied it via pooler, and documented PDF storage for contracts.
+2026-02-05: Added database health check and migration checklist docs, plus troubleshooting guidance; vitest run failed in payments/refund webhook tests due to prisma mock and missing Stripe key.
+2026-02-05: Ran `pnpm vitest run tests/invoice-submit.test.ts` in WSL (3 tests passed) after the PowerShell `pnpm test` attempt timed out due to watch mode.
+2026-02-11: Disabled mock-data auth fallback by making Prisma fail-fast when DB is unavailable and documented the new registration troubleshooting flow.

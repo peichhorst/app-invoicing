@@ -2,7 +2,6 @@
 
 import { signIn, getCsrfToken, getProviders } from "next-auth/react";
 import GoogleIcon from "@mui/icons-material/Google";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { useEffect, useState } from 'react';
 
 interface Provider {
@@ -63,7 +62,6 @@ export default function LoginPage() {
 
   return (
     <>
-      <ThemeToggle />
       <div className="flex flex-col items-center justify-center min-h-screen bg-white dark:bg-zinc-950">
         <h1 className="text-2xl font-bold mb-6 text-zinc-900 dark:text-zinc-100">Sign in to ClientWave</h1>
         

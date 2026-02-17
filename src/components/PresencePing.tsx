@@ -10,6 +10,7 @@ type PresencePingProps = {
 export function PresencePing({ enabled = true, intervalMs = 30000 }: PresencePingProps) {
   useEffect(() => {
     if (!enabled) return;
+    if (process.env.NEXT_PUBLIC_DISABLE_POLLING === 'true') return;
     let isActive = true;
 
     const ping = async () => {

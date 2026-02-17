@@ -2,13 +2,20 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 import { sendMessageEmail } from '@/lib/email';
-import { serializeRecipientList } from '@/lib/messageRecipients';
+import { normalizeList } from '@/lib/messageRecipients';
+import { debugLog } from '@/lib/debugLog';
 
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user || !user.companyId) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
+
+  debugLog('[MSG_POST_START]', {
+    userId: user.id,
+    userRole: user.role,
+    companyId: user.companyId,
+  });
 
   try {
     const body = (await request.json()) as {
@@ -26,12 +33,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Message text is required' }, { status: 400 });
     }
 
-    const toPositions = Array.isArray(body.toPositions)
-      ? body.toPositions.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
-      : [];
-    const toUserIds = Array.isArray(body.toUserIds)
-      ? body.toUserIds.filter((p) => typeof p === 'string' && p.trim()).map((p) => p.trim())
-      : [];
+    const toPositions = normalizeList(body.toPositions ?? []);
+    const toUserIds = normalizeList(body.toUserIds ?? []);
 
     // Resolve recipients
     const targetIds = new Set<string>([user.id]);
@@ -57,6 +60,15 @@ export async function POST(request: Request) {
     const participants = Array.from(targetIds);
     const isInternalNote = body.contextType === 'INTERNAL_NOTE';
 
+    debugLog('[MSG_BEFORE_CREATE]', {
+      toAll: body.toAll,
+      toPositions,
+      toUserIds,
+      participants,
+      contextType: body.contextType,
+      contextId: body.contextId,
+    });
+
     const message = await prisma.message.create({
       data: {
         companyId: user.companyId,
@@ -64,13 +76,12 @@ export async function POST(request: Request) {
         text,
         fileUrl: body.fileUrl?.trim() || null,
         toAll: Boolean(body.toAll),
-        toRoles: serializeRecipientList([]),
-        toPositions: serializeRecipientList(toPositions),
-        toUserIds: serializeRecipientList(toUserIds),
-        participants: serializeRecipientList(participants),
         contextType: body.contextType || null,
         contextId: body.contextId?.trim() || null,
-        ...(isInternalNote
+        ...(toPositions.length ? { toPositions } : {}),
+        ...(toUserIds.length ? { toUserIds } : {}),
+        ...(participants.length ? { participants } : {}),
+        ...(isInternalNote && participants.length
           ? {
               readBy: {
                 connect: participants.map((id) => ({ id })),
@@ -81,6 +92,13 @@ export async function POST(request: Request) {
       include: {
         from: { select: { name: true, email: true } },
       },
+    });
+
+    debugLog('[MSG_CREATED]', {
+      messageId: message.id,
+      fromId: message.fromId,
+      contextType: message.contextType,
+      contextId: message.contextId,
     });
 
     // Fetch recipient details and send emails
@@ -107,7 +125,28 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ message });
   } catch (error) {
+    debugLog('[MSG_ERROR]', {
+      error: error instanceof Error ? error.message : String(error),
+      code: (error as any)?.code,
+      userId: user.id,
+      userRole: user.role,
+    });
     console.error('Create message failed', error);
-    return NextResponse.json({ error: 'Unable to create message' }, { status: 500 });
+    
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorCode = (error as any)?.code || null;
+    const errorMeta = (error as any)?.meta || null;
+    
+    return NextResponse.json(
+      {
+        error: 'Unable to create message',
+        debug: {
+          message: errorMessage,
+          code: errorCode,
+          meta: errorMeta,
+        },
+      },
+      { status: 500 },
+    );
   }
 }

@@ -261,24 +261,34 @@ export default async function Page() {
                 </div>
               </div>
               {/* Settings button and plan info on the top right */}
-              <div className="flex items-center justify-end gap-6">
+              <div className="flex flex-col items-start md:items-end gap-2 ml-[85px] md:ml-0">
                 {showPlan && (
-                  <div className="text-right">
-                    <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Plan</p>
-                    <p className="text-sm font-semibold text-zinc-900">{planLabel}</p>
-                    <p className="text-xs text-zinc-700">{planStatus}</p>
+                  <div className="flex flex-col items-start gap-0">
+                    <div className="flex items-start gap-4">
+                      <div className="flex flex-col items-start">
+                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Plan</p>
+                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{planLabel}</p>
+                      </div>
+                      <Link href="/dashboard/settings" className="inline-flex items-center justify-center rounded-full p-2 text-brand-primary-700 hover:bg-brand-primary-50 focus:outline-none focus:ring-2 focus:ring-brand-primary-600">
+                        <Settings size={28} />
+                        <span className="sr-only">Settings</span>
+                      </Link>
+                    </div>
+                    <p className="text-xs text-zinc-700 dark:text-zinc-400">{planStatus}</p>
                   </div>
                 )}
-                <Link href="/dashboard/settings" className="inline-flex items-center justify-center rounded-full p-2 text-brand-primary-700 hover:bg-brand-primary-50 focus:outline-none focus:ring-2 focus:ring-brand-primary-600">
-                  <Settings size={28} />
-                  <span className="sr-only">Settings</span>
-                </Link>
+                {!showPlan && (
+                  <Link href="/dashboard/settings" className="inline-flex items-center justify-center rounded-full p-2 text-brand-primary-700 hover:bg-brand-primary-50 focus:outline-none focus:ring-2 focus:ring-brand-primary-600">
+                    <Settings size={28} />
+                    <span className="sr-only">Settings</span>
+                  </Link>
+                )}
               </div>
               {/* Company info removed from here; will be placed below in the info grid */}
             </div>
               <div className="bg-zinc-50 px-6 py-5 sm:px-8">
                 <div className="grid gap-3 md:grid-cols-4">
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-brand-primary-600 bg-white/80 px-4 py-3 shadow-sm text-center">
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-3 shadow-sm text-center">
                   {companyLogoUrl ? (
                     <img
                       src={companyLogoUrl}
@@ -303,10 +313,10 @@ export default async function Page() {
                     </div>
                   )}
                   {!companyLogoUrl && (
-                    <span className="text-sm font-semibold text-brand-primary-700">{companyLabel}</span>
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{companyLabel}</span>
                   )}
                 </div>
-                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-brand-primary-600 bg-white/80 px-4 py-3 shadow-sm text-center">
+                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-3 shadow-sm text-center">
                   <div
                     className="h-12 w-12 overflow-hidden rounded-full border border-zinc-200 text-center text-sm font-semibold flex items-center justify-center"
                     style={{
@@ -321,7 +331,7 @@ export default async function Page() {
                     )}
                   </div>
                   <div className="flex flex-col gap-0">
-                    <span className="text-sm font-semibold text-zinc-900 text-center">{hydratedUser?.name ?? hydratedUser?.email ?? 'Your account'}</span>
+                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 text-center">{hydratedUser?.name ?? hydratedUser?.email ?? 'Your account'}</span>
                     {displayPosition && (
                       <span className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-primary-700 text-center">
                         {displayPosition}

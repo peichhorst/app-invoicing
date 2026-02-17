@@ -317,6 +317,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   // Polling fallback to catch updates across devices/browsers
   useEffect(() => {
     if (!countsHydrated || !userId) return;
+    if (process.env.NEXT_PUBLIC_DISABLE_POLLING === 'true') return;
     const poll = async () => {
       if (pollingRef.current) return;
       if (!isVisibleRef.current) return;

@@ -32,3 +32,4 @@
 - 2026-02-03 | npm run build | DEGRADED | Next.js type check failed: PrismaWrapper missing prisma.product in src/app/api/admin/products/[id]/route.ts.
 - 2026-02-03 | npm run build | DEGRADED | Next.js type check failed: SubscriptionService status 'OPEN' not assignable to InvoiceStatus.
 - 2026-02-03 | npm run build | OK | Build succeeded after aligning InvoiceStatus enum and Decimal conversions.
+- 2026-02-04 | pnpm run build | DEGRADED | Build timed out after 124s.

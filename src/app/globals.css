@@ -1,5 +1,22 @@
 @import "tailwindcss";
 
+/* Satoshi Font */
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-Variable.woff2') format('woff2');
+  font-weight: 300 900;
+  font-display: block;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Satoshi';
+  src: url('/fonts/Satoshi-VariableItalic.woff2') format('woff2');
+  font-weight: 300 900;
+  font-display: block;
+  font-style: italic;
+}
+
 /* Force all gradient utilities to render as solid fills using their `from-*` color */
 .bg-gradient-to-b,
 .bg-gradient-to-t,
@@ -299,4 +316,9 @@ a:focus-visible {
 
 .dark .bg-gray-100 {
   background-color: #18181b;
+}
+
+/* Logo font override */
+.logo-text {
+  font-family: 'Satoshi', 'Geist', 'Inter', 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif !important;
 }

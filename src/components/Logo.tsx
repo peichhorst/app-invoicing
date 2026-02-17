@@ -17,9 +17,9 @@ export function Logo({ className = '', showText = true, size = 'md', src, alt, t
   };
 
   const textSizeClasses = {
-    sm: 'text-xl',
-    md: 'text-2xl',
-    lg: 'text-3xl',
+    sm: 'text-lg',
+    md: 'text-xl',
+    lg: 'text-2xl',
   };
 
   const logoSrc = src && src.trim().length > 0 ? src : null;
@@ -28,11 +28,11 @@ export function Logo({ className = '', showText = true, size = 'md', src, alt, t
   return (
     <span
       suppressHydrationWarning
-      className={`inline-flex items-center gap-2 font-bold text-brand-primary-700 ${className}`}
+      className={`inline-flex items-center gap-1 font-bold text-brand-primary-700 ${className}`}
       style={textColor ? { color: textColor } : { color: 'var(--color-brand-primary-700)' }}
     >
       <span
-        className={`flex items-center justify-center rounded-full bg-[var(--color-brand-accent-700)] shadow-md overflow-hidden ${sizeClasses[size]}`}
+        className={`flex-shrink-0 flex items-center justify-center rounded-full bg-[var(--color-brand-accent-700)] shadow-md overflow-hidden aspect-square ${sizeClasses[size]}`}
       >
         {logoSrc ? (
           <img
@@ -99,10 +99,11 @@ export function Logo({ className = '', showText = true, size = 'md', src, alt, t
           className={`${textSizeClasses[size]} font-extrabold tracking-tight antialiased text-brand-primary-700`}
           style={{
             fontFamily: '"Geist", "Inter", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif',
-            color: 'var(--color-brand-primary-700)'
+            color: 'var(--color-brand-primary-700)',
+            lineHeight: '0.9'
           }}
         >
-          ClientWave
+          Client Wave
         </span>
       )}
     </span>

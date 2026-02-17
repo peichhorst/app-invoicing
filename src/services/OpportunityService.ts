@@ -1,6 +1,5 @@
 import prisma from '@/lib/prisma';
 import { Opportunity, OpportunitySearchParams, OpportunityStage } from '@/types/opportunity';
-import { Decimal } from '@prisma/client/runtime/library';
 
 export class OpportunityService {
   /**
@@ -13,7 +12,7 @@ export class OpportunityService {
         clientId,
         title: data.title || 'Untitled Opportunity',
         description: data.description,
-        value: new Decimal(data.value || 0),
+        value: data.value || 0,
         currency: data.currency || 'USD',
         probability: data.probability || 0,
         stage: data.stage || 'prospect',
@@ -75,9 +74,9 @@ export class OpportunityService {
       updatedAt: new Date(),
     };
 
-    // Handle value as Decimal
+    // Handle numeric value updates
     if (data.value !== undefined) {
-      updateData.value = new Decimal(data.value);
+      updateData.value = data.value;
     }
 
     const opportunity = await prisma.opportunity.update({
@@ -171,10 +170,10 @@ export class OpportunityService {
 
     // Value range filters
     if (min_value !== undefined) {
-      whereClause.value = { gte: new Decimal(min_value) };
+      whereClause.value = { gte: min_value };
     }
     if (max_value !== undefined) {
-      whereClause.value = { ...whereClause.value, lte: new Decimal(max_value) };
+      whereClause.value = { ...whereClause.value, lte: max_value };
     }
 
     // Probability range filters
@@ -369,20 +368,20 @@ export class OpportunityService {
           _sum: { value: true }
         })
       ]).then(([results]) => {
-        const mapped: Record<OpportunityStage, { count: number; value: Decimal | null }> = {
-          prospect: { count: 0, value: new Decimal(0) },
-          qualified: { count: 0, value: new Decimal(0) },
-          proposal_sent: { count: 0, value: new Decimal(0) },
-          negotiation: { count: 0, value: new Decimal(0) },
-          won: { count: 0, value: new Decimal(0) },
-          lost: { count: 0, value: new Decimal(0) },
+        const mapped: Record<OpportunityStage, { count: number; value: number | null }> = {
+          prospect: { count: 0, value: 0 },
+          qualified: { count: 0, value: 0 },
+          proposal_sent: { count: 0, value: 0 },
+          negotiation: { count: 0, value: 0 },
+          won: { count: 0, value: 0 },
+          lost: { count: 0, value: 0 },
         };
 
         results.forEach(result => {
           if (result.stage in mapped) {
             mapped[result.stage as OpportunityStage] = {
               count: result._count.id,
-              value: result._sum.value || new Decimal(0)
+              value: result._sum.value || 0
             };
           }
         });
@@ -427,8 +426,8 @@ export class OpportunityService {
 
     return {
       totalOpportunities,
-      totalValue: totalValue || new Decimal(0),
-      averageDealSize: averageDealSize || new Decimal(0),
+      totalValue: totalValue || 0,
+      averageDealSize: averageDealSize || 0,
       winRate,
       avgSalesCycle: avgSalesCycle || 0,
       pipelineValueByStage,

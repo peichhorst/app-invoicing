@@ -26,8 +26,8 @@ export async function computeInvoicePaidAmounts(
     },
   });
 
-  const paidAmount = aggregate._sum.amount ?? new Prisma.Decimal(0);
-  const refundedAmount = aggregate._sum.refundedAmount ?? new Prisma.Decimal(0);
+  const paidAmount = new Prisma.Decimal(aggregate._sum.amount ?? 0);
+  const refundedAmount = new Prisma.Decimal(aggregate._sum.refundedAmount ?? 0);
   const netPaid = paidAmount.minus(refundedAmount);
 
   return {

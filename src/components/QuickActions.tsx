@@ -27,13 +27,13 @@ export function QuickActions() {
   };
 
   return (
-    <div className="flex h-full flex-col justify-center rounded-2xl border border-zinc-200 bg-white/90 px-3 py-3 shadow-sm">
+    <div className="flex h-full flex-col justify-center rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-3 shadow-sm">
       <p className="text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-brand-primary-700 text-center mb-2">Quick actions</p>
       <div className="flex flex-col gap-1">
         <button
           type="button"
           onClick={openOpportunitySearch}
-          className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-2 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-zinc-700 transition hover:border-brand-primary-600 hover:text-brand-primary-700"
+          className="flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-zinc-700 dark:text-zinc-300 transition hover:border-brand-primary-600 hover:text-brand-primary-700"
         >
           <UserPlus className="h-4 w-4 text-zinc-400" />
           Opportunity Search
@@ -42,7 +42,7 @@ export function QuickActions() {
           <Link
             key={action.label}
             href={action.href}
-            className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-2 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-zinc-700 transition hover:border-brand-primary-600 hover:text-brand-primary-700"
+            className="flex items-center gap-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.2em] text-zinc-700 dark:text-zinc-300 transition hover:border-brand-primary-600 hover:text-brand-primary-700"
           >
             <action.icon className="h-3 w-3 text-zinc-400" />
             New {action.label}

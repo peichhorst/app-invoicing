@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { buildListContainsFilter, parseRecipientList } from '@/lib/messageRecipients';
 import { NewMessageForm } from './NewMessageForm';
 import InboxList from './InboxList';
+import { DebugPanel } from '@/components/DebugPanel';
 
 type PageProps = {
   searchParams?: Promise<{ tab?: string | string[]; thread?: string | string[] }>;
@@ -286,6 +287,8 @@ export default async function MessagesPage({ searchParams }: PageProps) {
           forceReplyButtons
         />
       </div>
+
+      <DebugPanel />
     </div>
   );
 }

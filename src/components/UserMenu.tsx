@@ -98,17 +98,17 @@ export default function UserMenu({ user }: UserMenuProps) {
         onClick={toggle}
         aria-haspopup="true"
         aria-expanded={open}
-        className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-brand-primary-600 via-fuchsia-600 to-brand-secondary-600 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-lg shadow-brand-primary-500/30 transition hover:shadow-brand-primary-500/50 focus:outline-none focus:ring-2 focus:ring-white/50"
+        className="inline-flex items-center gap-2 rounded-full px-3 py-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800 shadow-lg transition focus:outline-none focus:ring-2 focus:ring-brand-primary-500"
       >
-        <span className="inline-block h-9 w-9 overflow-hidden rounded-full ring-2 ring-white/40">
+        <span className="inline-block h-9 w-9 overflow-hidden rounded-full ring-2 ring-zinc-300 dark:ring-zinc-600">
           {renderAvatar(36)}
         </span>
-        <ChevronDown size={16} className="text-white/90" />
+        <ChevronDown size={16} className="text-zinc-600 dark:text-zinc-300" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full z-10 mt-3 w-72 rounded-2xl border border-white/10 bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 p-5 text-white shadow-2xl backdrop-blur-sm">
-          <div className="flex items-center gap-3 border-b border-white/20 pb-4 mb-4">
-            <span className="inline-block h-12 w-12 overflow-hidden rounded-full ring-2 ring-white/30 shadow-lg">
+        <div className="absolute right-0 top-full z-10 mt-3 w-72 rounded-2xl p-5 shadow-2xl border bg-white text-zinc-900 border-zinc-200 dark:bg-zinc-900 dark:text-white dark:border-zinc-800">
+          <div className="flex items-center gap-3 pb-4 mb-4 border-b border-zinc-200 dark:border-zinc-700">
+            <span className="inline-block h-12 w-12 overflow-hidden rounded-full shadow-lg ring-2 ring-zinc-300 dark:ring-zinc-600">
               {renderAvatar(48)}
             </span>
             <UserCompanyHeader
@@ -117,14 +117,14 @@ export default function UserMenu({ user }: UserMenuProps) {
               companyName={user.companyName}
               role={user.role}
               variant="dropdown"
-              className="min-w-0 text-white"
+              className="min-w-0"
             />
           </div>
           <div className="space-y-2 text-sm">
             <Link
               href="/dashboard/settings"
               onClick={close}
-              className="block rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm transition hover:bg-white/15 hover:border-white/20"
+              className="block rounded-xl px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.3em] shadow-sm transition border bg-zinc-50 text-zinc-900 border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 dark:bg-zinc-800 dark:text-white dark:border-zinc-700 dark:hover:bg-zinc-700 dark:hover:border-zinc-600"
             >
               Settings
             </Link>
@@ -133,14 +133,14 @@ export default function UserMenu({ user }: UserMenuProps) {
                 resetThemeColor();
                 close();
               }}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm transition hover:bg-white/15 hover:border-white/20"
+              className="w-full rounded-xl px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.3em] shadow-sm transition border bg-zinc-50 text-zinc-900 border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 dark:bg-zinc-800 dark:text-white dark:border-zinc-700 dark:hover:bg-zinc-700 dark:hover:border-zinc-600"
             >
               Reset Theme Color
             </button>
             <form action="/api/auth/logout" method="post">
               <button
                 type="submit"
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm transition hover:bg-white/15 hover:border-white/20"
+                className="w-full rounded-xl px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.3em] shadow-sm transition border bg-zinc-50 text-zinc-900 border-zinc-200 hover:bg-zinc-100 hover:border-zinc-300 dark:bg-zinc-800 dark:text-white dark:border-zinc-700 dark:hover:bg-zinc-700 dark:hover:border-zinc-600"
               >
                 Logout
               </button>

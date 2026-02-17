@@ -30,7 +30,7 @@ interface CreateInvoiceInput {
   recurringDayOfMonth?: number | null;
   recurringDayOfWeek?: number | null;
   nextOccurrence?: Date | null;
-  invoiceNumber: string;
+  invoiceNumber?: string;
   sendEmail?: boolean;
 }
 
@@ -159,6 +159,8 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
   // Calculate totals from items
   const totals = calculateInvoiceTotals(input.items);
   
+  const invoiceNumber = input.invoiceNumber?.trim() || (await generateInvoiceNumber(input.userId));
+
   // Create invoice with calculated totals
   // Note: For mock implementation, we'll handle this as a series of operations
   // since our mock doesn't fully support transactions
@@ -166,8 +168,8 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
     data: {
       userId: input.userId,
       clientId: input.clientId,
-      invoiceNumber: input.invoiceNumber,
-      title: input.title || `Invoice ${input.invoiceNumber}`,
+      invoiceNumber,
+      title: input.title || `Invoice ${invoiceNumber}`,
       status: input.status || 'DRAFT',
       issueDate: input.issueDate,
       dueDate: input.dueDate || null,

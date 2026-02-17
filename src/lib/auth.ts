@@ -74,21 +74,23 @@ export async function createSession(userId: string) {
 }
 
 export function sessionCookieOptions() {
-  const cookieDomain =
-    process.env.COOKIE_DOMAIN ||
-    (() => {
-      try {
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-        if (!appUrl) return undefined;
-        const hostname = new URL(appUrl).hostname;
-        if (hostname.endsWith('.clientwave.app') || hostname === 'clientwave.app') {
-          return '.clientwave.app';
+  const isProd = process.env.NODE_ENV === 'production';
+  const cookieDomain = isProd
+    ? process.env.COOKIE_DOMAIN ||
+      (() => {
+        try {
+          const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+          if (!appUrl) return undefined;
+          const hostname = new URL(appUrl).hostname;
+          if (hostname.endsWith('.clientwave.app') || hostname === 'clientwave.app') {
+            return '.clientwave.app';
+          }
+          return hostname;
+        } catch {
+          return undefined;
         }
-        return hostname;
-      } catch {
-        return undefined;
-      }
-    })();
+      })()
+    : undefined;
   return {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production', // Only secure in production

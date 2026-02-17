@@ -26,6 +26,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 });
     }
 
+    const itemsInput = Array.isArray(body.items) ? body.items : [];
+    const items = itemsInput.map((item: any) => ({
+      name: item.name ?? item.description ?? 'Item',
+      description: item.description ?? item.name ?? '',
+      quantity: Number(item.quantity ?? 1) || 1,
+      unitPrice: Number(item.unitPrice ?? 0) || 0,
+      taxRate:
+        item.taxRate === null || typeof item.taxRate === 'undefined'
+          ? null
+          : Number(item.taxRate) || 0,
+    }));
+
     // Use InvoiceService to create invoice with proper totals
     const invoice = await createInvoice({
       userId: currentUser.id,
@@ -35,7 +47,7 @@ export async function POST(request: Request) {
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
       notes: body.notes,
       status: InvoiceStatus.UNPAID,
-      items: body.items || [],
+      items,
       recurring: Boolean(body.recurring),
       recurringInterval: body.recurringInterval ?? null,
       recurringDayOfMonth: body.recurringDayOfMonth ?? null,
