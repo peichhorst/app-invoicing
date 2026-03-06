@@ -56,7 +56,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
   const stripeWebhookLastError = user.company?.stripeWebhookLastError ?? null;
   const storedSecretExists = Boolean(initialStripeWebhookSecret);
   const shouldShowManualStripeWebhookWarning =
-    stripeWebhookMode === 'manual' || (!stripeWebhookMode && !storedSecretExists);
+    stripeAccountType === 'standard' &&
+    (stripeWebhookMode === 'manual' || (!stripeWebhookMode && !storedSecretExists));
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -75,6 +76,8 @@ export default async function SettingsPage({ searchParams }: PageProps) {
         bookingLink={bookingLink}
         shouldShowManualStripeWebhookWarning={shouldShowManualStripeWebhookWarning}
         initialStripeWebhookSecret={initialStripeWebhookSecret}
+        stripeAccountType={stripeAccountType}
+        stripeWebhookMode={stripeWebhookMode}
         stripeWebhookStatus={stripeWebhookStatus}
         stripeWebhookLastError={stripeWebhookLastError}
         initialTabLabel={initialTabLabel}

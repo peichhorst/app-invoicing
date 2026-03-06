@@ -76,7 +76,7 @@ export async function POST(_req: Request, { params }: RouteContext) {
         title: proposal.title,
         issueDate: now,
         dueDate,
-        status: 'UNPAID',
+        status: 'OPEN',
         sentCount: 1,
         currency: proposal.currency,
         subTotal: Number(proposal.total),

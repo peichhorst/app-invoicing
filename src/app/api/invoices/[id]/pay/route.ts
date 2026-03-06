@@ -3,6 +3,7 @@ import { Prisma, PaymentProvider, PaymentStatus, InvoiceStatus } from '@prisma/c
 import { stripe } from '@/lib/stripe';
 import prisma from '@/lib/prisma';
 import { computeInvoicePaidAmounts, reconcileInvoiceStatus } from '@/lib/payments';
+import { resolveAppBaseUrl } from '@/lib/app-url';
 
 const PAYABLE_STATUSES = new Set<InvoiceStatus>([
   InvoiceStatus.UNPAID,
@@ -34,7 +35,12 @@ export async function POST(
       invoiceNumber: true,
       client: { select: { email: true } },
       status: true,
-      user: { select: { id: true, stripeAccountId: true } },
+      user: {
+        select: {
+          id: true,
+          company: { select: { stripeAccountId: true } },
+        },
+      },
     },
   });
 
@@ -77,7 +83,7 @@ export async function POST(
 
   const currency = (invoiceForPayment.currency ?? 'USD').toLowerCase();
   const amountInCents = Math.max(1, Math.round(amountDueNumber * 100));
-  const stripeAccountId = invoice.user?.stripeAccountId;
+  const stripeAccountId = invoice.user?.company?.stripeAccountId ?? null;
   if (!stripeAccountId) {
     return NextResponse.json({ error: 'Stripe account not configured for seller' }, { status: 500 });
   }
@@ -94,7 +100,7 @@ export async function POST(
   });
 
   try {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+    const appUrl = resolveAppBaseUrl();
     const session = await stripe.checkout.sessions.create(
       {
         mode: 'payment',

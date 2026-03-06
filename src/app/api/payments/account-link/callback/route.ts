@@ -8,11 +8,18 @@ import { ensureStripeWebhookForAccount } from '@/lib/stripe-webhook-endpoints';
 import type Stripe from 'stripe';
 import type { Prisma } from '@prisma/client';
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
+const STRIPE_CONNECT_SECRET_KEY = process.env.STRIPE_CONNECT_SECRET_KEY ?? process.env.STRIPE_SECRET_KEY;
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.clientwave.app').replace(/\/$/, '');
 const STATE_COOKIE = 'stripe_oauth_state';
 const RETURN_URL_COOKIE = 'stripe_return_url';
 const TOKEN_URL = 'https://connect.stripe.com/oauth/token';
+
+const sanitizeReturnUrl = (value?: string | null) => {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed.startsWith('/')) return '/dashboard/settings';
+  if (trimmed.startsWith('//')) return '/dashboard/settings';
+  return trimmed;
+};
 
 const escapeHtml = (value: string) =>
   value
@@ -103,6 +110,7 @@ const renderPage = (
 };
 
 export async function GET(request: NextRequest) {
+  const hasPlatformSecret = Boolean(process.env.STRIPE_WEBHOOK_SECRET?.trim());
   const host = request.headers.get('host')?.toLowerCase() ?? '';
   const appUrl = host.startsWith('localhost') ? 'http://localhost:3000' : APP_URL;
   const url = new URL(request.url);
@@ -114,7 +122,7 @@ export async function GET(request: NextRequest) {
 
   const cookieStore = await cookies();
   const storedState = cookieStore.get(STATE_COOKIE)?.value;
-  const returnUrl = cookieStore.get(RETURN_URL_COOKIE)?.value || '/dashboard/settings';
+  const returnUrl = sanitizeReturnUrl(cookieStore.get(RETURN_URL_COOKIE)?.value);
   cookieStore.delete(STATE_COOKIE);
   cookieStore.delete(RETURN_URL_COOKIE);
 
@@ -131,7 +139,7 @@ export async function GET(request: NextRequest) {
     return renderPage('Stripe returned an invalid session state.', false, undefined, appUrl, returnUrl);
   }
 
-  if (!STRIPE_SECRET_KEY) {
+  if (!STRIPE_CONNECT_SECRET_KEY) {
     return renderPage('Stripe secret key is not configured.', false, undefined, appUrl, returnUrl);
   }
 
@@ -142,7 +150,7 @@ export async function GET(request: NextRequest) {
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
-        client_secret: STRIPE_SECRET_KEY,
+        client_secret: STRIPE_CONNECT_SECRET_KEY,
       }).toString(),
     });
 
@@ -157,6 +165,9 @@ export async function GET(request: NextRequest) {
     const user = await getCurrentUser();
     if (!user) {
       return renderPage('Unauthenticated session. Please sign in and try again.', false, undefined, appUrl, returnUrl);
+    }
+    if (!user.companyId) {
+      return renderPage('No company found for your account. Set up business settings first.', false, undefined, appUrl, returnUrl);
     }
 
     const stripeAccountId = tokenData.stripe_user_id;
@@ -181,8 +192,11 @@ export async function GET(request: NextRequest) {
             account: retrievedAccount,
             companyId: user.companyId ?? null,
           });
-          webhookStatus = result.signingSecret ? 'verified' : 'error';
-          if (!result.signingSecret) {
+          const verifiedWithPlatformSecret =
+            result.platformManaged && !result.signingSecret && hasPlatformSecret;
+          const isVerified = Boolean(result.signingSecret || verifiedWithPlatformSecret);
+          webhookStatus = isVerified ? 'verified' : 'pending';
+          if (!isVerified) {
             webhookLastError = 'Stripe webhook endpoint did not return a signing secret.';
           }
         } catch (error: unknown) {
@@ -205,42 +219,27 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const updates: Prisma.PrismaPromise<unknown>[] = [
-      prisma.user.update({
-        where: { id: user.id },
-        data: {
-          stripeAccountId,
-          ...(publishableKeyUpdate !== undefined ? { stripePublishableKey: publishableKeyUpdate } : {}),
-        },
-      }),
-    ];
-
-    if (user.companyId) {
-      const companyData: Prisma.CompanyUpdateInput = {
-        stripeAccountId,
-        ...(publishableKeyUpdate !== undefined ? { stripePublishableKey: publishableKeyUpdate } : {}),
-      };
-      if (accountType === 'standard' || accountType === 'express' || accountType === 'custom') {
-        companyData.stripeAccountType = accountType;
-      }
-      if (webhookMode) {
-        companyData.stripeWebhookMode = webhookMode;
-      }
-      if (webhookStatus) {
-        companyData.stripeWebhookStatus = webhookStatus;
-      }
-      if (webhookMode || webhookStatus) {
-        companyData.stripeWebhookLastError = webhookLastError ?? null;
-      }
-      updates.push(
-        prisma.company.update({
-          where: { id: user.companyId },
-          data: companyData,
-        }),
-      );
+    const companyData: Prisma.CompanyUpdateInput = {
+      stripeAccountId,
+      ...(publishableKeyUpdate !== undefined ? { stripePublishableKey: publishableKeyUpdate } : {}),
+    };
+    if (accountType === 'standard' || accountType === 'express' || accountType === 'custom') {
+      companyData.stripeAccountType = accountType;
+    }
+    if (webhookMode) {
+      companyData.stripeWebhookMode = webhookMode;
+    }
+    if (webhookStatus) {
+      companyData.stripeWebhookStatus = webhookStatus;
+    }
+    if (webhookMode || webhookStatus) {
+      companyData.stripeWebhookLastError = webhookLastError ?? null;
     }
 
-    await prisma.$transaction(updates);
+    await prisma.company.update({
+      where: { id: user.companyId },
+      data: companyData,
+    });
 
     return renderPage('Stripe account linked! This window will close shortly.', true, tokenData, appUrl, returnUrl);
   } catch (error: unknown) {

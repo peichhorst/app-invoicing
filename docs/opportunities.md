@@ -77,6 +77,22 @@ Use standardized questions to assess opportunity quality:
 - Sort by creation date, value, or timeline
 - Use advanced filters for complex searches
 
+### Dashboard Opportunity Search (Quick Actions)
+- Open **Dashboard > Quick Actions > Opportunity Search**
+- Choose one or more sources:
+  - **Aggregated (EchoThread + TheirStack)** for combined discovery results
+  - **Jobs** for direct job-feed results
+  - **Reddit** for community-sourced opportunity posts
+- Enter a custom query, or run with defaults to use your industry/location context
+
+Usage Example:
+- Click **Opportunity Search**
+- Keep only **Aggregated (EchoThread + TheirStack)** enabled
+- Search: `residential painting leads near me`
+- Review results and click **Save as Lead** on relevant opportunities
+
+When using **Save as Lead**, ClientWave stores a normalized company website URL when available and includes both apply/result links in lead notes for follow-up context.
+
 ### Bulk Actions
 - Update multiple opportunities simultaneously
 - Apply tags to groups of opportunities

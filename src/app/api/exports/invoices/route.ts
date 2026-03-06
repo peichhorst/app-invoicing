@@ -15,7 +15,12 @@ const formatDate = (value: Date | string | null | undefined) => {
 };
 
 const PAID_STATUSES: InvoiceStatus[] = [InvoiceStatus.PAID];
-const UNPAID_STATUSES: InvoiceStatus[] = [InvoiceStatus.UNPAID, InvoiceStatus.VIEWED, InvoiceStatus.OVERDUE];
+const UNPAID_STATUSES: InvoiceStatus[] = [
+  InvoiceStatus.OPEN,
+  InvoiceStatus.UNPAID,
+  InvoiceStatus.VIEWED,
+  InvoiceStatus.OVERDUE,
+];
 
 const getStatusesForFilter = (filter?: string | null): InvoiceStatus[] | null => {
   if (filter === 'paid') return PAID_STATUSES;

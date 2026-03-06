@@ -4,16 +4,26 @@ import prisma from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Prisma } from '@prisma/client';
 import { getCurrentUser } from '@/lib/auth';
-import { withAuth, getScopedDb, AuthenticatedUser } from '@/lib/auth-filters';
+import type { AuthenticatedUser } from '@/lib/auth-filters';
 import { generateUniqueShortCode } from '@/lib/shortcodes';
+import { resolveAppBaseUrl } from '@/lib/app-url';
+
+const normalizeInvoiceStatus = (status: unknown) => {
+  if (status === 'UNPAID') return 'OPEN';
+  return status;
+};
 
 async function getInvoiceHandler(user: AuthenticatedUser, id: string) {
-  // For invoice access, users can only access their own invoices
-  const invoice = await prisma.invoice.findUnique({
-    where: { 
-      id,
-      userId: user.id  // Users can only access their own invoices
-    },
+  const companyId = user.companyId ?? user.company?.id ?? null;
+  const isSuperAdmin = user.role === 'SUPERADMIN';
+  const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+
+  const invoice = await prisma.invoice.findFirst({
+    where: isSuperAdmin
+      ? { id }
+      : isOwnerOrAdmin && companyId
+      ? { id, user: { companyId } }
+      : { id, userId: user.id },
     include: {
       client: true,
       items: true,
@@ -24,8 +34,19 @@ async function getInvoiceHandler(user: AuthenticatedUser, id: string) {
   if (!invoice) {
     return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
   }
-  
-  return NextResponse.json(invoice);
+
+  const servicePaid = Math.max(0, Math.min(invoice.amountPaid ?? 0, invoice.total ?? 0));
+  const serviceRefundableAmount = Math.max(0, servicePaid - (invoice.amountRefunded ?? 0));
+
+  return NextResponse.json({
+    ...invoice,
+    serviceAmountPaid: servicePaid,
+    serviceRefundableAmount,
+    refundPolicy: {
+      feeRefundable: false,
+      note: 'Refunds apply to service amount only. Processing fees are non-refundable.',
+    },
+  });
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -76,32 +97,42 @@ async function updateInvoiceHandler(request: Request, user: AuthenticatedUser, i
     );
     const total = totals.subTotal;
 
-    // Verify the user can access this invoice
-    const existing = await prisma.invoice.findUnique({
-      where: { 
-        id,
-        userId: user.id  // Users can only access their own invoices
-      },
+    const companyId = user.companyId ?? user.company?.id ?? null;
+    const isSuperAdmin = user.role === 'SUPERADMIN';
+    const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+
+    // Verify the user can access this invoice.
+    const existing = await prisma.invoice.findFirst({
+      where: isSuperAdmin
+        ? { id }
+        : isOwnerOrAdmin && companyId
+        ? { id, user: { companyId } }
+        : { id, userId: user.id },
     });
     
     if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
 
+    const requestedClientId = typeof body.clientId === 'string' ? body.clientId.trim() : '';
+    if (requestedClientId && requestedClientId !== existing.clientId) {
+      return NextResponse.json(
+        { error: 'Client cannot be changed after invoice creation' },
+        { status: 400 }
+      );
+    }
+
     const shortCode = existing.shortCode || (await generateUniqueShortCode(prisma));
 
-    const requestedStatus = body.status as any;
+    const requestedStatus = normalizeInvoiceStatus(body.status) as any;
     const nextStatus =
       existing.status !== 'DRAFT' && requestedStatus === 'DRAFT'
         ? existing.status
         : (requestedStatus ?? existing.status);
 
     const nextSentCount =
-      requestedStatus === 'UNPAID' ? (existing.sentCount ?? 0) + 1 : existing.sentCount ?? 0;
+      requestedStatus === 'OPEN' ? (existing.sentCount ?? 0) + 1 : existing.sentCount ?? 0;
 
     const updated = (await prisma.invoice.update({
-      where: { 
-        id,
-        userId: user.id  // Ensure user can only update their own invoices
-      },
+      where: { id },
       data: {
         title: body.title?.trim() ? body.title.trim() : null,
         issueDate: body.issueDate ? new Date(body.issueDate) : undefined,
@@ -125,15 +156,15 @@ async function updateInvoiceHandler(request: Request, user: AuthenticatedUser, i
         },
       },
       include: {
-        client: true,
+        client: { include: { portalUser: true } },
         items: true,
         user: { include: { company: true } },
       },
     })) as Prisma.InvoiceGetPayload<{
-      include: { client: true; items: true; user: { include: { company: true } } };
+      include: { client: { include: { portalUser: true } }; items: true; user: { include: { company: true } } };
     }>;
 
-    if (requestedStatus === 'UNPAID') {
+    if (requestedStatus === 'OPEN') {
       const dueDays =
         updated.dueDate != null
           ? Math.max(
@@ -155,8 +186,8 @@ async function updateInvoiceHandler(request: Request, user: AuthenticatedUser, i
       await sendInvoiceEmail(emailInvoice, updated.client, updated.user);
     }
     
-    // Generate and store PDF if status is changing to SENT or UNPAID and no PDF exists yet
-    if ((requestedStatus === 'SENT' || requestedStatus === 'UNPAID') && !updated.pdfUrl) {
+    // Generate and store PDF if status is changing to SENT or OPEN and no PDF exists yet
+    if ((requestedStatus === 'SENT' || requestedStatus === 'OPEN') && !updated.pdfUrl) {
       // Import needed modules locally to avoid circular dependencies
       const { InvoicePDF } = await import('@/components/InvoicePDF');
       const { renderToBuffer } = await import('@react-pdf/renderer');
@@ -164,10 +195,15 @@ async function updateInvoiceHandler(request: Request, user: AuthenticatedUser, i
       const React = await import('react');
       
       // Generate PDF
+      const portalToken = updated.client?.portalUser?.portalToken ?? null;
+      const portalLink = portalToken
+        ? `${resolveAppBaseUrl()}/client/${encodeURIComponent(portalToken)}`
+        : null;
       const pdfElement = React.createElement(InvoicePDF as any, { 
         invoice: updated, 
         client: updated.client, 
-        user: updated.user 
+        user: updated.user,
+        portalLink,
       });
       
       const pdfBuffer = await renderToBuffer(pdfElement as any);
@@ -190,7 +226,7 @@ async function updateInvoiceHandler(request: Request, user: AuthenticatedUser, i
         const refreshedInvoice = await prisma.invoice.findUnique({
           where: { id: updated.id },
           include: {
-            client: true,
+            client: { include: { portalUser: true } },
             items: true,
             user: { include: { company: true } },
           }
@@ -226,24 +262,42 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params;
   
   try {
+    const companyId = user.companyId ?? user.company?.id ?? null;
+    const isSuperAdmin = user.role === 'SUPERADMIN';
+    const isOwnerOrAdmin = user.role === 'OWNER' || user.role === 'ADMIN';
+
     // Verify the user can access this invoice
-    const existing = await prisma.invoice.findUnique({
-      where: { 
-        id,
-        userId: user.id  // Users can only access their own invoices
+    const existing = await prisma.invoice.findFirst({
+      where: isSuperAdmin
+        ? { id }
+        : isOwnerOrAdmin && companyId
+        ? { id, user: { companyId } }
+        : { id, userId: user.id },
+      select: {
+        id: true,
+        status: true,
       },
     });
     
     if (!existing) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 });
-    
-    await prisma.invoice.delete({ 
-      where: { 
-        id,
-        userId: user.id  // Ensure user can only delete their own invoices
-      } 
+
+    const paymentCount = await prisma.payment.count({
+      where: { invoiceId: id },
     });
-    
-    return NextResponse.json({ ok: true });
+
+    // Hard delete is only allowed for draft invoices with no payment history.
+    if (existing.status === 'DRAFT' && paymentCount === 0) {
+      await prisma.invoice.delete({ where: { id } });
+      return NextResponse.json({ ok: true, action: 'deleted' as const });
+    }
+
+    // Preserve accounting/reporting history for any non-draft or paid-touch invoice.
+    await prisma.invoice.update({
+      where: { id },
+      data: { status: 'VOID' },
+    });
+
+    return NextResponse.json({ ok: true, action: 'voided' as const });
   } catch (error: any) {
     console.error('Delete invoice failed:', error);
     return NextResponse.json({ error: 'Failed to delete invoice', details: error?.message || String(error) }, { status: 500 });

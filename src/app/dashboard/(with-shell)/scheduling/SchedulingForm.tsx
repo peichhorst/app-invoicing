@@ -2,7 +2,7 @@
 import { useTransition, useState, useMemo } from 'react';
 import { daysOfWeek } from './helpers';
 import { postAvailability, type AvailabilityEntry } from './actions';
-import { Copy, Check, AlertCircle } from 'lucide-react';
+import { Copy, Check, AlertCircle, ChevronDown } from 'lucide-react';
 
 type SchedulingFormProps = {
   availability: AvailabilityEntry[];
@@ -40,6 +40,15 @@ export function SchedulingForm({
   timezone = 'UTC',
 }: SchedulingFormProps) {
   const availabilityMap = new Map(availability.map((entry) => [entry.dayOfWeek, entry]));
+  const bannerHeadingClass =
+    'text-xl font-bold uppercase tracking-[0.3em] bg-brand-primary-600 text-[var(--color-brand-contrast)] px-4 py-2 text-center';
+  const [activeDays, setActiveDays] = useState<Record<number, boolean>>(() => {
+    const next: Record<number, boolean> = {};
+    for (const { value } of daysOfWeek) {
+      next[value] = Boolean(availabilityMap.get(value)?.isActive);
+    }
+    return next;
+  });
   const [isPending, startTransition] = useTransition();
   const [saved, setSaved] = useState(false);
   
@@ -50,8 +59,29 @@ export function SchedulingForm({
   
   // UI states
   const [copied, setCopied] = useState(false);
+  const [copiedBookingLink, setCopiedBookingLink] = useState(false);
   const [savingType, setSavingType] = useState<MeetingType | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [availabilityAccordionOpen, setAvailabilityAccordionOpen] = useState(false);
+
+  const hasAnyActiveDay = useMemo(
+    () => Object.values(activeDays).some(Boolean),
+    [activeDays]
+  );
+
+  const activeDaySummaries = useMemo(
+    () =>
+      daysOfWeek
+        .filter(({ value }) => activeDays[value])
+        .map(({ label, value }) => {
+          const selected = availabilityMap.get(value);
+          if (!selected) {
+            return `${label}: Not saved yet`;
+          }
+          return `${label}: ${selected.startTime} - ${selected.endTime} (${selected.duration}m + ${selected.buffer}m buffer)`;
+        }),
+    [activeDays, availabilityMap]
+  );
 
   const handleCopyEmbed = async () => {
     if (!computedEmbedSnippet) return;
@@ -62,6 +92,19 @@ export function SchedulingForm({
     } catch (err) {
       console.error('Failed to copy:', err);
       setError('Failed to copy to clipboard');
+      setTimeout(() => setError(null), 3000);
+    }
+  };
+
+  const handleCopyBookingLink = async () => {
+    if (!bookingLink) return;
+    try {
+      await navigator.clipboard.writeText(bookingLink);
+      setCopiedBookingLink(true);
+      setTimeout(() => setCopiedBookingLink(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy booking link:', err);
+      setError('Failed to copy booking link');
       setTimeout(() => setError(null), 3000);
     }
   };
@@ -133,19 +176,21 @@ export function SchedulingForm({
     <form
       action={postAvailability}
       onSubmit={(event) => {
-        if (!onSubmit) return;
         setSaved(false);
         startTransition(async () => {
-          await onSubmit();
+          if (onSubmit) {
+            await onSubmit();
+          }
           setSaved(true);
           setTimeout(() => setSaved(false), 2000);
         });
       }}
-      className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className="rounded-2xl border border-brand-primary-600 bg-white shadow-sm"
     >
-      <div className="space-y-1">
-        <h2 className="text-lg font-semibold text-zinc-900">Booking Settings</h2>
-      </div>
+      <h2 className={`${bannerHeadingClass} rounded-t-2xl`}>
+        Booking Settings
+      </h2>
+      <div className="space-y-6 p-6">
 
    
 
@@ -162,10 +207,135 @@ export function SchedulingForm({
         </div>
       )}
 
+      {/* Share & Embed */}
+      {(showBookingLink || showEmbedSnippet) && (
+        <div
+          className={`space-y-3 rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm ${
+            hasAnyActiveDay ? '' : 'opacity-60'
+          }`}
+          aria-disabled={!hasAnyActiveDay}
+        >
+          <h3 className={`${bannerHeadingClass} rounded-xl`}>
+            Share & Embed
+          </h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-zinc-500">
+                Share your booking page or embed the scheduler on your site.
+              </p>
+              {!hasAnyActiveDay && (
+                <p className="mt-1 text-xs font-medium text-amber-700">
+                  Select at least one availability day to enable share and embed.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {activeDaySummaries.length > 0 && (
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50">
+              <button
+                type="button"
+                onClick={() => setAvailabilityAccordionOpen((prev) => !prev)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left"
+              >
+                <span className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-600">
+                  Availability slots ({activeDaySummaries.length})
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-zinc-500 transition-transform ${
+                    availabilityAccordionOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+              {availabilityAccordionOpen && (
+                <div className="border-t border-zinc-200 px-3 py-2">
+                  <ul className="space-y-1 text-xs text-zinc-700">
+                    {activeDaySummaries.map((summary) => (
+                      <li key={summary}>{summary}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {showBookingLink && bookingLink && (
+            <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-brand-primary-700">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  Public booking link:
+                  <a
+                    className={`ml-1 font-mono underline ${hasAnyActiveDay ? '' : 'pointer-events-none opacity-60'}`}
+                    href={bookingLink}
+                    target={hasAnyActiveDay ? '_blank' : undefined}
+                    rel={hasAnyActiveDay ? 'noreferrer' : undefined}
+                  >
+                    {bookingLink}
+                  </a>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyBookingLink}
+                  disabled={!hasAnyActiveDay}
+                  className="inline-flex items-center gap-2 rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-3 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-300 disabled:text-zinc-600"
+                >
+                  {copiedBookingLink ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {showEmbedSnippet && computedEmbedSnippet && (
+            <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-zinc-500">
+                    Paste this snippet onto your site.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyEmbed}
+                  disabled={!hasAnyActiveDay}
+                  className="rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-3 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 flex items-center gap-2 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-300 disabled:text-zinc-600"
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4" />
+                      Copied
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="rounded-lg bg-zinc-900/5 px-3 py-2 text-xs text-zinc-600">
+                <code className="whitespace-pre-wrap block font-mono">{computedEmbedSnippet}</code>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Meeting Types Cards */}
       <div className="space-y-3">
         <div>
-          <p className="pt-3 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Meeting types</p>
+          <h3 className={`${bannerHeadingClass} rounded-xl`}>
+            Meeting Types
+          </h3>
           <p className="text-sm text-zinc-500">Select which meeting types clients can book with you.</p>
         </div>
         <div className="grid gap-3 md:grid-cols-3">
@@ -301,9 +471,12 @@ export function SchedulingForm({
    
 
       {/* Availability Section */}
-      <p className="pt-3 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-600">AVAILABILITY</p>
+      <h3 className={`${bannerHeadingClass} rounded-xl`}>
+        Availability
+      </h3>
       {daysOfWeek.map(({ label, value }) => {
         const saved = availabilityMap.get(value);
+        const isDayActive = Boolean(activeDays[value]);
         return (
           <div
             key={value}
@@ -315,119 +488,68 @@ export function SchedulingForm({
                 <input 
                   type="checkbox" 
                   name={`active-${value}`} 
-                  defaultChecked={Boolean(saved?.isActive)}
+                  checked={isDayActive}
+                  onChange={(event) =>
+                    setActiveDays((prev) => ({ ...prev, [value]: event.target.checked }))
+                  }
                   aria-label={`Mark ${label} as available`}
                 />
                 Available
               </label>
             </div>
-            <div className="grid gap-3 md:grid-cols-4 text-xs text-zinc-500">
-              <div className="grid gap-1">
-                <label htmlFor={`start-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Start</label>
-                <input
-                  id={`start-${value}`}
-                  name={`start-${value}`}
-                  type="time"
-                  defaultValue={saved?.startTime ?? '09:00'}
-                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
-                />
+            {isDayActive && (
+              <div className="grid gap-3 md:grid-cols-4 text-xs text-zinc-500">
+                <div className="grid gap-1">
+                  <label htmlFor={`start-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Start</label>
+                  <input
+                    id={`start-${value}`}
+                    name={`start-${value}`}
+                    type="time"
+                    defaultValue={saved?.startTime ?? '09:00'}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label htmlFor={`end-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">End</label>
+                  <input
+                    id={`end-${value}`}
+                    name={`end-${value}`}
+                    type="time"
+                    defaultValue={saved?.endTime ?? '17:00'}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label htmlFor={`duration-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Duration (min)</label>
+                  <input
+                    id={`duration-${value}`}
+                    name={`duration-${value}`}
+                    type="number"
+                    min={15}
+                    step={5}
+                    defaultValue={saved?.duration ?? 30}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <label htmlFor={`buffer-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Buffer (min)</label>
+                  <input
+                    id={`buffer-${value}`}
+                    name={`buffer-${value}`}
+                    type="number"
+                    min={0}
+                    step={5}
+                    defaultValue={saved?.buffer ?? 0}
+                    className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+                  />
+                </div>
               </div>
-              <div className="grid gap-1">
-                <label htmlFor={`end-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">End</label>
-                <input
-                  id={`end-${value}`}
-                  name={`end-${value}`}
-                  type="time"
-                  defaultValue={saved?.endTime ?? '17:00'}
-                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
-                />
-              </div>
-              <div className="grid gap-1">
-                <label htmlFor={`duration-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Duration (min)</label>
-                <input
-                  id={`duration-${value}`}
-                  name={`duration-${value}`}
-                  type="number"
-                  min={15}
-                  step={5}
-                  defaultValue={saved?.duration ?? 30}
-                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
-                />
-              </div>
-              <div className="grid gap-1">
-                <label htmlFor={`buffer-${value}`} className="text-[10px] uppercase tracking-[0.3em] text-zinc-500">Buffer (min)</label>
-                <input
-                  id={`buffer-${value}`}
-                  name={`buffer-${value}`}
-                  type="number"
-                  min={0}
-                  step={5}
-                  defaultValue={saved?.buffer ?? 0}
-                  className="rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
-                />
-              </div>
-            </div>
+            )}
           </div>
         );
       })}
 
-     
-   {showBookingLink && bookingLink && (
-        <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-brand-primary-700">
-          Public booking link:
-          <a
-            className="ml-1 font-mono underline"
-            href={bookingLink}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {bookingLink}
-          </a>
-        </div>
-      )}
-
-
-
-
-   {/* Embed Snippet */}
-      {showEmbedSnippet && computedEmbedSnippet && (
-        <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white/90 p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-                    <p className="pt-3 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Embed the Booking Scheduler</p>
-
-              <p className="text-sm text-zinc-500">
-                Paste this snippet onto your site.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleCopyEmbed}
-              className="rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-3 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 flex items-center gap-2"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-4 w-4" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4" />
-                  Copy
-                </>
-              )}
-            </button>
-          </div>
-          <div className="rounded-lg bg-zinc-900/5 px-3 py-2 text-xs text-zinc-600">
-            <code className="whitespace-pre-wrap block font-mono">{computedEmbedSnippet}</code>
-          </div>
-        </div>
-      )}
-
-     
-
-
-            <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-col items-end gap-2">
         <button
           type="submit"
           disabled={isPending}
@@ -436,13 +558,15 @@ export function SchedulingForm({
           {isPending && (
             <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
           )}
-          {isPending ? 'Saving...' : (isOnboarding ? 'Save & Continue' : 'Save Changes')}
+          {isPending ? 'Saving...' : 'Save'}
         </button>
         {saved && (
           <span className="flex items-center text-green-600 text-sm font-semibold gap-1">
             <Check size={16} /> Saved!
           </span>
         )}
+      </div>
+
       </div>
     </form>
   );

@@ -12,6 +12,7 @@ import Link from 'next/link';
 // Pie chart client component
 import PaidUnpaidPieChartClient from './PaidUnpaidPieChartClient';
 import prisma from '@/lib/prisma';
+import PaymentsActivityTable from './PaymentsActivityTable';
 
 export default async function ReportingPage() {
   const user = await getCurrentUser();
@@ -112,6 +113,38 @@ export default async function ReportingPage() {
 
   const currentRevenue = canSeeTeam && teamInitialSummary ? teamInitialSummary.total.amount : initialSummary.total.amount;
   const previousRevenue = previousYearSummary.total.amount;
+
+  const paymentActivityRows = await prisma.payment.findMany({
+    where: canSeeTeam && companyId
+      ? {
+          invoice: {
+            user: {
+              companyId,
+            },
+          },
+        }
+      : {
+          invoice: {
+            userId: user.id,
+          },
+        },
+    include: {
+      invoice: {
+        select: {
+          id: true,
+          invoiceNumber: true,
+          client: {
+            select: {
+              companyName: true,
+              contactName: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: [{ paidAt: 'desc' }, { updatedAt: 'desc' }, { createdAt: 'desc' }],
+    take: 150,
+  });
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -242,6 +275,33 @@ export default async function ReportingPage() {
             />
           </div>
         )}
+
+      <PaymentsActivityTable
+        rows={paymentActivityRows.map((row) => ({
+          id: row.id,
+          provider: row.provider,
+          status: row.status,
+          amount: Number(row.amount ?? 0),
+          refundedAmount: Number(row.refundedAmount ?? 0),
+          currency: row.currency ?? 'USD',
+          paidAt: row.paidAt,
+          updatedAt: row.updatedAt,
+          createdAt: row.createdAt,
+          stripePaymentIntentId: row.stripePaymentIntentId ?? null,
+          stripeChargeId: row.stripeChargeId ?? null,
+          metadata: row.metadata ?? null,
+          invoice: {
+            id: row.invoice.id,
+            invoiceNumber: row.invoice.invoiceNumber,
+            client: row.invoice.client
+              ? {
+                  companyName: row.invoice.client.companyName ?? null,
+                  contactName: row.invoice.client.contactName ?? null,
+                }
+              : null,
+          },
+        }))}
+      />
     </div>
   );
 }

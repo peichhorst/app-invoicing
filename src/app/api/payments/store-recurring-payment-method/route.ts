@@ -30,7 +30,7 @@ export async function POST(request: Request) {
         user: {
           select: {
             id: true,
-            stripeAccountId: true,
+            companyId: true,
           },
         },
       },
@@ -63,11 +63,20 @@ export async function POST(request: Request) {
     // Check if this is the first payment
     const isFirstPayment = !recurringInvoice.firstPaidAt;
 
-    if (isFirstPayment && invoice.user.stripeAccountId) {
+    let stripeAccountId: string | null = null;
+    if (invoice.user.companyId) {
+      const company = await prisma.company.findUnique({
+        where: { id: invoice.user.companyId },
+        select: { stripeAccountId: true },
+      });
+      stripeAccountId = company?.stripeAccountId ?? null;
+    }
+
+    if (isFirstPayment && stripeAccountId) {
       // Retrieve the payment method from the connected account
       const paymentMethod = await stripe.paymentMethods.retrieve(
         paymentMethodId,
-        { stripeAccount: invoice.user.stripeAccountId }
+        { stripeAccount: stripeAccountId }
       );
 
       // Get or create a customer for future charges

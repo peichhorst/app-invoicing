@@ -19,6 +19,18 @@ const frequencyLabels: Record<string, string> = {
   year: 'Yearly',
 };
 
+const resolveDisplayStatus = (
+  storedStatus: string,
+  firstPaidAt: Date | null | undefined,
+  hasPaidInvoice: boolean
+): RecurringStatus => {
+  if (storedStatus === 'PAUSED' || storedStatus === 'CANCELLED') {
+    return storedStatus as RecurringStatus;
+  }
+  const paid = Boolean(firstPaidAt) || hasPaidInvoice;
+  return paid ? 'ACTIVE' : 'PENDING';
+};
+
 const formatCurrency = (value: string | number, currency = 'USD') => {
   const formatter = new Intl.NumberFormat('en-US', { style: 'currency', currency });
   return formatter.format(Number(value));
@@ -49,6 +61,22 @@ export default async function RecurringPage() {
     orderBy: { nextSendDate: 'asc' },
   });
 
+  const recurringIds = recurringInvoices.map((invoice) => invoice.id);
+  const paidRecurringRows =
+    recurringIds.length > 0
+      ? await prisma.invoice.findMany({
+          where: {
+            recurringParentId: { in: recurringIds },
+            status: 'PAID',
+          },
+          select: { recurringParentId: true },
+          distinct: ['recurringParentId'],
+        })
+      : [];
+  const paidRecurringSet = new Set(
+    paidRecurringRows.map((row) => row.recurringParentId).filter((id): id is string => Boolean(id))
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 px-4 sm:px-8">
       <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -76,7 +104,13 @@ export default async function RecurringPage() {
           <>
             {/* Mobile Card View */}
             <div className="space-y-4 md:hidden">
-              {recurringInvoices.map((invoice, index) => (
+              {recurringInvoices.map((invoice) => {
+                const displayStatus = resolveDisplayStatus(
+                  invoice.status,
+                  invoice.firstPaidAt,
+                  paidRecurringSet.has(invoice.id)
+                );
+                return (
                 <div key={invoice.id} className="rounded-lg border bg-white p-4 shadow-sm">
                   <div className="flex justify-between items-start mb-3">
                     <div>
@@ -113,11 +147,11 @@ export default async function RecurringPage() {
                       <p className="text-xs uppercase text-gray-500">Status</p>
                       <span
                         className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                          badgeStyles[invoice.status as keyof typeof badgeStyles] ?? badgeStyles.ACTIVE
+                          badgeStyles[displayStatus as keyof typeof badgeStyles] ?? badgeStyles.PENDING
                         }`}
                       >
-                        {invoice.status}
-                        {invoice.status === 'ACTIVE' && ` (${invoice._count.invoices})`}
+                        {displayStatus}
+                        {displayStatus === 'ACTIVE' && ` (${invoice._count.invoices})`}
                       </span>
                     </div>
                     <div>
@@ -137,7 +171,8 @@ export default async function RecurringPage() {
                     />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Desktop Table View */}
@@ -145,7 +180,7 @@ export default async function RecurringPage() {
               <div className="relative max-h-[70vh] overflow-x-auto overflow-y-auto">
                 <table className="w-full min-w-[800px] divide-y divide-zinc-200">
                   <thead className="sticky top-0 z-10 bg-zinc-50">
-                    <tr>
+                    <tr className="divide-x divide-zinc-200">
                     <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">
                       Title / Client
                     </th>
@@ -172,9 +207,15 @@ export default async function RecurringPage() {
                     </th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-zinc-100">
-                  {recurringInvoices.map((invoice, index) => (
-                    <tr key={invoice.id} className="hover:bg-zinc-50">
+                  <tbody className="divide-y divide-zinc-200 bg-white">
+                  {recurringInvoices.map((invoice, index) => {
+                    const displayStatus = resolveDisplayStatus(
+                      invoice.status,
+                      invoice.firstPaidAt,
+                      paidRecurringSet.has(invoice.id)
+                    );
+                    return (
+                    <tr key={invoice.id} className="hover:bg-zinc-50 divide-x divide-zinc-200">
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="text-sm font-semibold text-gray-900">{invoice.title}</div>
                         <div className="text-xs text-zinc-500">{invoice.client?.companyName}</div>
@@ -202,11 +243,11 @@ export default async function RecurringPage() {
                       <td className="px-6 py-4">
                         <span
                           className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                            badgeStyles[invoice.status as keyof typeof badgeStyles] ?? badgeStyles.ACTIVE
+                            badgeStyles[displayStatus as keyof typeof badgeStyles] ?? badgeStyles.PENDING
                           }`}
                         >
-                          {invoice.status}
-                          {invoice.status === 'ACTIVE' && ` (${invoice._count.invoices})`}
+                          {displayStatus}
+                          {displayStatus === 'ACTIVE' && ` (${invoice._count.invoices})`}
                         </span>
                       </td>
                       <td className="px-6 py-4">
@@ -216,7 +257,7 @@ export default async function RecurringPage() {
                               className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
                                 invoice.invoices[0].status === 'PAID'
                                   ? 'bg-emerald-50 text-emerald-700'
-                                : invoice.invoices[0].status === 'UNPAID'
+                                : invoice.invoices[0].status === 'OPEN' || invoice.invoices[0].status === 'UNPAID'
                                   ? 'bg-brand-accent-50 text-brand-accent-700'
                                   : invoice.invoices[0].status === 'OVERDUE'
                                   ? 'bg-red-50 text-red-700'
@@ -248,7 +289,8 @@ export default async function RecurringPage() {
                         />
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   </tbody>
                 </table>
               </div>

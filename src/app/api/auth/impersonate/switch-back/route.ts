@@ -4,6 +4,7 @@ import { sessionCookieOptions } from '@/lib/auth';
 
 const SESSION_COOKIE = 'session_token';
 const BACKUP_COOKIE = 'session_token_backup';
+const IMPERSONATING_COOKIE = 'impersonating_session';
 
 export async function POST() {
   const cookieStore = await cookies();
@@ -17,5 +18,6 @@ export async function POST() {
   // Next.js 16 cookies.delete only accepts the name or an options object separately.
   // The BACKUP_COOKIE was set with path '/', so deleting by name is sufficient.
   res.cookies.delete(BACKUP_COOKIE);
+  res.cookies.delete(IMPERSONATING_COOKIE);
   return res;
 }

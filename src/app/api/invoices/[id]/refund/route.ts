@@ -71,10 +71,17 @@ export async function POST(req: NextRequest, context: RefundRouteHandlerContext)
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const refundableRemaining = Math.max(0, (invoice.amountPaid ?? 0) - (invoice.amountRefunded ?? 0));
+  // Refund policy: service amount only (processing fees are non-refundable).
+  // Service paid is capped at invoice total so fee-inclusive/fallback Stripe captures
+  // cannot increase refundable balance.
+  const servicePaid = Math.max(0, Math.min(invoice.amountPaid ?? 0, invoice.total ?? 0));
+  const refundableRemaining = Math.max(0, servicePaid - (invoice.amountRefunded ?? 0));
   const refundableRemainingCents = Math.max(0, Math.round(refundableRemaining * 100));
   if (refundableRemainingCents <= 0) {
-    return NextResponse.json({ error: 'Nothing left to refund.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Nothing left to refund. Processing fees are non-refundable.' },
+      { status: 400 },
+    );
   }
 
   const refundAmountCents = amount == null ? refundableRemainingCents : amount;
@@ -82,51 +89,24 @@ export async function POST(req: NextRequest, context: RefundRouteHandlerContext)
     return NextResponse.json({ error: 'Invalid refund amount.' }, { status: 400 });
   }
   if (refundAmountCents > refundableRemainingCents) {
-    return NextResponse.json({ error: 'Refund exceeds remaining refundable amount.' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Refund exceeds remaining service amount. Processing fees are non-refundable.' },
+      { status: 400 },
+    );
   }
-
-  const payment_intent = invoice.stripePaymentIntentId ?? undefined;
-  const charge = invoice.stripeChargeId ?? undefined;
-
-  if (!payment_intent && !charge) {
-    return NextResponse.json({ error: 'Missing Stripe payment intent or charge.' }, { status: 400 });
-  }
-
-  const metadata: Stripe.MetadataParam = { invoiceId: invoice.id };
-  if (rawReason) {
-    metadata.refundReason = rawReason;
-  }
-
-  const refund = await stripe.refunds.create({
-    payment_intent,
-    charge,
-    amount: refundAmountCents,
-    reason: stripeReason,
-    metadata,
-  });
-
-  const refundDecimal = new Prisma.Decimal(refundAmountCents).dividedBy(100);
-  const previousRefunded = new Prisma.Decimal(invoice.amountRefunded ?? 0);
-  const newAmountRefundedDecimal = previousRefunded.plus(refundDecimal);
-  const totalPaidDecimal = new Prisma.Decimal(invoice.amountPaid ?? 0);
-  const newStatus =
-    newAmountRefundedDecimal.greaterThanOrEqualTo(totalPaidDecimal)
-      ? InvoiceStatus.REFUNDED
-      : InvoiceStatus.PARTIALLY_REFUNDED;
-
-  const paymentIntentId = invoice.stripePaymentIntentId ?? undefined;
-  const chargeId = invoice.stripeChargeId ?? undefined;
-  const refundChargeId =
-    typeof refund.charge === 'string' ? refund.charge : refund.charge ? refund.charge.id : undefined;
-  const balanceTransactionId =
-    typeof refund.balance_transaction === 'string' ? refund.balance_transaction : undefined;
 
   let payment: any = null;
-  if (paymentIntentId) {
-    payment = await prisma.payment.findFirst({ where: { stripePaymentIntentId: paymentIntentId } });
+  if (invoice.stripePaymentIntentId) {
+    payment = await prisma.payment.findFirst({
+      where: { stripePaymentIntentId: invoice.stripePaymentIntentId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
-  if (!payment && chargeId) {
-    payment = await prisma.payment.findFirst({ where: { stripeChargeId: chargeId } });
+  if (!payment && invoice.stripeChargeId) {
+    payment = await prisma.payment.findFirst({
+      where: { stripeChargeId: invoice.stripeChargeId },
+      orderBy: { createdAt: 'desc' },
+    });
   }
   if (!payment) {
     payment = await prisma.payment.findFirst({
@@ -139,6 +119,58 @@ export async function POST(req: NextRequest, context: RefundRouteHandlerContext)
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  const paymentIntentId = invoice.stripePaymentIntentId ?? payment?.stripePaymentIntentId ?? undefined;
+  const chargeId = invoice.stripeChargeId ?? payment?.stripeChargeId ?? undefined;
+
+  if (!paymentIntentId && !chargeId) {
+    return NextResponse.json({ error: 'Missing Stripe payment intent or charge.' }, { status: 400 });
+  }
+
+  const metadata: Stripe.MetadataParam = { invoiceId: invoice.id };
+  if (rawReason) {
+    metadata.refundReason = rawReason;
+  }
+
+  const invoiceOwner = await prisma.user.findUnique({
+    where: { id: invoice.userId },
+    select: {
+      company: { select: { stripeAccountId: true } },
+    },
+  });
+  const connectedStripeAccountId = invoiceOwner?.company?.stripeAccountId ?? null;
+  const stripeRequestOptions = connectedStripeAccountId
+    ? { stripeAccount: connectedStripeAccountId }
+    : undefined;
+
+  const refundParams: Stripe.RefundCreateParams = {
+    amount: refundAmountCents,
+    reason: stripeReason,
+    metadata,
+    ...(paymentIntentId ? { payment_intent: paymentIntentId } : { charge: chargeId }),
+  };
+
+  let refund: Stripe.Refund;
+  try {
+    refund = await stripe.refunds.create(refundParams, stripeRequestOptions);
+  } catch (error: any) {
+    const message = error?.message || 'Refund request failed';
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  const refundDecimal = new Prisma.Decimal(refundAmountCents).dividedBy(100);
+  const previousRefunded = new Prisma.Decimal(invoice.amountRefunded ?? 0);
+  const newAmountRefundedDecimal = previousRefunded.plus(refundDecimal);
+  const totalPaidDecimal = new Prisma.Decimal(invoice.amountPaid ?? 0);
+  const newStatus =
+    newAmountRefundedDecimal.greaterThanOrEqualTo(totalPaidDecimal)
+      ? InvoiceStatus.REFUNDED
+      : InvoiceStatus.PARTIALLY_REFUNDED;
+
+  const refundChargeId =
+    typeof refund.charge === 'string' ? refund.charge : refund.charge ? refund.charge.id : undefined;
+  const balanceTransactionId =
+    typeof refund.balance_transaction === 'string' ? refund.balance_transaction : undefined;
 
   if (payment) {
     const existingRefunded = new Prisma.Decimal(payment.refundedAmount ?? 0);
@@ -202,6 +234,10 @@ export async function POST(req: NextRequest, context: RefundRouteHandlerContext)
       id: invoice.id,
       status: newStatus,
       amountRefunded: Number(newAmountRefundedDecimal.toNumber()),
+    },
+    policy: {
+      feeRefundable: false,
+      note: 'Refunds apply to service amount only. Processing fees are non-refundable.',
     },
   });
 

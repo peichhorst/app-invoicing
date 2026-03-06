@@ -38,6 +38,7 @@ const parseTimeMarker = (value: string) => {
   return hours * 60 + minutes;
 };
 
+
 const getClientIdentifier = (request: NextRequest) => {
   const forwarded = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
   return forwarded || request.headers.get('x-real-ip') || 'unknown';
@@ -47,18 +48,30 @@ const ensureRateLimit = (_identifier: string) => true;
 
 const findUser = async (slug: string) => {
   const normalized = normalizeSlug(slug);
-  return prisma.user.findFirst({
-    where: {
-      OR: [
-        { id: normalized },
-        { email: { equals: normalized, mode: 'insensitive' } },
-        { name: { equals: slugToName(normalized), mode: 'insensitive' } },
-      ],
-    },
-    include: {
-      company: { select: { name: true } },
-    },
-  });
+  const baseWhere = {
+    OR: [
+      { id: normalized },
+      { email: { equals: normalized, mode: 'insensitive' as const } },
+      { name: { equals: slugToName(normalized), mode: 'insensitive' as const } },
+    ],
+  };
+  const include = {
+    company: { select: { name: true } },
+  };
+
+  return (
+    (await prisma.user.findFirst({
+      where: {
+        ...baseWhere,
+        availabilities: { some: { isActive: true } },
+      },
+      include,
+    })) ??
+    (await prisma.user.findFirst({
+      where: baseWhere,
+      include,
+    }))
+  );
 };
 
 const jsonWithCors = (body: unknown, status?: number) =>
@@ -152,6 +165,15 @@ export async function POST(request: NextRequest) {
   }
   const availableStart = parseTimeMarker(availability.startTime);
   const availableEnd = parseTimeMarker(availability.endTime);
+  const duration = Number.isFinite(availability.duration) && availability.duration > 0 ? availability.duration : 30;
+  const buffer = Number.isFinite(availability.buffer) && availability.buffer >= 0 ? availability.buffer : 0;
+  const requestedDuration = Math.round((endDate.getTime() - startDate.getTime()) / 60000);
+  const slotStep = duration + buffer;
+  const alignsToGrid = availableStart !== null ? (startMinutes - availableStart) % slotStep === 0 : false;
+
+  if (startInfo.dayOfWeek !== endInfo.dayOfWeek) {
+    return jsonWithCors({ error: 'Requested slot cannot span multiple days' }, 400);
+  }
   if (
     availableStart === null ||
     availableEnd === null ||
@@ -160,13 +182,15 @@ export async function POST(request: NextRequest) {
   ) {
     return jsonWithCors({ error: 'Requested slot falls outside availability' }, 400);
   }
+  if (requestedDuration !== duration || endMinutes !== startMinutes + duration || !alignsToGrid) {
+    return jsonWithCors({ error: 'Requested slot does not align with configured availability' }, 400);
+  }
 
   const conflict = await prisma.booking.findFirst({
     where: {
       userId: user.id,
-      OR: [
-        { startTime: { lt: endDate }, endTime: { gt: startDate } },
-      ],
+      status: { notIn: ['CANCELLED', 'CANCELED', 'cancelled', 'canceled'] },
+      OR: [{ startTime: { lt: endDate }, endTime: { gt: startDate } }],
     },
   });
   if (conflict) {
@@ -245,7 +269,7 @@ export async function POST(request: NextRequest) {
     day: 'numeric',
     timeZone,
   });
-  const companyName = user.companyName || user.company?.name || 'ClientWave';
+  const companyName = user.company?.name || user.companyName || 'ClientWave';
 
   // Create Google Calendar event if host has Google Calendar connected
   try {
@@ -256,6 +280,9 @@ export async function POST(request: NextRequest) {
       start: startDate,
       end: endDate,
       attendees: [clientEmail.trim()],
+      privateExtendedProperties: {
+        bookingId: booking.id,
+      },
     });
 
     if (googleEventId) {
@@ -284,7 +311,7 @@ export async function POST(request: NextRequest) {
 
   if (clientEmail) {
     await sendEmail({
-      from: process.env.RESEND_FROM || 'invoices@858webdesign.com',
+      from: process.env.RESEND_FROM || 'no-reply@clientwave.app',
       to: [clientEmail.trim()],
       subject: `Booking confirmed with ${companyName}`,
       html: `
@@ -332,7 +359,7 @@ export async function POST(request: NextRequest) {
 
   if (user.email) {
     await sendEmail({
-      from: process.env.RESEND_FROM || 'invoices@858webdesign.com',
+      from: process.env.RESEND_FROM || 'no-reply@clientwave.app',
       to: [user.email],
       subject: `New booking: ${clientName}`,
       html: `

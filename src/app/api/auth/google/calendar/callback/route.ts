@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
 
     // Handle user denying access
     if (error === 'access_denied') {
-      const dashboardUrl = new URL('/dashboard/profile', request.url);
+      const dashboardUrl = new URL('/dashboard/settings', request.url);
+      dashboardUrl.searchParams.set('tab', 'availability');
       dashboardUrl.searchParams.set('error', 'Google Calendar connection cancelled');
       return NextResponse.redirect(dashboardUrl);
     }
@@ -50,13 +51,15 @@ export async function GET(request: NextRequest) {
     }
 
     // Redirect back to settings page with success message
-    const dashboardUrl = new URL('/dashboard/profile', request.url);
+    const dashboardUrl = new URL('/dashboard/settings', request.url);
+    dashboardUrl.searchParams.set('tab', 'availability');
     dashboardUrl.searchParams.set('success', 'Google Calendar connected successfully!');
     return NextResponse.redirect(dashboardUrl);
   } catch (error) {
     console.error('Error handling Google Calendar callback:', error);
     
-    const dashboardUrl = new URL('/dashboard/profile', request.url);
+    const dashboardUrl = new URL('/dashboard/settings', request.url);
+    dashboardUrl.searchParams.set('tab', 'availability');
     dashboardUrl.searchParams.set('error', 'Failed to connect Google Calendar');
     return NextResponse.redirect(dashboardUrl);
   }

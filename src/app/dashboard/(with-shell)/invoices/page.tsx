@@ -1,18 +1,19 @@
-// src/app/dashboard/invoices/page.tsx
+﻿// src/app/dashboard/invoices/page.tsx
 import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
-import { Download, Eye, Pencil, FileText, Plus } from 'lucide-react';
+import { Download, Eye, Pencil, FileText, Plus, ArrowUpRight } from 'lucide-react';
 import { MarkInvoicePaidButton } from './MarkInvoicePaidButton';
 import { DeleteInvoiceButton } from './DeleteInvoiceButton';
 import { RefundInvoiceButton } from './RefundInvoiceButton';
+import { MarkInvoiceRefundedButton } from './MarkInvoiceRefundedButton';
 import InvoiceReportsLiveSummary from '@/components/InvoiceReportsLiveSummary';
 import { ResendButton } from '@/components/ResendButton';
 import InvoiceFilterSelect from './InvoiceFilterSelect';
 import { Suspense } from 'react';
 import UserFilterSelect from './UserFilterSelect';
 import { InvoiceStatus } from '@prisma/client';
-import InvoicePaidDateEditor from '@/components/invoices/InvoicePaidDateEditor';
+import Image from 'next/image';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,7 +40,28 @@ async function getTeamMembers(companyId: string) {
 const getStatusesForFilter = (filter: string): InvoiceStatus[] | null => {
   if (filter === 'paid') return ['PAID'] as InvoiceStatus[];
   if (filter === 'sent')
-    return ['UNPAID', 'VIEWED', 'SIGNED', 'COMPLETED', 'OVERDUE'] as InvoiceStatus[];
+    return ['OPEN', 'UNPAID', 'VIEWED', 'SIGNED', 'COMPLETED', 'OVERDUE'] as InvoiceStatus[];
+  return null;
+};
+
+const getPaymentProvider = (
+  payments: Array<{ provider: string; status: string }>,
+): 'stripe' | 'manual' | null => {
+  const primary = payments.find((payment) =>
+    ['succeeded', 'partially_refunded', 'refunded'].includes(payment.status),
+  );
+  if (!primary) return null;
+  if (primary.provider === 'stripe') return 'stripe';
+  if (primary.provider === 'manual') return 'manual';
+  return null;
+};
+
+const getPaymentSourceLabel = (
+  payments: Array<{ provider: string; status: string }>,
+): string | null => {
+  const provider = getPaymentProvider(payments);
+  if (provider === 'stripe') return 'Paid Online';
+  if (provider === 'manual') return 'Marked Paid';
   return null;
 };
 
@@ -92,7 +114,18 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
         ? { status: { in: statuses } }
         : {}),
     },
-    include: { client: true, items: true, user: { include: { company: true } } },
+    include: {
+      client: true,
+      items: true,
+      user: { include: { company: true } },
+      payments: {
+        select: {
+          provider: true,
+          status: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
     orderBy:
       isPlatformAdmin
         ? [{ user: { company: { name: 'asc' } } }, { createdAt: 'desc' }]
@@ -107,21 +140,30 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
           <h1 className="text-3xl font-semibold text-gray-900">Invoices</h1>
           <p className="text-sm text-gray-500">Track, send, and download your invoices.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3 sm:ml-auto sm:justify-end w-full sm:w-auto">
-          <InvoiceFilterSelect options={FILTER_OPTIONS} current={appliedFilter} />
-          {showUserFilter && (
-            <Suspense>
-              <UserFilterSelect
-                users={[{ id: 'all', name: 'All team members', email: '' }, ...teamMembers]}
-                current={requestedUser || 'all'}
-              />
-            </Suspense>
-          )}
+        <div className="sm:ml-auto">
+          <Link
+            href="/dashboard/invoices/new"
+            className="inline-flex items-center gap-2 rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
+          >
+            <Plus className="h-4 w-4" />
+            New Invoice
+          </Link>
         </div>
       </div>
 
       {/* Live-updating invoice summary */}
       <InvoiceReportsLiveSummary />
+      <div className="flex flex-wrap items-center gap-3">
+        <InvoiceFilterSelect options={FILTER_OPTIONS} current={appliedFilter} />
+        {showUserFilter && (
+          <Suspense>
+            <UserFilterSelect
+              users={[{ id: 'all', name: 'All team members', email: '' }, ...teamMembers]}
+              current={requestedUser || 'all'}
+            />
+          </Suspense>
+        )}
+      </div>
 
 
         {invoices.length === 0 ? (
@@ -158,6 +200,14 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                   ? new Date(invoice.dueDate).toLocaleDateString()
                   : 'No due date';
                 const isRecurring = Boolean(invoice.recurring);
+                const canIssueRefund =
+                  invoice.status === InvoiceStatus.PAID ||
+                  invoice.status === InvoiceStatus.PARTIALLY_REFUNDED;
+                const paymentSourceLabel = getPaymentSourceLabel(invoice.payments);
+                const paymentProvider = getPaymentProvider(invoice.payments);
+                const showIssueRefund = canIssueRefund && paymentProvider === 'stripe';
+                const showMarkRefunded =
+                  canIssueRefund && paymentProvider === 'manual' && invoice.status !== InvoiceStatus.REFUNDED;
 
                 return (
                   <div key={invoice.id} className="rounded-lg border bg-white p-4 shadow-sm">
@@ -171,18 +221,19 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                       <span className="text-lg font-bold">${totalLabel}</span>
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs text-gray-500 mb-3">
-                      <span>{invoice.status}</span>
-                      {isRecurring && <span>• Recurring</span>}
-                      <span>• Due {dueDateLabel}</span>
+                      <span>
+                        {invoice.status === 'OPEN' || invoice.status === 'UNPAID'
+                          ? 'Unpaid'
+                          : invoice.status}
+                        {invoice.status === 'PAID' && invoice.paidAt
+                          ? ` • Paid on ${new Date(invoice.paidAt).toLocaleDateString()}${paymentSourceLabel ? ` • ${paymentSourceLabel}` : ''}`
+                          : invoice.status === 'OPEN' || invoice.status === 'UNPAID'
+                          ? ` • ${invoice.sentCount && invoice.sentCount > 0 ? `Sent: ${invoice.sentCount}` : 'Not Sent'}`
+                          : ''}
+                      </span>
+                      {isRecurring && <span>â€¢ Recurring</span>}
+                      <span>â€¢ Due {dueDateLabel}</span>
                     </div>
-                    {invoice.status === 'PAID' && (
-                      <div className="mb-2 text-xs text-zinc-500">
-                        <InvoicePaidDateEditor
-                          invoiceId={invoice.id}
-                          initialPaidAt={invoice.updatedAt?.toISOString() ?? null}
-                        />
-                      </div>
-                    )}
                     <div className="flex flex-col gap-3">
                       <MarkInvoicePaidButton
                         invoiceId={invoice.id}
@@ -191,16 +242,14 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                         status={invoice.status}
                         variant="button"
                       />
-                      <RefundInvoiceButton invoiceId={invoice.id} />
+                      {showIssueRefund && <RefundInvoiceButton invoiceId={invoice.id} />}
+                      {showMarkRefunded && (
+                        <MarkInvoiceRefundedButton invoiceId={invoice.id} status={invoice.status} variant="button" />
+                      )}
                       <div className="flex flex-wrap gap-2">
                         <Link
-                          href={invoice.status === 'PAID' ? '#' : `/dashboard/invoices/new?edit=${invoice.id}`}
-                          aria-disabled={invoice.status === 'PAID'}
-                          className={`inline-flex items-center justify-center rounded-lg border bg-white px-3 py-2 text-sm shadow-sm transition ${
-                            invoice.status === 'PAID'
-                              ? 'cursor-not-allowed border-gray-200 text-gray-400'
-                              : 'border-brand-primary-200 text-brand-primary-700 hover:border-brand-primary-300 hover:bg-brand-primary-50'
-                          }`}
+                          href={`/dashboard/invoices/new?edit=${invoice.id}`}
+                          className="inline-flex items-center justify-center rounded-lg border border-brand-primary-200 bg-white px-3 py-2 text-sm text-brand-primary-700 shadow-sm transition hover:border-brand-primary-300 hover:bg-brand-primary-50"
                         >
                           <Pencil className="h-4 w-4" aria-hidden="true" />
                           <span className="ml-1">Edit</span>
@@ -221,6 +270,17 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                           <FileText className="h-4 w-4" aria-hidden="true" />
                           <span className="ml-1">PDF</span>
                         </Link>
+                        {invoice.shortCode && (
+                          <Link
+                            href={`/p/${invoice.shortCode}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-400 hover:bg-emerald-100"
+                          >
+                            <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                            <span>Public</span>
+                          </Link>
+                        )}
                         <ResendButton invoiceId={invoice.id} />
                         <DeleteInvoiceButton invoiceId={invoice.id} />
                       </div>
@@ -247,9 +307,6 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
                       Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
-                      Paid Date
                     </th>
                     {isOwnerOrAdmin && (
                       <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">
@@ -285,6 +342,14 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                       ? new Date(invoice.dueDate).toLocaleDateString()
                       : 'No due date';
                     const isRecurring = Boolean(invoice.recurring);
+                    const paymentSourceLabel = getPaymentSourceLabel(invoice.payments);
+                    const paymentProvider = getPaymentProvider(invoice.payments);
+                    const canIssueRefund =
+                      invoice.status === InvoiceStatus.PAID ||
+                      invoice.status === InvoiceStatus.PARTIALLY_REFUNDED;
+                    const showIssueRefund = canIssueRefund && paymentProvider === 'stripe';
+                    const showMarkRefunded =
+                      canIssueRefund && paymentProvider === 'manual' && invoice.status !== InvoiceStatus.REFUNDED;
 
                     return (
                       <tr key={invoice.id} className="hover:bg-gray-50 divide-x divide-gray-200">
@@ -296,41 +361,72 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${totalLabel}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-center">
-                          <span
+                          <div className="flex flex-col items-center gap-1">
+                            <span
                             className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                               invoice.status === 'PAID'
                                 ? 'bg-green-100 text-green-800'
+                                : invoice.status === 'REFUNDED'
+                                ? 'bg-violet-100 text-violet-800'
+                                : invoice.status === 'PARTIALLY_REFUNDED'
+                                ? 'bg-purple-100 text-purple-800'
+                                : invoice.status === 'PARTIALLY_PAID'
+                                ? 'bg-amber-100 text-amber-800'
+                                : invoice.status === 'OVERDUE'
+                                ? 'bg-rose-100 text-rose-700'
                                 : invoice.status === 'SIGNED' || invoice.status === 'COMPLETED'
                                 ? 'bg-emerald-100 text-emerald-800'
-                              : invoice.status === 'UNPAID'
+                              : invoice.status === 'OPEN' || invoice.status === 'UNPAID'
+                                ? 'bg-rose-100 text-rose-700'
+                                : invoice.status === 'VIEWED'
                                 ? 'bg-brand-primary-100 text-brand-primary-800'
                                 : 'bg-gray-100 text-gray-800'
                             }`}
                           >
                             {invoice.status === 'PAID'
                               ? 'Paid'
+                              : invoice.status === 'REFUNDED'
+                              ? 'Refunded'
+                              : invoice.status === 'PARTIALLY_REFUNDED'
+                              ? 'Partially Refunded'
+                              : invoice.status === 'PARTIALLY_PAID'
+                              ? 'Partially Paid'
+                              : invoice.status === 'OVERDUE'
+                              ? 'Overdue'
                               : invoice.status === 'SIGNED' || invoice.status === 'COMPLETED'
                               ? 'Contract'
-                              : invoice.status === 'UNPAID'
+                              : invoice.status === 'OPEN' || invoice.status === 'UNPAID'
                                 ? `Unpaid${invoice.sentCount ? ` (${invoice.sentCount})` : ''}`
                               : invoice.status === 'VIEWED'
                               ? 'Viewed'
-                              : 'Not Sent'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-left">
-                          {invoice.status === 'PAID' ? (
-                            <InvoicePaidDateEditor
-                              invoiceId={invoice.id}
-                              initialPaidAt={invoice.updatedAt?.toISOString() ?? null}
-                            />
-                          ) : (
-                            <span className="text-xs uppercase tracking-[0.3em] text-zinc-400">—</span>
-                          )}
+                              : invoice.status === 'DRAFT'
+                              ? 'Draft'
+                              : invoice.status}
+                            </span>
+                            {invoice.status === 'PAID' && invoice.paidAt && (
+                              <span className="text-xs text-zinc-500">
+                                Paid on {new Date(invoice.paidAt).toLocaleDateString()}
+                              </span>
+                            )}
+                            {invoice.status === 'PAID' && paymentSourceLabel && (
+                              <span className="inline-flex items-center gap-1 text-xs text-zinc-500">
+                                {paymentProvider === 'stripe' && (
+                                  <Image
+                                    src="/stripe-logo.svg"
+                                    alt="Stripe"
+                                    width={12}
+                                    height={12}
+                                    className="h-3 w-3"
+                                  />
+                                )}
+                                {paymentSourceLabel}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {isOwnerOrAdmin && (
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
-                            {invoice.user?.name || invoice.user?.email || '—'}
+                            {invoice.user?.name || invoice.user?.email || 'â€”'}
                           </td>
                         )}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
@@ -348,18 +444,17 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                               status={invoice.status}
                               variant="link"
                             />
-                            <RefundInvoiceButton invoiceId={invoice.id} />
+                            {showIssueRefund && (
+                              <RefundInvoiceButton invoiceId={invoice.id} />
+                            )}
+                            {showMarkRefunded && (
+                              <MarkInvoiceRefundedButton invoiceId={invoice.id} status={invoice.status} variant="link" />
+                            )}
                             <div className="grid w-full max-w-[140px] grid-cols-2 gap-2 justify-items-center">
                               <Link
-                                href={invoice.status === 'PAID' ? '#' : `/dashboard/invoices/new?edit=${invoice.id}`}
-                                aria-disabled={invoice.status === 'PAID'}
-                                className={`inline-flex items-center justify-center rounded-lg border bg-white p-2 shadow-sm transition ${
-                                  invoice.status === 'PAID'
-                                    ? 'cursor-not-allowed border-gray-200 text-gray-400'
-                                    : 'border-brand-primary-200 text-brand-primary-700 hover:border-brand-primary-300 hover:bg-brand-primary-50'
-                                }`}
-                                title={invoice.status === 'PAID' ? 'Editing disabled for paid invoices' : 'Edit invoice'}
-                                tabIndex={invoice.status === 'PAID' ? -1 : 0}
+                                href={`/dashboard/invoices/new?edit=${invoice.id}`}
+                                className="inline-flex items-center justify-center rounded-lg border border-brand-primary-200 bg-white p-2 text-brand-primary-700 shadow-sm transition hover:border-brand-primary-300 hover:bg-brand-primary-50"
+                                title="Edit invoice"
                               >
                                 <Pencil className="h-4 w-4" aria-hidden="true" />
                               </Link>
@@ -382,6 +477,18 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                               <div className="inline-flex items-center justify-center">
                                 <ResendButton invoiceId={invoice.id} />
                               </div>
+                              {invoice.shortCode && (
+                                <Link
+                                  href={`/p/${invoice.shortCode}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="col-span-2 inline-flex items-center justify-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-2 py-2 text-emerald-700 shadow-sm transition hover:border-emerald-400 hover:bg-emerald-100"
+                                  title="View public invoice"
+                                >
+                                  <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+                                  <span className="text-xs font-semibold">Public Invoice</span>
+                                </Link>
+                              )}
                               <div className="col-span-2 flex justify-center">
                                 <DeleteInvoiceButton invoiceId={invoice.id} />
                               </div>
@@ -406,16 +513,10 @@ export default async function InvoicesPage({ searchParams }: PageProps) {
                 <Download className="h-4 w-4" />
                 Export invoices
               </a>
-                <Link
-                  href="/dashboard/invoices/new"
-                  className="inline-flex items-center gap-2 rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 hover:text-[var(--color-brand-contrast)]"
-                >
-                  <Plus className="h-4 w-4" />
-                  New Invoice
-                </Link>
-              </div>
+            </div>
             </>
           )}
     </div>
   );
 }
+

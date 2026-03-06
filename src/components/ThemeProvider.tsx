@@ -13,52 +13,30 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Always start with 'light' to avoid hydration mismatch
-  const [theme, setThemeState] = useState<Theme>('light');
-  const [mounted, setMounted] = useState(false);
-
-  // Sync with localStorage after mount
-  useEffect(() => {
-    setMounted(true);
-    const stored = window.localStorage.getItem('clientwave-theme') as Theme;
-    if (stored && (stored === 'light' || stored === 'dark')) {
-      setThemeState(stored);
-    }
-  }, []);
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof window === 'undefined') return 'light';
+    const stored = window.localStorage.getItem('clientwave-theme');
+    return stored === 'dark' || stored === 'light' ? stored : 'light';
+  });
 
   useEffect(() => {
-    if (!mounted) return;
-    
     const root = document.documentElement;
-    
-    // Immediate synchronous update for mobile browsers
-    root.classList.remove('light', 'dark');
-    
-    // Force reflow
-    void root.offsetHeight;
-    
-    // Add the new theme class
-    root.classList.add(theme);
-    
-    // Force another reflow
-    void root.offsetHeight;
-    
-    // Additional update in next frame for stubborn mobile browsers
-    requestAnimationFrame(() => {
+    const body = document.body;
+
+    const applyTheme = () => {
       root.classList.remove('light', 'dark');
+      body.classList.remove('light', 'dark');
       root.classList.add(theme);
-      void root.offsetHeight;
-    });
-    
-    // And one more delayed update for maximum compatibility
-    setTimeout(() => {
-      root.classList.remove('light', 'dark');
-      root.classList.add(theme);
-    }, 10);
-    
-    // Store in localStorage
+      body.classList.add(theme);
+      root.dataset.theme = theme;
+      body.dataset.theme = theme;
+      root.style.colorScheme = theme;
+    };
+
+    applyTheme();
+    requestAnimationFrame(applyTheme);
     window.localStorage.setItem('clientwave-theme', theme);
-  }, [theme, mounted]);
+  }, [theme]);
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);

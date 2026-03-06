@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { getCurrentUser } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { resolveAppBaseUrl } from '@/lib/app-url';
 
 const SUBSCRIPTION_PRICE_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 999);
 
 const stripeSecret = process.env.STRIPE_SECRET_KEY;
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+const appUrl = resolveAppBaseUrl();
 
 export async function POST() {
   try {

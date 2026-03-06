@@ -17,8 +17,8 @@ export async function POST(request: Request) {
     if (!user || !user.companyId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (user.role !== 'OWNER' && user.role !== 'ADMIN') {
-      return NextResponse.json({ error: 'Only owners or admins may add resources' }, { status: 403 });
+    if (user.role !== 'OWNER' && user.role !== 'ADMIN' && user.role !== 'SUPERADMIN') {
+      return NextResponse.json({ error: 'Only owners, admins, or superadmins may add resources' }, { status: 403 });
     }
 
     const body = (await request.json()) as {
@@ -44,20 +44,27 @@ export async function POST(request: Request) {
       ? body.visibleToPositions.filter((p) => typeof p === 'string' && p.trim())
       : [];
 
+    const baseData = {
+      companyId: user.companyId,
+      title,
+      url,
+      description: body.description?.trim() || null,
+      requiresAcknowledgment: Boolean(body.requiresAcknowledgment),
+    };
+
     const resource = await (prisma as any).resource.create({
       data: {
-        company: { connect: { id: user.companyId } },
-        title,
-        url,
-        description: body.description?.trim() || null,
-        visibleToPositions,
-        requiresAcknowledgment: Boolean(body.requiresAcknowledgment),
+        ...baseData,
+        visibleToRoles: JSON.stringify([]),
+        visibleToPositions: JSON.stringify(visibleToPositions),
+        acknowledgedBy: JSON.stringify([]),
       },
     });
 
     return NextResponse.json({ resource });
   } catch (error) {
     console.error('Resource create failed', error);
-    return NextResponse.json({ error: 'Unable to create resource' }, { status: 500 });
+    const details = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: details, details }, { status: 500 });
   }
 }

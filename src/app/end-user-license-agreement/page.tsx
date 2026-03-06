@@ -9,7 +9,7 @@ export default function EndUserLicenseAgreementPage() {
   return (
     <div className="mx-auto max-w-3xl p-8">
       <h1 className="text-3xl font-bold mb-6">End-User License Agreement (EULA) for QuickBooks Integration</h1>
-      <p className="mb-4">This End-User License Agreement (“Agreement”) is a legal agreement between you (“User”) and [Your Company Name] (“Company”) regarding the use of the QuickBooks integration feature (“Integration”) provided through our application.</p>
+      <p className="mb-4">This End-User License Agreement (“Agreement”) is a legal agreement between you (“User”) and ClientWave (“Company”) regarding the use of the QuickBooks integration feature (“Integration”) provided through our application.</p>
       <ol className="list-decimal pl-6 space-y-2 mb-6">
         <li><b>Acceptance of Terms</b><br />By connecting your QuickBooks account to our application, you agree to be bound by this Agreement.</li>
         <li><b>License Grant</b><br />Company grants you a limited, non-exclusive, non-transferable license to use the Integration solely for your internal business purposes.</li>

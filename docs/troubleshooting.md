@@ -2,6 +2,8 @@
 
 This guide provides solutions for common issues you may encounter while using ClientWave. Follow these steps to resolve problems quickly and efficiently.
 
+For safe production release steps (pre-checks, canary rollout, rollback), use the [Canary Release Runbook](./release-canary.md).
+
 ## Authentication Issues
 
 ### Login Problems
@@ -14,6 +16,26 @@ This guide provides solutions for common issues you may encounter while using Cl
 4. **Browser Cache**: Clear your browser cache and cookies
 5. **Try Different Browser**: Test login in an incognito/private window
 6. **Two-Factor Authentication**: If enabled, ensure you're entering the correct code
+
+### Registration Creates User But You Stay Logged Out
+**Symptom**: Registration appears to create the user record, but the app still shows you as unauthenticated (same for login).
+
+**Likely cause**:
+1. Session cookie is not being stored in the browser (invalid cookie domain or host mismatch).
+
+**Solutions**:
+1. **Use One Canonical Host**: Make sure users always sign in on the same domain (`https://www.clientwave.app` recommended).
+2. **Check `NEXT_PUBLIC_APP_URL`**: Set it to your canonical URL (for example `https://www.clientwave.app`).
+3. **Check `COOKIE_DOMAIN` Format**: If set, it must be a plain domain (for example `.clientwave.app`) with no protocol/path/port.
+4. **Inspect Response Headers**: Verify login/register responses include `Set-Cookie: session_token=...`.
+5. **Inspect Browser Cookie Storage**: Confirm `session_token` is present after auth request.
+
+**Usage Example**:
+```bash
+curl -i -X POST https://www.clientwave.app/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"owner@example.com","password":"StrongPass123!"}'
+```
 
 ### API Authentication Failures
 **Symptom**: API requests return 401 Unauthorized errors
@@ -60,18 +82,25 @@ This guide provides solutions for common issues you may encounter while using Cl
 3. If the database is unavailable, auth fails fast instead of writing local mock files
 
 **Solutions**:
-1. **Set `DATABASE_URL`**: Confirm it is present in your runtime environment (local + deploy)
-2. **Check Connectivity**: Ensure the URL points to a reachable PostgreSQL instance
-3. **Run Migrations**: Apply schema migrations to the target database
-4. **Verify Runtime Env**: Confirm your hosting provider actually injected the expected env vars
-5. **Verify Runtime Packages**: Ensure `@prisma/client` is installed in `dependencies` (not only `devDependencies`)
-6. **Redeploy After Dependency Changes**: A fresh deploy is required after moving Prisma packages
-7. **Read Detailed Reason**: If response includes `Prisma unavailable reason: Prisma dependencies are unavailable at runtime`, the runtime cannot load Prisma modules and needs a clean redeploy/install
-8. **Prisma 7 Runtime Utils**: If logs show `Cannot find module '@prisma/client-runtime-utils'`, add `@prisma/client-runtime-utils` to runtime dependencies and redeploy
+1. **Set DB URLs**: Confirm `DIRECT_URL` and `DATABASE_URL` are present in runtime env (local + deploy)
+2. **Connection Priority**: Runtime prefers `DATABASE_URL` first and uses `DIRECT_URL` only as fallback
+3. **Check Connectivity**: Ensure the selected URL points to a reachable PostgreSQL instance
+4. **Run Migrations**: Apply schema migrations to the target database
+5. **Verify Runtime Env**: Confirm your hosting provider actually injected the expected env vars
+6. **Verify Runtime Packages**: Ensure `@prisma/client` is installed in `dependencies` (not only `devDependencies`)
+7. **Redeploy After Dependency Changes**: A fresh deploy is required after moving Prisma packages
+8. **Read Detailed Reason**: If response includes `Prisma unavailable reason: Prisma dependencies are unavailable at runtime`, the runtime cannot load Prisma modules and needs a clean redeploy/install
+9. **Prisma 7 Runtime Utils**: If logs show `Cannot find module '@prisma/client-runtime-utils'`, add `@prisma/client-runtime-utils` to runtime dependencies and redeploy
+10. **Run Health Probe**: Use `GET /api/health/db` to verify runtime env selection and live DB connectivity
+11. **Use Auth Dev Banner**: In development, auth pages show a DB status banner that runs the same health probe before login/register/reset actions
 
 **Usage Example**:
 ```bash
+# App-level DB health check
+curl -sS http://localhost:3000/api/health/db
+
 # Validate the app has a DB URL at runtime
+echo "$DIRECT_URL"
 echo "$DATABASE_URL"
 
 # Registration now requires a real DB; if DB is unavailable, this returns 503
@@ -90,6 +119,9 @@ curl -i -X POST http://localhost:3000/api/auth/register \
 4. **Regenerate Client**: Run `npx prisma generate` if the schema changed
 5. **Review Checklist**: Follow the migration checklist in `docs/database/README.md`
 
+**Auth-specific note**:
+If login pages log `Prisma session query failed` with `P2022` from `company.findUnique()`, your deployed DB is behind schema (for example missing `Company.stripeFeeResponsibility`). Run migrations in production, then redeploy/restart.
+
 **Usage Example (Message sender role drift)**:
 ```bash
 # Apply pending migrations to production target
@@ -97,6 +129,27 @@ npx prisma migrate deploy
 
 # If migration deploy is blocked, apply the missing column manually
 psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderRole" TEXT;'
+```
+
+**Chat-specific note**:
+If `/api/chat/messages` fails with `P2022` and `The column (not available) does not exist`, this is usually missing `Message.senderRole` in the target database. Apply the same migration/fix above, then redeploy/restart.
+
+### Product Create Fails with "malformed array literal"
+**Symptom**: `P2007` from `prisma.product.create()` with text like `malformed array literal`
+
+**Cause**:
+1. Prisma schema expects `Product.features` and `Product.tags` as `TEXT`
+2. Target database drifted to `TEXT[]` for one or both columns
+3. JSON-string list payloads (for example `["tag"]`) are rejected by PostgreSQL array parser
+
+**Solutions**:
+1. Deploy the migration that normalizes `Product.features` and `Product.tags` back to `TEXT`
+2. Run `npx prisma migrate deploy` in production
+3. Retry product create/update
+
+**Usage Example**:
+```bash
+npx prisma migrate deploy
 ```
 
 ## Performance Issues
@@ -145,6 +198,25 @@ psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderR
 4. **Time Zones**: Ensure time zones are consistent across systems
 5. **Re-authentication**: Disconnect and reconnect your calendar integration
 
+### Google Busy Times Not Blocking Slots
+**Symptom**: You have events on Google Calendar, but booking slots still appear open in ClientWave
+
+**Cause**:
+1. Busy periods are returned from Google in UTC
+2. Slot generation must be computed in the host user's timezone before overlap checks
+3. If slot times are built in server-local time, overlap detection can miss busy windows
+
+**Solutions**:
+1. **Confirm Connection**: Verify the host account is connected to Google Calendar
+2. **Check Host Timezone**: Ensure the host user profile timezone is correct
+3. **Use Updated Build**: Deploy the scheduling availability route that converts host local slot times to UTC before comparing to Google `freeBusy`
+4. **Retest Endpoint**: Call `GET /api/scheduling/{slug}/availability` and verify `bookedSlots` includes entries with source from Google in server logs
+
+**Usage Example**:
+```bash
+curl -sS "http://localhost:3000/api/scheduling/<host-slug>/availability"
+```
+
 ## Payment Processing Issues
 
 ### Failed Payments
@@ -158,6 +230,22 @@ psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderR
 5. **Card Verification**: Ensure CVV and billing address match records
 6. **Security Blocks**: Check if the transaction was flagged by fraud prevention
 
+### ACH Not Showing in Checkout
+**Symptom**: ACH (bank account) does not appear on the invoice payment form even after enabling it in Stripe.
+
+**Cause**:
+1. ClientWave now controls invoice checkout methods using company settings.
+2. Checkout uses explicit Stripe `payment_method_types` instead of fully automatic method selection.
+3. ACH only appears when both are true:
+4. `Settings -> Business -> Stripe -> Accepted Online Payment Methods -> ACH` is enabled.
+5. The connected Stripe account is eligible for `us_bank_account`.
+
+**Solutions**:
+1. In ClientWave Business Settings, confirm `ACH (US bank account)` toggle is enabled.
+2. Keep `Card` enabled unless you intentionally want ACH-only checkout.
+3. In Stripe for the connected account, confirm ACH is enabled and account capabilities are complete.
+4. Save settings, then open a new invoice payment page and retest.
+
 ### Refund Processing
 **Symptom**: Unable to process refunds or refunds not appearing
 
@@ -167,6 +255,31 @@ psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderR
 3. **Processing Method**: Ensure using the same payment method as original
 4. **Gateway Status**: Check payment gateway for any issues
 5. **Documentation**: Keep records of refund transactions
+
+### Stripe Payment Succeeds But Invoice Status Does Not Update
+**Symptom**: Customer payment completes in Stripe, but invoice/payment status in ClientWave stays unpaid or unchanged.
+
+**Quick checks in app**:
+1. Open **Settings -> Business -> Stripe**.
+2. Review the **Stripe Webhook Health** panel:
+3. Confirm **Mode** is expected (`Platform Managed` for Express/Custom, or `Manual` when using manual secret flow).
+4. Confirm **Status** is `Verified` (or review the `Last Error` message).
+5. Click **Retry Webhook Sync** to refresh webhook setup metadata.
+
+**Common fixes**:
+1. **Wrong signing secret**: Ensure the webhook secret in env/manual entry matches the exact Stripe endpoint.
+2. **Wrong event scope**: In Stripe, endpoint must receive events from connected accounts when using Connect.
+3. **Missing events**: Include `checkout.session.completed`, `payment_intent.succeeded`, `payment_intent.payment_failed`, and refund events.
+4. **Test/live mismatch**: Test secret does not verify live events and vice versa.
+5. **Endpoint exists but no secret shown**: Stripe often does not return `secret` when retrieving an existing endpoint. Re-running webhook sync should reuse stored secret or create a fresh endpoint to capture one.
+6. **Platform-managed fallback**: If `STRIPE_WEBHOOK_SECRET` is configured, Platform Managed mode can still be marked `Verified` even when a per-account secret is unavailable.
+7. **Express account UI**: Express accounts are platform-managed and should not require manual webhook secret entry in Settings. If manual webhook fields appear for an Express account, verify `Company.stripeAccountType` is `express` and refresh settings metadata.
+
+**Usage Example**:
+```bash
+# Verify webhook endpoint is reachable
+curl -i https://www.clientwave.app/api/stripe/webhook
+```
 
 ## Integration Issues
 
@@ -180,6 +293,31 @@ psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderR
 4. **Service Status**: Check the third-party service status page
 5. **Webhook Issues**: Verify webhook endpoints are accessible
 6. **Data Mapping**: Confirm field mappings are correct
+
+### Production Login/Register Fails (Works Locally)
+**Symptom**: Authentication works on localhost but fails in production.
+
+**Checks**:
+1. **Email normalization**: Login/register now trims + lowercases emails and uses case-insensitive lookup.
+2. **Cookie domain**: Verify `COOKIE_DOMAIN`/`NEXT_PUBLIC_APP_URL` align with your live host (`clientwave.app` vs `www.clientwave.app`).
+3. **HTTPS required**: Production session cookie is `secure=true`; non-HTTPS hosts will not keep the cookie.
+4. **Session write**: Confirm `Session` rows are being created on login/register.
+
+**Quick verification**:
+1. Register with mixed-case email (e.g. `User@Example.com`), then login with lowercase.
+2. In browser DevTools, confirm `session_token` is set after login response.
+
+### Resources: "Unable to create resource"
+**Symptom**: Creating a resource from the Resources page fails with "Unable to create resource".
+
+**What changed**:
+1. Resource creation now tries multiple payload shapes for `visibleToRoles`, `visibleToPositions`, and `acknowledgedBy` to support mixed/legacy DB schemas.
+2. The Resources form now surfaces server `details` when available instead of only a generic message.
+
+**Quick checks**:
+1. Confirm your user is `OWNER`, `ADMIN`, or `SUPERADMIN`.
+2. Confirm the user has a `companyId`.
+3. Re-submit and read the full error text shown in the form (now includes backend details).
 
 ### Data Mapping Problems
 **Symptom**: Data isn't transferring correctly between systems
@@ -251,6 +389,20 @@ psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderR
 - Refresh the page
 - Contact support if the issue persists
 
+### "Unable to create resource"
+**Symptom**: Creating a resource fails even when title and URL are filled.
+
+**Cause**:
+1. Resource visibility/acknowledgment fields are persisted as serialized text in the database.
+2. Sending raw arrays or relation-connect payloads can fail resource creation in some environments.
+3. Role restrictions can block creation if the user is not `OWNER`, `ADMIN`, or `SUPERADMIN`.
+
+**Solutions**:
+1. Ensure resource create writes `companyId` directly and stores `visibleToRoles`, `visibleToPositions`, and `acknowledgedBy` in the format expected by the current DB schema.
+2. Keep a compatibility fallback in the create API so both legacy JSON-string storage and string-array storage are accepted.
+3. Confirm the logged-in user role has resource management permissions (`OWNER`, `ADMIN`, `SUPERADMIN`).
+4. Ensure resource list/read paths parse stored visibility text back into arrays before rendering.
+
 ### "Rate Limit Exceeded"
 **Meaning**: You've exceeded API or action limits
 **Solutions**:
@@ -264,6 +416,94 @@ psql "$DATABASE_URL" -c 'ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS "senderR
 - Check your internet connection
 - Try again later
 - Simplify your request if possible
+
+### "You must belong to a company before creating clients"
+**Symptom**: Add Client page shows company-required warning even though your user is already linked to a company in the database
+
+**Cause**:
+1. Frontend helper request (`/api/auth/me`) returned an unexpected shape or missing `companyId`
+2. Client gate logic read `user.companyId` only and treated missing data as no membership
+
+**Solutions**:
+1. Ensure `/api/auth/me` includes a `user` object with `companyId` (and keep top-level compatibility if needed)
+2. Refresh the session (log out/in) after company membership updates
+3. Reload the Add Client page after deploy to clear stale client-side state
+
+### Invoice Edit Opens Blank and Creates New Invoice
+**Symptom**: Clicking Edit on an invoice opens the invoice editor without existing data, and saving creates a new invoice
+
+**Cause**:
+1. Invoice editor route did not apply `?edit=<invoiceId>` mode
+2. Form submit path used create-only logic instead of updating existing invoice
+
+**Expected Behavior**:
+1. `Edit` loads existing invoice values into the form
+2. Saving in edit mode sends `PUT /api/invoices/{id}` and updates the same invoice record
+
+### Meeting Type Toggle Saves but UI Doesn’t Confirm
+**Symptom**: In Availability/Scheduling, toggling a meeting type (for example Phone call) appears to change but save confirmation is missing or the setting reverts
+
+**Cause**:
+1. Profile update payload can send booleans while server parsing expects string values
+2. Scheduling tab can submit availability without a client-side success callback, so no local “Saved!” indicator is shown
+
+**Solutions**:
+1. Ensure server boolean parsing accepts both boolean and string inputs
+2. Preserve existing boolean settings when a field is omitted from payload
+3. Ensure the Scheduling form has a submit callback to trigger the local saved state indicator
+
+### Buffer Behavior in Scheduling
+**Expected Behavior**:
+1. Slot generation uses `duration + buffer` spacing by default
+2. Buffer changes the next available start time automatically
+3. Example: duration 30 + buffer 15 gives starts like 9:00, 9:45, 10:30
+4. Booking and reschedule validation use the same slot grid
+
+**If slots look too restricted**:
+1. Check for overlapping Google busy events
+2. Check canceled status (`CANCELLED`) so old bookings are not still counted
+3. Refresh `/api/scheduling/{slug}/availability` and verify blocked slots are only around real busy periods
+
+### Owner Cannot Cancel a Booked Slot
+**Symptom**: You can see booked appointments in Scheduling, but there is no action to cancel and reopen a slot
+
+**Expected Behavior**:
+1. When the authenticated user is the booking owner, each active booking shows an `x` cancel action
+2. Each active booking also shows `rs` to reschedule
+3. Each appointment row shows a trash action for permanent delete
+4. Clicking `x` opens a confirmation modal
+5. Confirming sets booking status to `CANCELLED`
+6. Cancelled bookings no longer block availability slots
+7. Clicking `rs` opens a reschedule modal to pick new date/time
+8. Rescheduling updates the booking, attempts to update Google Calendar, and sends reschedule notifications
+9. Trash delete permanently removes the booking row and attempts to remove linked Google events
+10. If the booking was mirrored to Google Calendar, cancellation attempts to remove the Google event and notify attendees
+11. Cancellation emails are sent to both the client and owner
+
+**If it does not work**:
+1. Verify the request to `DELETE /api/scheduling/{slug}/admin-bookings?bookingId=...` returns `200`
+2. Confirm booking `status` is `CANCELLED` in DB
+3. Refresh scheduling/public booking pages to reload availability
+
+### Can't find booking link or embed code in Scheduling
+**Symptom**: You can't find your public booking link or scheduler embed snippet where it used to be in the form.
+
+**Expected Behavior**:
+1. In the Scheduling page, the public link and embed snippet are grouped in a `Share & Embed` block below the availability form.
+2. `Share & Embed` is disabled until at least one availability day is selected.
+3. The section includes an accordion summary of selected availability slots.
+
+### PWA Theme Only Partially Updates
+**Symptom**: In mobile/PWA, switching back to light mode updates page background but inner app containers remain dark
+
+**Solutions**:
+1. Ensure theme class is applied to both `html` and `body`
+2. Prefer app-shell backgrounds based on CSS variables (`--background`) for consistent theme sync
+3. Hard-refresh PWA after deploy to clear stale cached CSS/JS
+4. Ensure `prefers-color-scheme: dark` rules do not override explicit `.light` mode on `:root`
+5. For fixed headers/nav, prefer explicit theme-state classes over `dark:*` only utilities to avoid stale class mismatches on mobile
+6. For dashboard cards/widgets (business info, username, unread messages, quick actions), prefer CSS-variable surfaces (`--color-surface`, `--color-border`, `--foreground`) over mixed `dark:*` panel classes
+7. Keep login/auth pages (including root `AuthPageClient` at `/`) explicitly light-styled by default (white backgrounds, dark text) to avoid phone-only dark rendering drift
 
 ## Diagnostic Information
 

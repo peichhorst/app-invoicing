@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import {
   useEffect,
@@ -20,6 +20,9 @@ type Address = {
 
 type CheckoutFormProps = {
   amount: number;
+  baseAmountCents?: number;
+  stripeFeeCents?: number;
+  applyStripeFee?: boolean;
   sellerId?: string;
   invoiceId?: string;
   initialEmail?: string;
@@ -34,6 +37,8 @@ type CheckoutFormProps = {
   stripeCustomerId?: string;
   defaultPaymentMethodId?: string | null;
   intentEndpoint?: string;
+  saveCardContext?: 'invoice' | 'recurring';
+  embedded?: boolean;
   onSuccess?: (paymentIntentId: string) => void | Promise<void>;
   onError?: (message: string) => void;
 };
@@ -61,6 +66,9 @@ const US_STATES = [
 
 export default function CheckoutForm({
   amount,
+  baseAmountCents,
+  stripeFeeCents = 0,
+  applyStripeFee = false,
   sellerId,
   invoiceId,
   initialEmail,
@@ -68,13 +76,15 @@ export default function CheckoutForm({
   stripeCustomerId,
   defaultPaymentMethodId,
   intentEndpoint,
+  saveCardContext = 'invoice',
+  embedded = false,
   onSuccess,
   onError,
 }: CheckoutFormProps) {
   const stripe = useStripe();
   const elements = useElements();
   const inputClass =
-    "w-full rounded-lg border border-white/30 bg-white/10 px-3 py-2 text-sm text-white placeholder-white/70 shadow-sm focus:border-white focus:outline-none focus:ring-2 focus:ring-white/30";
+    "w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-500/20";
   const cardElementOptions = {
     style: {
       base: {
@@ -105,6 +115,8 @@ export default function CheckoutForm({
   const [shipping] = useState<number | null>(null);
   const [tax] = useState<number | null>(null);
   const [total, setTotal] = useState(amount ?? BASE_PRICE);
+  const resolvedBaseAmountCents =
+    baseAmountCents ?? Math.max(0, (amount ?? BASE_PRICE) - (stripeFeeCents ?? 0));
   const [clientSecret, setClientSecret] = useState("");
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -127,7 +139,7 @@ export default function CheckoutForm({
         const res = await fetch(intentEndpoint ?? "/api/payments/create-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: total, email, sellerId, invoiceId }),
+          body: JSON.stringify({ amount: total, email, sellerId, invoiceId, applyStripeFee }),
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
@@ -146,7 +158,7 @@ export default function CheckoutForm({
       void createIntent();
     }, 400);
     return () => clearTimeout(timer);
-  }, [email, total]);
+  }, [email, total, sellerId, invoiceId, applyStripeFee, intentEndpoint]);
 
   useEffect(() => {
     setTotal(amount ?? BASE_PRICE);
@@ -258,7 +270,7 @@ export default function CheckoutForm({
   };
 
   const renderStateSelect = (value: string, onChange: (value: string) => void) => {
-    const selectClass = `${inputClass} bg-brand-primary-700/40 text-white`;
+    const selectClass = inputClass;
     return (
       <select
         className={selectClass}
@@ -289,22 +301,27 @@ export default function CheckoutForm({
   return (
     <div className="w-full">
       {success ? (
-        <div className="rounded-2xl border border-white/20 bg-white/10 p-8 text-center text-white shadow-xl backdrop-blur">
+        <div className="rounded-2xl border border-zinc-200 bg-white p-8 text-center text-zinc-900 shadow-sm">
           <h2 className="text-3xl font-semibold">Payment Successful!</h2>
-          <p className="mt-2 text-sm text-white/80">Thank you for your payment. A receipt will be emailed shortly.</p>
+          <p className="mt-2 text-sm text-zinc-600">Thank you for your payment. A receipt will be emailed shortly.</p>
         
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="rounded-2xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur space-y-8 text-white">
+        <form
+          onSubmit={handleSubmit}
+          className={`${embedded ? '' : 'rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm '}space-y-8 text-zinc-900`}
+        >
           {apiError && (
-            <div className="rounded-lg border border-white/40 bg-white/20 px-4 py-2 text-sm text-rose-100">
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
               {apiError}
             </div>
           )}
-          <div className="flex flex-col gap-2">
-            <h2 className="text-2xl font-semibold">Secure Checkout</h2>
-            <p className="text-sm text-white/80">Enter your details and pay with your card.</p>
-          </div>
+          {!embedded && (
+            <div className="flex flex-col gap-2">
+              <h2 className="text-2xl font-semibold">Secure Checkout</h2>
+              <p className="text-sm text-zinc-600">Enter your details and pay with your card.</p>
+            </div>
+          )}
 
           <div className="grid gap-6 lg:grid-cols-[1.05fr,0.95fr]">
             <div className="space-y-6">
@@ -364,15 +381,29 @@ export default function CheckoutForm({
               </div>
             </div>
 
-            <div className="space-y-5 rounded-xl border border-white/20 bg-white/5 p-6">
+            <div
+              className={`space-y-5 ${embedded ? '' : 'rounded-xl border border-zinc-200 bg-zinc-50 p-6'}`}
+            >
               <div className="space-y-2">
                 <h3 className="text-lg font-semibold">Payment Details</h3>
-                <div className="rounded-lg border border-white/20 bg-white px-3 py-3 text-black shadow-inner">
+                <div className="rounded-lg border border-zinc-200 bg-white px-3 py-3 text-zinc-900 shadow-inner">
                   <CardElement onChange={(ev) => setCardComplete(ev.complete)} options={cardElementOptions} />
                 </div>
               </div>
 
-              <div className="space-y-2 rounded-lg border border-dashed border-white/30 bg-white/5 p-4 text-sm">
+              <div className="space-y-2 rounded-lg border border-dashed border-zinc-300 bg-white p-4 text-sm">
+                {applyStripeFee && stripeFeeCents > 0 && (
+                  <>
+                    <div className="flex items-center justify-between text-zinc-700">
+                      <span>Invoice amount</span>
+                      <span>${(resolvedBaseAmountCents / 100).toFixed(2)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-zinc-700">
+                      <span>Processing fee</span>
+                      <span>${(stripeFeeCents / 100).toFixed(2)}</span>
+                    </div>
+                  </>
+                )}
                 <div className="flex items-center justify-between text-base font-semibold">
                   <span>Total</span>
                   <span>${(total / 100).toFixed(2)}</span>
@@ -385,23 +416,25 @@ export default function CheckoutForm({
                     type="checkbox"
                     checked={saveCard}
                     onChange={(e) => setSaveCard(e.target.checked)}
-                    className="h-4 w-4 rounded border-white/60 text-brand-primary-600 focus:ring-brand-primary-500"
+                    className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                   />
                   <span>
-                    Save card for automatic recurring payments{" "}
-                    <span className="text-green-300">(recommended)</span>
+                    {saveCardContext === 'recurring'
+                      ? 'Save card for automatic recurring payments'
+                      : 'Save card for future payments'}{" "}
+                    <span className="text-emerald-600">(recommended)</span>
                   </span>
                 </label>
               )}
               {processingMessageVisible && (calculating || loading) && (
-                <p className="text-sm text-white/80">Preparing payment…</p>
+                <p className="text-sm text-zinc-600">Preparing payment...</p>
               )}
-              {apiError && <p className="text-xs text-amber-200">{apiError}</p>}
+              {apiError && <p className="text-xs text-rose-700">{apiError}</p>}
 
               <button
                 type="submit"
                 disabled={loading || calculating || !clientSecret || !cardComplete}
-                className="w-full rounded-lg bg-white px-4 py-3 text-sm font-semibold text-brand-primary-700 shadow-sm transition hover:bg-white/90 cursor-pointer disabled:cursor-not-allowed disabled:bg-white/50 disabled:text-brand-primary-400"
+                className="w-full rounded-lg bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 cursor-pointer disabled:cursor-not-allowed disabled:bg-brand-primary-200 disabled:text-zinc-500"
               >
                 {loading ? "Processing..." : "Pay Now"}
               </button>
@@ -412,4 +445,5 @@ export default function CheckoutForm({
     </div>
   );
 }
+
 

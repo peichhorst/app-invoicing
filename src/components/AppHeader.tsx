@@ -39,11 +39,16 @@ type AppHeaderProps = {
 
 export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
   const pathname = usePathname();
+  const isAuthenticated = Boolean(user);
   const { theme, toggleTheme } = useTheme();
   const quickLinks = [
     { label: 'Documentation', href: '/docs' },
     { label: 'Chat', href: '/chat' },
   ];
+  const dropdownButtonBase =
+    'block w-full rounded-md border px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.3em] shadow-sm transition';
+  const dropdownButtonPrimary = `${dropdownButtonBase} border-zinc-200 dark:border-zinc-700 bg-brand-primary-700 dark:bg-brand-primary-600 text-white hover:bg-brand-primary-800 dark:hover:bg-brand-primary-700`;
+  const dropdownButtonSecondary = `${dropdownButtonBase} border-zinc-200 dark:border-zinc-700 bg-white text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700`;
   const showGenericHeader =
     typeof pathname === 'string' &&
     (pathname.startsWith('/clientwave-support') || pathname.startsWith('/support'));
@@ -115,6 +120,7 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
 
   const hasName = Boolean(user?.name && user.name.trim().length > 0);
   const shouldUseInitials = hasName && !isOnboarding;
+  const isDark = theme === 'dark';
   // Context-aware primary color for initials badge
   const initialsBg = logoUser?.companyPrimaryColor || 'var(--color-brand-primary-700)';
   const initialsText = '#fff';
@@ -129,14 +135,22 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
       {getInitials(logoUser?.name ?? user?.name)}
     </div>
   ) : (
-    <div className="flex h-11 w-11 items-center justify-center rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-brand-primary-700 dark:text-zinc-300">
+    <div
+      className={`flex h-11 w-11 items-center justify-center rounded-full border ${
+        isDark ? 'border-zinc-700 bg-zinc-800 text-zinc-300' : 'border-zinc-200 bg-zinc-50 text-brand-primary-700'
+      }`}
+    >
       <UserIcon size={18} />
     </div>
   );
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-30 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 w-full px-2 sm:px-0 overflow-visible">
-        <div className="relative mx-auto flex max-w-none items-center justify-between px-0 sm:px-4 lg:px-4 py-3">
+    <header
+      className={`fixed top-0 left-0 right-0 z-30 w-full px-2 sm:px-0 overflow-visible border-b ${
+        isDark ? 'border-zinc-800 bg-zinc-950 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-900'
+      }`}
+    >
+        <div className="relative mx-auto flex h-[85px] max-w-none items-center justify-between px-0 sm:px-4 lg:px-4">
         <Link href="/" className="group flex items-center gap-4">
           {useCompanyLogo && (tempLogoUrl || user?.companyLogoUrl) ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -152,91 +166,125 @@ export default function AppHeader({ user, isOnboarding }: AppHeaderProps) {
           <div className="hidden md:flex items-center gap-3" />
         <div className="flex w-full items-center gap-3">
           <div className="ml-auto flex items-center gap-3">
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={open}
+                className={`md:hidden flex h-[56px] w-[56px] items-center justify-center rounded-full border-2 border-[var(--color-brand-logo-text)] text-[var(--color-brand-logo-text)] transition hover:border-brand-primary-400 ${
+                  isDark ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-white hover:bg-brand-primary-50'
+                }`}
+              >
+                <span className="sr-only">Open menu</span>
+                <Menu size={28} />
+              </button>
+            )}
             <div className="relative">
               <button
                 type="button"
                 ref={buttonRef}
                 onClick={() => setMenuOpen((prev) => !prev)}
-                className="inline-flex items-center gap-2 rounded-full bg-zinc-100 dark:bg-zinc-900 px-3 py-2 text-sm font-semibold uppercase tracking-[0.3em] text-brand-primary-700 dark:text-zinc-200 shadow-sm border border-zinc-200 dark:border-zinc-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary-700"
+                className={`inline-flex rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary-700 ${
+                  isAuthenticated
+                    ? `items-center gap-2 px-3 py-2 text-sm font-semibold uppercase tracking-[0.3em] shadow-sm ${
+                        isDark
+                          ? 'bg-transparent text-zinc-200 border-[var(--color-brand-logo-text)]'
+                          : 'bg-transparent text-brand-primary-700 border-[var(--color-brand-logo-text)]'
+                      }`
+                    : `h-[56px] w-[56px] items-center justify-center border-2 transition hover:border-brand-primary-400 ${
+                        isDark ? 'bg-zinc-800 hover:bg-zinc-700' : 'bg-white hover:bg-brand-primary-50'
+                      }`
+                }`}
+                style={
+                  isAuthenticated
+                    ? undefined
+                    : {
+                        borderColor: themeLogoColor,
+                        color: themeLogoColor,
+                      }
+                }
                 aria-haspopup="true"
                 aria-expanded={menuOpen}
               >
-                <span className="ring-1 ring-brand-primary-100 dark:ring-zinc-700 rounded-full">{avatar}</span>
-                <ChevronDown 
-                  size={18} 
-                  style={{ color: theme === 'dark' ? 'white' : themeLogoColor }} 
-                />
+                {isAuthenticated ? (
+                  <>
+                    <span className={`ring-1 rounded-full ${isDark ? 'ring-zinc-700' : 'ring-brand-primary-100'}`}>{avatar}</span>
+                    <ChevronDown
+                      size={18}
+                      style={{ color: theme === 'dark' ? 'white' : themeLogoColor }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Menu
+                      size={28}
+                      style={{ color: theme === 'dark' ? 'white' : themeLogoColor }}
+                    />
+                    <span className="sr-only">Open menu</span>
+                  </>
+                )}
               </button>
               {menuOpen && (
                 <div
                   ref={menuRef}
-                  className="absolute right-0 top-full z-20 mt-3 w-56 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-3 text-zinc-900 dark:text-zinc-100 shadow-2xl"
+                  className="absolute right-0 top-full z-20 mt-3 w-56 rounded-2xl border border-[var(--color-brand-logo-text)] bg-white p-3 text-zinc-900 shadow-2xl"
                 >
                   <div className="space-y-2">
-                    {user && (
-                      <>
+                    <Link
+                      href={isAuthenticated ? '/dashboard' : '/login'}
+                      onClick={() => setMenuOpen(false)}
+                      className={dropdownButtonPrimary}
+                    >
+                      {isAuthenticated ? 'Dashboard' : 'Login / Register'}
+                    </Link>
+                    {quickLinks.map((link) => {
+                      const isActive =
+                        pathname === link.href || pathname?.startsWith(`${link.href}/`);
+                      return (
                         <Link
-                          href="/dashboard/settings"
+                          key={link.label}
+                          href={link.href}
                           onClick={() => setMenuOpen(false)}
-                          className="block w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-brand-primary-700 dark:bg-brand-primary-600 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm hover:bg-brand-primary-800 dark:hover:bg-brand-primary-700"
+                          className={`${dropdownButtonBase} ${
+                            isActive
+                              ? 'border-zinc-200 dark:border-zinc-700 bg-brand-primary-700 dark:bg-brand-primary-600 text-white hover:bg-brand-primary-800 dark:hover:bg-brand-primary-700'
+                              : 'border-zinc-200 dark:border-zinc-700 bg-white text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
+                          }`}
                         >
-                          Settings
+                          {link.label}
                         </Link>
-                        {quickLinks.map((link) => {
-                          const isActive =
-                            pathname === link.href || pathname?.startsWith(`${link.href}/`);
-                          return (
-                            <Link
-                              key={link.label}
-                              href={link.href}
-                              onClick={() => setMenuOpen(false)}
-                              className={`block w-full rounded-md border border-zinc-200 dark:border-zinc-700 px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.3em] shadow-sm ${
-                                isActive
-                                  ? 'bg-brand-primary-700 text-white hover:bg-brand-primary-800 dark:bg-brand-primary-600 dark:hover:bg-brand-primary-700'
-                                  : 'bg-white text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700'
-                              }`}
-                            >
-                              {link.label}
-                            </Link>
-                          );
-                        })}
+                      );
+                    })}
+                    {isAuthenticated && (
+                      <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className={`flex items-center justify-center gap-2 ${dropdownButtonSecondary}`}
+                      >
+                        {theme === 'dark' ? (
+                          <Sun size={16} className="text-yellow-500" />
+                        ) : (
+                          <Moon size={16} className="text-zinc-500" />
+                        )}
+                        <span>Theme</span>
+                      </button>
+                    )}
+                    {isAuthenticated && (
+                      <form action="/api/auth/logout" method="post">
                         <button
-                          type="button"
-                          onClick={toggleTheme}
-                          className="flex w-full items-center gap-2 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-700 dark:text-zinc-300 shadow-sm hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                          type="submit"
+                          onClick={() => {
+                            localStorage.removeItem('clientwave-theme');
+                          }}
+                          className={dropdownButtonPrimary}
                         >
-                          {theme === 'dark' ? (
-                            <Sun size={16} className="text-yellow-500" />
-                          ) : (
-                            <Moon size={16} className="text-zinc-500" />
-                          )}
-                          <span>Theme</span>
+                          Logout
                         </button>
-                        <form action="/api/auth/logout" method="post">
-                          <button
-                            type="submit"
-                            onClick={() => {
-                              localStorage.removeItem('clientwave-theme');
-                            }}
-                            className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-brand-primary-700 dark:bg-brand-primary-600 px-3 py-2 text-xs font-semibold uppercase tracking-[0.3em] text-white shadow-sm hover:bg-brand-primary-800 dark:hover:bg-brand-primary-700"
-                          >
-                            Logout
-                          </button>
-                        </form>
-                      </>
+                      </form>
                     )}
                   </div>
                 </div>
               )}
             </div>
-            <button
-              type="button"
-              onClick={open}
-              className="md:hidden flex h-[52px] w-[52px] items-center justify-center rounded-full border border-[var(--color-brand-logo-text)] bg-white dark:bg-zinc-800 text-[var(--color-brand-logo-text)] transition hover:border-brand-primary-400 hover:bg-brand-primary-50 dark:hover:bg-zinc-700"
-            >
-              <span className="sr-only">Open menu</span>
-              <Menu size={25} />
-            </button>
           </div>
         </div>
       </div>

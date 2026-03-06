@@ -49,14 +49,15 @@ export default function NewClientPage() {
       try {
         const meRes = await fetch('/api/auth/me');
         const meJson = await meRes.json().catch(() => null);
-        const role = meJson?.user?.role as string | undefined;
+        const meUser = meJson?.user ?? meJson ?? null;
+        const role = meUser?.role as string | undefined;
         const elevated = role === 'OWNER' || role === 'ADMIN';
-        if (meJson?.user?.id) {
-          setCurrentUserId(meJson.user.id);
+        if (meUser?.id) {
+          setCurrentUserId(meUser.id);
         }
         setCanAssign(elevated);
 
-        const companyId = meJson?.user?.companyId ?? meJson?.user?.company?.id ?? null;
+        const companyId = meUser?.companyId ?? meUser?.company?.id ?? null;
         if (!companyId) {
           setCanCreate(false);
           setLimitMessage('You must belong to a company before creating clients.');

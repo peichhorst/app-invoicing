@@ -49,6 +49,24 @@ const WEEKDAY_INDEX: Record<string, number> = {
   Saturday: 6,
 };
 
+const parseSlotMinutes = (time: string) => {
+  const [hour, minute] = time.split(':').map(Number);
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null;
+  return hour * 60 + minute;
+};
+
+const COMMON_TIME_ZONES = [
+  'America/Los_Angeles',
+  'America/Denver',
+  'America/Chicago',
+  'America/New_York',
+  'Europe/London',
+  'Europe/Berlin',
+  'Asia/Kolkata',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+];
+
 
 const buildDisabledSlotMap = (slots: BookedSlot[], timeZone: string) => {
   const map = new Map<string, Set<string>>();
@@ -56,7 +74,7 @@ const buildDisabledSlotMap = (slots: BookedSlot[], timeZone: string) => {
     if (!slot.date) return;
     const dateKey = slot.date;
     const timeKey = slot.startTime; // Always use 24-hour format
-    console.log('🔍 Building disabled slot:', {
+    console.log('ðŸ” Building disabled slot:', {
       dateKey,
       timeKey,
     });
@@ -78,29 +96,45 @@ export default function BookingFormClient({
   hostTimezone = 'America/Los_Angeles',
   ownerId,
 }: BookingFormProps): JSX.Element {
-  const formatTimeLocal = useCallback(
-    (isoString: string) =>
+  const [displayTimezone, setDisplayTimezone] = useState<string>(() => {
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return browserTz || hostTimezone;
+  });
+
+  const formatTimeInTimezone = useCallback(
+    (isoString: string, timeZone: string) =>
       new Date(isoString).toLocaleTimeString('en-US', {
-        timeZone: hostTimezone,
+        timeZone,
         hour: 'numeric',
         minute: '2-digit',
         hour12: true,
-        timeZoneName: 'short',
       }),
-    [hostTimezone],
+    [],
   );
 
-  const formatDateLocal = useCallback(
-    (isoString: string) =>
+  const formatDateInTimezone = useCallback(
+    (isoString: string, timeZone: string) =>
       new Date(isoString).toLocaleDateString('en-US', {
-        timeZone: hostTimezone,
+        timeZone,
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric',
       }),
-    [hostTimezone],
+    [],
   );
+
+  const formatDateLocal = useCallback(
+    (isoString: string) => formatDateInTimezone(isoString, displayTimezone),
+    [displayTimezone, formatDateInTimezone],
+  );
+
+  const timezoneOptions = useMemo(() => {
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return Array.from(
+      new Set([browserTz, hostTimezone, ...COMMON_TIME_ZONES].filter(Boolean) as string[]),
+    ).sort();
+  }, [hostTimezone]);
 
   const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
   const [selectedDayLabel, setSelectedDayLabel] = useState('');
@@ -122,11 +156,11 @@ export default function BookingFormClient({
   );
 
   useEffect(() => {
-    console.log('🔍 DEBUG: Initial bookedSlots received:', {
+    console.log('ðŸ” DEBUG: Initial bookedSlots received:', {
       count: bookedSlots.length,
       slots: bookedSlots.slice(0, 5),
     });
-    console.log('🔍 DEBUG: Disabled slots map:', {
+    console.log('ðŸ” DEBUG: Disabled slots map:', {
       size: disabledSlots.size,
       entries: Array.from(disabledSlots.entries()).map(([date, times]) => ({
         date,
@@ -135,8 +169,21 @@ export default function BookingFormClient({
     });
   }, []);
 
+  useEffect(() => {
+    const heading = document.getElementById('booking-request-header');
+    if (!heading) return;
+    if (status === 'success') {
+      heading.classList.add('hidden');
+    } else {
+      heading.classList.remove('hidden');
+    }
+    return () => {
+      heading.classList.remove('hidden');
+    };
+  }, [status]);
+
   const hasSlots = days.length > 0 && days.some((day) => day.slots.length > 0);
-  const submitDisabled = !selectedSlot || !name.trim() || !email.trim() || status === 'loading';
+  const submitDisabled = !selectedSlot || !name.trim() || !email.trim() || !phone.trim() || status === 'loading';
 
   const hostIsoFormatter = useMemo(
     () =>
@@ -239,6 +286,23 @@ export default function BookingFormClient({
     return map;
   }, [days]);
 
+  const meetingLengthLabel = useMemo(() => {
+    const durations = new Set<number>();
+    days.forEach((day) => {
+      day.slots.forEach((slot) => {
+        const start = parseSlotMinutes(slot.start);
+        const end = parseSlotMinutes(slot.end);
+        if (start === null || end === null) return;
+        const duration = end - start;
+        if (duration > 0) durations.add(duration);
+      });
+    });
+    const values = Array.from(durations).sort((a, b) => a - b);
+    if (!values.length) return null;
+    if (values.length === 1) return `${values[0]} minutes`;
+    return `${values[0]}-${values[values.length - 1]} minutes`;
+  }, [days]);
+
   const availableDateEntries = useMemo(() => {
     const entries: { date: Date; iso: string; dayOfWeek: number }[] = [];
     const horizonDays = 6 * 30; // ~6 months
@@ -308,7 +372,7 @@ export default function BookingFormClient({
         const payload = await response.json().catch(() => null);
         if (!isActive || !payload?.bookedSlots) return;
         
-        console.log('🔍 DEBUG: Fetched availability snapshot:', {
+        console.log('ðŸ” DEBUG: Fetched availability snapshot:', {
           bookedSlotsCount: payload.bookedSlots.length,
           firstFewSlots: payload.bookedSlots.slice(0, 5),
         });
@@ -358,14 +422,15 @@ export default function BookingFormClient({
     return slotDate;
   };
 
-  const buildSlotIsoFromDate = useCallback(
-    (date: Date, timeString: string): string => {
-      const slotDate = new Date(date);
+  const buildUtcIsoFromHostDateKey = useCallback(
+    (hostDateKey: string, timeString: string): string => {
       const [hour, minute] = timeString.split(':').map(Number);
-      slotDate.setHours(hour, minute, 0, 0);
-      return slotDate.toISOString();
+      const localDateTimeStr = `${hostDateKey} ${hour.toString().padStart(2, '0')}:${minute
+        .toString()
+        .padStart(2, '0')}`;
+      return fromZonedTime(localDateTimeStr, hostTimezone).toISOString();
     },
-    [],
+    [hostTimezone],
   );
 
   const isPastSlot = (dateKey: string, timeKey: string): boolean => {
@@ -390,12 +455,41 @@ export default function BookingFormClient({
   }, [selectedDate, selectedDayLabel, formatDateLocal]);
 
   const selectedSlotLabel = useMemo(() => {
-    if (!selectedSlot || !selectedDate) return 'Pick a slot above';
-    const startIso = buildSlotIsoFromDate(selectedDate, selectedSlot.start);
-    const endIso = buildSlotIsoFromDate(selectedDate, selectedSlot.end);
-    const slotTimeLabel = `${formatTimeLocal(startIso)} - ${formatTimeLocal(endIso)}`;
-    return `${selectedDayFullLabel} · ${slotTimeLabel}`;
-  }, [selectedDayFullLabel, selectedSlot, selectedDate, buildSlotIsoFromDate, formatTimeLocal]);
+    if (!selectedSlot || !selectedHostIso) return '';
+    const startIso = buildUtcIsoFromHostDateKey(selectedHostIso, selectedSlot.start);
+    const endIso = buildUtcIsoFromHostDateKey(selectedHostIso, selectedSlot.end);
+    const viewerTimeLabel = `${formatTimeInTimezone(startIso, displayTimezone)} - ${formatTimeInTimezone(
+      endIso,
+      displayTimezone,
+    )} (${displayTimezone})`;
+
+    if (displayTimezone === hostTimezone) {
+      return `${selectedDayFullLabel} · ${viewerTimeLabel}`;
+    }
+
+    const hostDateLabel = formatDateInTimezone(startIso, hostTimezone);
+    const hostTimeLabel = `${formatTimeInTimezone(startIso, hostTimezone)} - ${formatTimeInTimezone(
+      endIso,
+      hostTimezone,
+    )} (${hostTimezone})`;
+    const hostSegment =
+      hostDateLabel === selectedDayFullLabel
+        ? hostTimeLabel
+        : `${hostDateLabel} · ${hostTimeLabel}`;
+
+    return `${selectedDayFullLabel} · ${viewerTimeLabel} · Host: ${hostSegment}`;
+  }, [
+    selectedDayFullLabel,
+    selectedSlot,
+    selectedHostIso,
+    buildUtcIsoFromHostDateKey,
+    formatTimeInTimezone,
+    formatDateInTimezone,
+    displayTimezone,
+    hostTimezone,
+  ]);
+
+  const hasSelectedDateTime = Boolean(selectedSlot && selectedDate);
 
 // In slotButton function, add at the top:
   const slotButton = (day: DayAvailability, slot: Slot): JSX.Element => {
@@ -409,7 +503,7 @@ export default function BookingFormClient({
 
 
     // DEBUG: Log every slot render for troubleshooting
-    console.log('🔍 Slot button render:', {
+    console.log('ðŸ” Slot button render:', {
       slotDateKey,
       slotStart: slot.start,
       slotTime,
@@ -442,6 +536,18 @@ export default function BookingFormClient({
     }
     const title = isBooked ? 'Already booked' : isPast ? 'This slot has passed' : undefined;
     const isDisabled = Boolean(isBooked || isPast);
+    const slotDisplayLabel =
+      slotDateKey && displayTimezone
+        ? `${formatInTimeZone(
+            buildUtcIsoFromHostDateKey(slotDateKey, slot.start),
+            displayTimezone,
+            'h:mm a',
+          )} - ${formatInTimeZone(
+            buildUtcIsoFromHostDateKey(slotDateKey, slot.end),
+            displayTimezone,
+            'h:mm a',
+          )}`
+        : slot.label;
     return (
       <button
         key={`${day.dayOfWeek}-${slot.label}`}
@@ -455,16 +561,35 @@ export default function BookingFormClient({
         title={title}
         aria-disabled={isDisabled || undefined}
       >
-        {slot.label}
+        {slotDisplayLabel}
       </button>
     );
   };
 
   const slotsPanel = (
     <div className="space-y-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-500">Open calendar</h2>
-        <p className="text-xs text-zinc-500">Select a highlighted day to see its slots.</p>
+      <div className="mb-1 flex flex-wrap items-center justify-center gap-2">
+        <label className="inline-flex items-center gap-1 text-xs text-zinc-500" htmlFor="booking-timezone-select">
+          <svg className="h-3.5 w-3.5 text-brand-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 10c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-18C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
+          </svg>
+          Time zone
+        </label>
+        <select
+          id="booking-timezone-select"
+          value={displayTimezone}
+          onChange={(event) => setDisplayTimezone(event.target.value)}
+          className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
+        >
+          {timezoneOptions.map((tz) => (
+            <option key={tz} value={tz}>
+              {tz}
+            </option>
+          ))}
+        </select>
+        {displayTimezone !== hostTimezone && (
+          <span className="text-[11px] text-zinc-500">Host timezone: {hostTimezone}</span>
+        )}
       </div>
       <CalendarPicker
         availableDates={availableDates}
@@ -493,12 +618,15 @@ export default function BookingFormClient({
         onMonthChange={setVisibleMonth}
         timeZone={hostTimezone}
       />
-      <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-500">Available slots</h2>
-      {slotsLoading ? (
-        <div className="flex h-24 items-center justify-center text-xs uppercase tracking-[0.3em] text-zinc-400">
-          Loading slots…
-        </div>
-      ) : selectedDayOfWeek !== null ? (
+      {selectedDayOfWeek !== null && (
+        <p className="text-sm font-semibold text-zinc-900">{selectedDayFullLabel}</p>
+      )}
+      {meetingLengthLabel && (
+        <p className="text-xs text-zinc-500">
+          Meeting length: <span className="font-semibold text-zinc-700">{meetingLengthLabel}</span>
+        </p>
+      )}
+      {slotsLoading ? null : selectedDayOfWeek !== null ? (
         (() => {
           const dayEntry = daysMap.get(selectedDayOfWeek);
           if (!dayEntry) {
@@ -506,16 +634,15 @@ export default function BookingFormClient({
           }
           return (
             <div className="space-y-2">
-              <p className="text-sm font-semibold text-zinc-900">{selectedDayFullLabel}</p>
+                    <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-500">Available Time Slots</h2>
+
               <div className="flex flex-wrap gap-2">
                 {dayEntry.slots.map((slot) => slotButton(dayEntry, slot))}
               </div>
             </div>
           );
         })()
-      ) : (
-        <p className="text-xs text-zinc-500">Select a highlighted day on the calendar to reveal slots.</p>
-      )}
+      ) : null}
     </div>
   );
 
@@ -539,20 +666,8 @@ export default function BookingFormClient({
     try {
       // Always use hostTimezone (profile/user setting) for conversion
       const slotDateKey = hostIsoFormatter.format(selectedDate);
-      const [startHour, startMinute] = selectedSlot.start.split(':').map(Number);
-      const [endHour, endMinute] = selectedSlot.end.split(':').map(Number);
-
-      // Use fromZonedTime for robust host timezone conversion
-      function toUtcIso(dateKey: string, hour: number, minute: number) {
-        // Compose local date+time string: 'YYYY-MM-DD HH:mm'
-        const localDateTimeStr = `${dateKey} ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        // Always use hostTimezone, not browser
-        const utcDate = fromZonedTime(localDateTimeStr, hostTimezone);
-        return utcDate.toISOString();
-      }
-
-      const startIso = toUtcIso(slotDateKey, startHour, startMinute);
-      const endIso = toUtcIso(slotDateKey, endHour, endMinute);
+      const startIso = buildUtcIsoFromHostDateKey(slotDateKey, selectedSlot.start);
+      const endIso = buildUtcIsoFromHostDateKey(slotDateKey, selectedSlot.end);
 
       const response = await fetch(`/api/scheduling/${encodeURIComponent(slug)}/bookings`, {
         method: 'POST',
@@ -623,7 +738,7 @@ export default function BookingFormClient({
 
       calendarLinks = (
         <div className="mt-4 pt-4 border-t border-emerald-200">
-          <p className="text-sm font-semibold text-emerald-800 mb-3">📅 Add to Calendar</p>
+          <p className="text-sm font-semibold text-emerald-800 mb-3">ðŸ“… Add to Calendar</p>
           <div className="flex flex-col gap-2">
             <a
               href={googleCalUrl}
@@ -631,7 +746,7 @@ export default function BookingFormClient({
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 px-4 py-2 bg-white border-2 border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-colors font-medium text-sm"
             >
-              🗓️ Google Calendar
+              ðŸ—“ï¸ Google Calendar
             </a>
             <a
               href={outlookCalUrl}
@@ -639,14 +754,14 @@ export default function BookingFormClient({
               rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 px-4 py-2 bg-white border-2 border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-colors font-medium text-sm"
             >
-              📅 Outlook
+              ðŸ“… Outlook
             </a>
             <a
               href={icsUrl}
               download="booking.ics"
               className="flex items-center justify-center gap-2 px-4 py-2 bg-white border-2 border-emerald-600 text-emerald-700 rounded-lg hover:bg-emerald-50 transition-colors font-medium text-sm"
             >
-              🍎 Apple Calendar
+              ðŸŽ Apple Calendar
             </a>
           </div>
         </div>
@@ -654,17 +769,23 @@ export default function BookingFormClient({
     }
 
     return (
-      <div className="grid gap-6 md:grid-cols-2">
-        {slotsPanel}
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-700">
-          <p className="text-lg font-semibold text-emerald-800">Booking confirmed!</p>
-          <p className="mt-1">
-            We sent a confirmation email with the details. Your selected slot ({selectedSlotLabel}) is reserved.
-          </p>
-          {calendarLinks}
-          <p className="text-xs text-emerald-600 mt-4">
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-sm text-emerald-700">
+        <p className="text-lg font-semibold text-emerald-800">Booking confirmed!</p>
+        <p className="mt-1">
+          We sent a confirmation email with the details. Your selected slot ({selectedSlotLabel}) is reserved.
+        </p>
+        {calendarLinks}
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-emerald-600">
             Share this public link: <span className="font-mono">{bookingLink}</span>
           </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-primary-700"
+          >
+            Book Another
+          </button>
         </div>
       </div>
     );
@@ -674,23 +795,17 @@ export default function BookingFormClient({
     <div className="grid gap-6 md:grid-cols-2">
       {slotsPanel}
       <form onSubmit={handleSubmit} className="space-y-4 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <div className="mb-2 flex items-center gap-2">
-          <svg className="h-4 w-4 text-brand-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 10c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-18C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" />
-          </svg>
-          <span className="text-xs text-zinc-700">Your current timezone: <span className="font-semibold text-brand-primary-600">{hostTimezone}</span></span>
-        </div>
-        <h2 className="text-sm font-semibold uppercase tracking-[0.3em] text-zinc-500">Book a slot</h2>
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Selected slot</p>
-          <div className="h-12 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-900">
-            {selectedSlotLabel}
+        {hasSelectedDateTime && (
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.3em] text-zinc-500">Selected Date & Time:</p>
+            <div className="h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-900">
+              {selectedSlotLabel}
+            </div>
           </div>
-        </div>
-        {!selectedSlot && <p className="text-xs text-zinc-500">Select a slot above before submitting.</p>}
+        )}
         <div className="grid gap-3">
           <label className="text-xs text-zinc-500">
-            Name
+            Name <span className="text-brand-primary-600">*</span>
             <input
               name="clientName"
               autoComplete="name"
@@ -703,7 +818,7 @@ export default function BookingFormClient({
             />
           </label>
           <label className="text-xs text-zinc-500">
-            Email
+            Email <span className="text-brand-primary-600">*</span>
             <input
               name="clientEmail"
               autoComplete="email"
@@ -716,7 +831,7 @@ export default function BookingFormClient({
             />
           </label>
           <label className="text-xs text-zinc-500">
-            Phone
+            Phone <span className="text-brand-primary-600">*</span>
             <input
               name="clientPhone"
               autoComplete="tel"
@@ -725,6 +840,7 @@ export default function BookingFormClient({
               onChange={(event) => setPhone(event.target.value)}
               className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100"
               placeholder="(555) 123-4567"
+              required
             />
           </label>
           <label className="text-xs text-zinc-500">
@@ -755,4 +871,5 @@ export default function BookingFormClient({
     </div>
   );
 }
+
 

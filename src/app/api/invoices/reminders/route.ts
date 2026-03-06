@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { sendInvoiceEmail } from '@/lib/email';
 import type { Prisma } from '@prisma/client';
+import { isPastDueDateByDay } from '@/lib/date-status';
 
 const REMINDER_HEADER = 'x-invoice-reminder-secret';
 const MS_IN_DAY = 1000 * 60 * 60 * 24;
@@ -51,7 +52,7 @@ async function handle(request: Request) {
       })),
     };
 
-    const overdue = invoice.dueDate ? now.getTime() >= new Date(invoice.dueDate).getTime() : false;
+    const overdue = isPastDueDateByDay(invoice.dueDate, now);
     const reminderSubject = overdue
       ? `Past due reminder: Invoice #${invoice.invoiceNumber}`
       : `Reminder: Invoice #${invoice.invoiceNumber}`;
@@ -101,7 +102,7 @@ function getNextReminderDate(invoice: ReminderInvoice, now: Date) {
   const lastReminder = invoice.lastReminderSentAt ? new Date(invoice.lastReminderSentAt) : null;
   const reference = lastReminder ?? new Date(invoice.createdAt);
   const dueDate = invoice.dueDate ? new Date(invoice.dueDate) : null;
-  const overdue = dueDate ? now.getTime() >= dueDate.getTime() : false;
+  const overdue = isPastDueDateByDay(dueDate, now);
 
   if (overdue && (!lastReminder || (dueDate && lastReminder.getTime() < dueDate.getTime()))) {
     return now;

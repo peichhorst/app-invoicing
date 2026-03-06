@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, CheckCircle, XCircle } from 'lucide-react';
+import { Calendar, CheckCircle } from 'lucide-react';
 
 interface GoogleCalendarConnectProps {
   initialConnected: boolean;
@@ -64,22 +64,42 @@ export function GoogleCalendarConnect({
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-6">
+    <div className="rounded-2xl border border-brand-primary-600 bg-white shadow-sm">
+      <h2 className="text-xl font-bold uppercase tracking-[0.3em] bg-brand-primary-600 text-[var(--color-brand-contrast)] rounded-t-2xl px-4 py-2 text-center">
+        Google Calendar Sync
+      </h2>
+      <div className="p-6">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
-            <Calendar className="h-6 w-6 text-blue-600" />
-          </div>
           <div>
-            <h3 className="text-lg font-semibold text-gray-900">Google Calendar Sync</h3>
             <p className="text-sm text-gray-500">
               {isConnected
                 ? 'Your calendar is connected and syncing'
                 : 'Connect to sync bookings with your Google Calendar'}
             </p>
+            {isConnected && (
+              <button
+                onClick={handleDisconnect}
+                disabled={isLoading}
+                className="mt-3 rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                {isLoading ? 'Disconnecting...' : 'Disconnect'}
+              </button>
+            )}
           </div>
         </div>
-        {isConnected && <CheckCircle className="h-5 w-5 text-green-600" />}
+        {isConnected && (
+          <div className="flex flex-col items-end gap-2">
+            <div className="rounded-xl border border-emerald-300 bg-emerald-50/80 px-3 py-2 text-emerald-900">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle className="h-4 w-4 text-emerald-600" />
+                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-emerald-600">
+                  Connected
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {isConnected && connectedEmail && (
@@ -109,16 +129,8 @@ export function GoogleCalendarConnect({
         </div>
       )}
 
-      <div className="mt-6 flex gap-3">
-        {isConnected ? (
-          <button
-            onClick={handleDisconnect}
-            disabled={isLoading}
-            className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-          >
-            {isLoading ? 'Disconnecting...' : 'Disconnect'}
-          </button>
-        ) : (
+      {!isConnected && (
+        <div className="mt-6 flex gap-3">
           <button
             onClick={handleConnect}
             disabled={isLoading}
@@ -127,7 +139,8 @@ export function GoogleCalendarConnect({
             <Calendar className="h-4 w-4" />
             {isLoading ? 'Connecting...' : 'Connect Google Calendar'}
           </button>
-        )}
+        </div>
+      )}
       </div>
     </div>
   );

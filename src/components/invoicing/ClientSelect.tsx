@@ -8,6 +8,7 @@ type ClientSelectProps = {
   onChange: (value: string, client: ClientOption | null) => void;
   clients: ClientOption[];
   loading?: boolean;
+  disabled?: boolean;
   label?: string;
   required?: boolean;
 };
@@ -17,6 +18,7 @@ export function ClientSelect({
   onChange,
   clients,
   loading = false,
+  disabled = false,
   label = 'Client',
   required = false,
 }: ClientSelectProps) {
@@ -42,7 +44,7 @@ export function ClientSelect({
           const found = clients.find((c) => c.id === next) || null;
           onChange(next, found);
         }}
-        disabled={loading}
+        disabled={loading || disabled}
         className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm focus:border-brand-primary-500 focus:outline-none focus:ring-2 focus:ring-brand-primary-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <option value="">{loading ? 'Loading clients...' : 'Select a client'}</option>

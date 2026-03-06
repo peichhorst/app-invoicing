@@ -4,9 +4,8 @@ import { ProfileForm } from '../profile/ProfileForm';
 import CompanySettings from '../profile/CompanySettings';
 import { SchedulingForm } from '../scheduling/SchedulingForm';
 import { getEmbedSnippet } from '@/components/EmbedSnippet';
-import { QuickBooksSettings } from '@/components/QuickBooksSettings';
 import { GoogleCalendarConnect } from '@/components/GoogleCalendarConnect';
-import type { StripeWebhookStatus } from '@prisma/client';
+import type { StripeWebhookMode, StripeWebhookStatus } from '@prisma/client';
 
 import type { AvailabilityEntry } from '../scheduling/actions';
 
@@ -17,6 +16,8 @@ export type SettingsTabsProps = {
   bookingLink?: string | null;
   shouldShowManualStripeWebhookWarning?: boolean;
   initialStripeWebhookSecret?: string | null;
+  stripeAccountType?: 'none' | 'standard' | 'express' | 'custom' | null;
+  stripeWebhookMode?: StripeWebhookMode | null;
   stripeWebhookStatus?: StripeWebhookStatus | null;
   stripeWebhookLastError?: string | null;
   initialTabLabel?: string | null;
@@ -29,13 +30,15 @@ export default function SettingsTabs({
   bookingLink,
   shouldShowManualStripeWebhookWarning = false,
   initialStripeWebhookSecret = null,
+  stripeAccountType = null,
+  stripeWebhookMode = null,
   stripeWebhookStatus = null,
   stripeWebhookLastError = null,
   initialTabLabel,
 }: SettingsTabsProps) {
   const normalizedInitialTabLabel =
     typeof initialTabLabel === 'string' ? initialTabLabel.trim().toLowerCase() : undefined;
-  const isSuperAdmin = user?.isSuperAdmin;
+  const isSuperAdmin = user?.role === 'SUPERADMIN' || user?.isSuperAdmin === true;
   const canShowBusinessTab =
     Boolean(company) && (user.role === 'OWNER' || user.role === 'ADMIN' || isSuperAdmin);
   const getInitialTabIndex = () => {
@@ -100,6 +103,9 @@ export default function SettingsTabs({
             initialEmail={company.email ?? user.email ?? null}
             initialStripeAccountId={company.stripeAccountId ?? null}
             initialStripePublishableKey={company.stripePublishableKey ?? null}
+            initialStripeFeeResponsibility={company.stripeFeeResponsibility ?? null}
+            initialStripePaymentMethodCard={company.stripePaymentMethodCard ?? true}
+            initialStripePaymentMethodAch={company.stripePaymentMethodAch ?? false}
             initialVenmoHandle={company.venmoHandle ?? null}
             initialZelleHandle={company.zelleHandle ?? null}
             initialMailToAddressEnabled={company.mailToAddressEnabled ?? null}
@@ -122,15 +128,11 @@ export default function SettingsTabs({
             hidePersonalFields={true}
             shouldShowManualStripeWebhookWarning={shouldShowManualStripeWebhookWarning}
             initialStripeWebhookSecret={initialStripeWebhookSecret}
+            stripeAccountType={stripeAccountType}
+            stripeWebhookMode={stripeWebhookMode}
             stripeWebhookStatus={stripeWebhookStatus}
             stripeWebhookLastError={stripeWebhookLastError}
           />
-        <div className="mt-8">
-          <QuickBooksSettings
-            isConnected={company?.quickbooksConnected ?? false}
-            realmId={company?.quickbooksRealmId}
-          />
-        </div>
       </>
     ) }] : []),
     { label: 'Availability', content: (

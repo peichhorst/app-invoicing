@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getCurrentUser } from '@/lib/auth';
 
+function parseStoredStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export async function POST(request: NextRequest) {
   const matcher = request.nextUrl.pathname.match(/\/resources\/([^/]+)\/acknowledge$/);
   const resourceId = matcher?.[1];
@@ -42,10 +56,13 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    const existingAckedBy = parseStoredStringArray((resource as any).acknowledgedBy);
+    const updatedAckedBy = existingAckedBy.includes(user.id) ? existingAckedBy : [...existingAckedBy, user.id];
+
     await prisma.resource.update({
       where: { id: resource.id },
       data: {
-        acknowledgedBy: { push: user.id },
+        acknowledgedBy: JSON.stringify(updatedAckedBy),
       },
     });
 

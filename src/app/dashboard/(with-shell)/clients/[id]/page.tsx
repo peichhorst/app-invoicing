@@ -26,6 +26,7 @@ type ClientMessage = {
 };
 
 const invoiceBillableStatuses = new Set([
+  'OPEN',
   'UNPAID',
   'VIEWED',
   'SIGNED',
@@ -274,7 +275,7 @@ export default async function ClientViewPage({ params }: PageProps) {
                 Edit
               </Link>
               <Link
-                href="/dashboard/invoices/new"
+                href={`/dashboard/invoices/new?clientId=${encodeURIComponent(clientData.id)}`}
                 className="inline-flex items-center gap-2 rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700"
               >
                 <Receipt className="h-4 w-4" />
@@ -466,7 +467,7 @@ export default async function ClientViewPage({ params }: PageProps) {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold uppercase tracking-[0.2em] text-gray-400">Invoices</h3>
             <Link
-              href="/dashboard/invoices/new"
+              href={`/dashboard/invoices/new?clientId=${encodeURIComponent(clientData.id)}`}
               className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600"
             >
               New invoice

@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       issueDate: body.issueDate ? new Date(body.issueDate) : new Date(),
       dueDate: body.dueDate ? new Date(body.dueDate) : null,
       notes: body.notes,
-      status: InvoiceStatus.UNPAID,
+      status: InvoiceStatus.OPEN,
       items,
       recurring: Boolean(body.recurring),
       recurringInterval: body.recurringInterval ?? null,

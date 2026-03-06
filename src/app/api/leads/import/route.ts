@@ -7,15 +7,45 @@ function parseCsv(text: string) {
   const lines = text
     .replace(/\r/g, '')
     .split('\n')
-    .map((line) => line.trim())
     .filter((line) => line.length > 0);
 
   if (!lines.length) return { headers: [], rows: [] };
   const headerLine = lines.shift();
   if (!headerLine) return { headers: [], rows: [] };
-  const headers = headerLine.split(',').map((h) => h.replace(/^"|"$/g, '').trim());
-  const rows = lines.map((line) => line.split(',').map((v) => v.replace(/^"|"$/g, '').trim()));
+  const headers = parseCsvLine(headerLine);
+  const rows = lines.map(parseCsvLine);
   return { headers, rows };
+}
+
+function parseCsvLine(line: string) {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values.map((value) => value.trim());
 }
 
 export async function POST(request: Request) {
@@ -35,8 +65,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'CSV missing headers' }, { status: 400 });
   }
 
-  const mappedHeaders = headers.map(normalizeLeadCsvHeader);
-  const fieldIndexes = mappedHeaders.map((h) => LEAD_CSV_FIELD_MAP[h] ?? null);
+  const normalizedHeaders = headers.map(normalizeLeadCsvHeader);
+  const fieldIndexes = normalizedHeaders.map((h) => LEAD_CSV_FIELD_MAP[h] ?? null);
+  const hasLeadIdentityHeader = normalizedHeaders.includes('name') || normalizedHeaders.includes('email');
+  if (!hasLeadIdentityHeader) {
+    return NextResponse.json(
+      { error: 'Lead CSV must include at least a Name or Email column.' },
+      { status: 400 }
+    );
+  }
 
   let imported = 0;
   let skipped = 0;
@@ -55,6 +92,8 @@ export async function POST(request: Request) {
     await prisma.lead.create({
       data: {
         ...lead,
+        assignedToId: user.id,
+        status: lead.status || 'new',
         company: { connect: { id: user.companyId } },
       },
     });

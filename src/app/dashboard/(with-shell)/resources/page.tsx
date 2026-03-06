@@ -6,12 +6,26 @@ import ResourceTableClient, { ResourceWithCompliance } from './ResourceTableClie
 
 export const dynamic = 'force-dynamic';
 
+function parseStoredStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  }
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export default async function ResourcesPage() {
   const user = await getCurrentUser();
   if (!user) redirect('/');
 
   const companyId = user.companyId ?? null;
-  const canManage = user.role === 'OWNER' || user.role === 'ADMIN';
+  const canManage = user.role === 'OWNER' || user.role === 'ADMIN' || user.role === 'SUPERADMIN';
   let resources: ResourceWithCompliance[] = [];
   let companyUsers: { id: string; positionId: string | null }[] = [];
 
@@ -36,7 +50,7 @@ export default async function ResourcesPage() {
       createdAt: resource.createdAt?.toISOString() ?? null,
       requiresAcknowledgment: resource.requiresAcknowledgment,
       acknowledgments: resource.acknowledgments,
-      visibleToPositions: resource.visibleToPositions ?? [],
+      visibleToPositions: parseStoredStringArray((resource as any).visibleToPositions),
       description: resource.description,
     }));
     companyUsers = users;

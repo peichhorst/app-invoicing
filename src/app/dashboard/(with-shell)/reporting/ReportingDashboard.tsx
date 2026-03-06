@@ -867,7 +867,7 @@ function YearlyBreakdownChart({ summary, year, isLoading }: { summary: Reporting
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {totalSum === 0 ? (
             <div className="col-span-full flex items-center justify-center text-sm text-zinc-500">
-              No invoices for {year}. Create an invoice to see data.
+              No invoices for {year}. 
             </div>
           ) : (
             chartData.map((item) => (

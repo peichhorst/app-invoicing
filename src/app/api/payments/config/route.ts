@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { stripe } from '@/lib/stripe';
+import { buildStripeFeeBreakdown, isTruthyFlag } from '@/lib/payments/stripe-fees';
 
 const SUBSCRIPTION_PRICE_CENTS = Number(process.env.PRO_SUBSCRIPTION_PRICE_CENTS ?? 999);
 const SUBSCRIPTION_PRICE_ID = process.env.PRO_SUBSCRIPTION_PRICE_ID || null;
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   const sellerId = url.searchParams.get('seller') || null;
   const invoiceId = url.searchParams.get('invoice') || null;
   const mode = url.searchParams.get('mode') || null;
+  const applyStripeFeeParam = url.searchParams.get('applyStripeFee');
 
   let targetUser = null as any;
   let amountCents: number | null = null;
@@ -22,6 +24,19 @@ export async function GET(request: Request) {
   let customerAddress: {
     line1?: string | null;
     line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  } | null = null;
+  let resolvedCompany: {
+    stripePublishableKey?: string | null;
+    stripeAccountId?: string | null;
+    stripeFeeResponsibility?: 'business_absorbs' | 'client_pays' | null;
+    stripePaymentMethodCard?: boolean | null;
+    stripePaymentMethodAch?: boolean | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
     city?: string | null;
     state?: string | null;
     postalCode?: string | null;
@@ -86,6 +101,35 @@ export async function GET(request: Request) {
     const platformStripeAccountId = process.env.STRIPE_ACCOUNT_ID || null;
 
     let responsePayload: Record<string, any>;
+    let companyStripeFeeResponsibility: 'business_absorbs' | 'client_pays' = 'business_absorbs';
+    let companyAllowCard = true;
+    let companyAllowAch = false;
+    if (targetUser?.companyId) {
+      resolvedCompany = await prisma.company.findUnique({
+        where: { id: targetUser.companyId },
+        select: {
+          stripePublishableKey: true,
+          stripeAccountId: true,
+          stripeFeeResponsibility: true,
+          stripePaymentMethodCard: true,
+          stripePaymentMethodAch: true,
+          addressLine1: true,
+          addressLine2: true,
+          city: true,
+          state: true,
+          postalCode: true,
+          country: true,
+        },
+      });
+      companyStripeFeeResponsibility =
+        resolvedCompany?.stripeFeeResponsibility === 'client_pays' ? 'client_pays' : 'business_absorbs';
+      companyAllowCard = resolvedCompany?.stripePaymentMethodCard !== false;
+      companyAllowAch = Boolean(resolvedCompany?.stripePaymentMethodAch);
+    }
+    const applyStripeFee =
+      applyStripeFeeParam === null
+        ? companyStripeFeeResponsibility === 'client_pays'
+        : isTruthyFlag(applyStripeFeeParam);
     const userEmail = targetUser?.email ?? null;
     const userCompanyAddress = targetUser?.company
       ? {
@@ -96,7 +140,18 @@ export async function GET(request: Request) {
           postalCode: targetUser.company.postalCode ?? null,
           country: targetUser.company.country ?? null,
         }
-      : null;
+      : resolvedCompany
+        ? {
+            line1: resolvedCompany.addressLine1 ?? null,
+            line2: resolvedCompany.addressLine2 ?? null,
+            city: resolvedCompany.city ?? null,
+            state: resolvedCompany.state ?? null,
+            postalCode: resolvedCompany.postalCode ?? null,
+            country: resolvedCompany.country ?? null,
+          }
+        : null;
+    const sellerPublishableKey = resolvedCompany?.stripePublishableKey ?? null;
+    const sellerStripeAccountId = resolvedCompany?.stripeAccountId ?? null;
 
     if (mode === 'subscription') {
       if (!platformPublishableKey) {
@@ -114,26 +169,42 @@ export async function GET(request: Request) {
         customerAddress: customerAddress ?? userCompanyAddress,
         stripeCustomerId: targetUser?.stripeCustomerId || null,
         defaultPaymentMethodId: targetUser?.defaultPaymentMethodId || null,
+        applyStripeFee: false,
+        stripeFeeResponsibility: 'business_absorbs',
       };
     } else {
-      if (!targetUser?.stripePublishableKey) {
+      if (!sellerPublishableKey) {
         return NextResponse.json({ error: 'Stripe publishable key not configured for seller' }, { status: 500 });
       }
-      if (!targetUser?.stripeAccountId) {
+      if (!sellerStripeAccountId) {
         return NextResponse.json({ error: 'Stripe account not configured for seller' }, { status: 500 });
       }
+      const stripeFeeBreakdown = buildStripeFeeBreakdown(amountCents ?? 0, applyStripeFee);
+      const resolvedAmountCents =
+        amountCents == null ? null : stripeFeeBreakdown.totalAmountCents;
+      const paymentMethods: Array<'card' | 'us_bank_account'> = [];
+      if (companyAllowCard) paymentMethods.push('card');
+      if (companyAllowAch) paymentMethods.push('us_bank_account');
+      if (!paymentMethods.length) paymentMethods.push('card');
       responsePayload = {
-        publishableKey: targetUser.stripePublishableKey,
-        stripeAccountId: targetUser.stripeAccountId,
+        publishableKey: sellerPublishableKey,
+        stripeAccountId: sellerStripeAccountId,
         sellerId: targetUser?.id || null,
         invoiceId: invoiceId || null,
-        amountCents,
+        amountCents: resolvedAmountCents,
+        baseAmountCents: amountCents == null ? null : stripeFeeBreakdown.baseAmountCents,
+        stripeFeeCents: amountCents == null ? 0 : stripeFeeBreakdown.stripeFeeCents,
+        applyStripeFee: stripeFeeBreakdown.applyStripeFee,
+        stripeFeeResponsibility: companyStripeFeeResponsibility,
         invoiceStatus,
         paidAt,
         customerEmail,
         customerAddress,
         stripeCustomerId: targetUser.stripeCustomerId || null,
         defaultPaymentMethodId: targetUser.defaultPaymentMethodId || null,
+        paymentMethods,
+        stripePaymentMethodCard: companyAllowCard,
+        stripePaymentMethodAch: companyAllowAch,
       };
     }
 

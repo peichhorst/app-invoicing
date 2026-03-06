@@ -33,12 +33,21 @@ Yes, you can cancel your subscription at any time. Your service will continue un
 
 ## Account and Security
 
+### Where do I sign in?
+- The root path (`/`) is the public landing page.
+- The landing page now starts with a dedicated hero section using product/value copy that was previously shown on the auth page.
+- The header always shows a `Dashboard` button.
+- If you are logged out, `Dashboard` takes you to `/login` for login/register.
+- If you are logged in, `Dashboard` takes you to `/dashboard`.
+- If you are already authenticated, the landing page CTA takes you to `/dashboard`.
+
 ### How do I reset my password?
 1. Go to the login page
 2. Click "Forgot Password"
 3. Enter your email address
 4. Check your email for a password reset link
 5. Follow the link and create a new password
+6. Your browser/password manager may prompt to update the saved password after reset (supported browsers only).
 
 ### How secure is my data?
 We take security seriously:
@@ -209,6 +218,12 @@ Absolutely! Contact our sales team at sales@clientwave.app to schedule a persona
 
 ### Where is my data stored?
 Your data is stored in secure AWS data centers located in the United States. We use multiple redundant systems to ensure availability and security.
+
+### Where can I find your legal policies?
+You can access legal pages directly from the login/OAuth screen footer:
+- Privacy Policy: `/privacy-policy`
+- Terms of Service: `/terms-of-service`
+- End-User License Agreement: `/end-user-license-agreement`
 
 ### Can I export my data?
 Yes, you can export:

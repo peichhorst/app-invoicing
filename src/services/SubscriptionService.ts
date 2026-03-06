@@ -40,7 +40,7 @@ export async function createRecurringInvoice(input: CreateRecurringInvoiceInput)
       dayOfMonth: input.dayOfMonth || null,
       dayOfWeek: input.dayOfWeek || null,
       nextSendDate: input.nextSendDate,
-      status: 'ACTIVE', // Changed from PENDING to ACTIVE since it's just been created
+      status: 'PENDING',
       sendFirstNow: input.sendFirstNow ?? true,
     },
   });
@@ -118,7 +118,7 @@ export async function createRecurringInvoiceSchedule(data: {
       dayOfMonth: data.dayOfMonth,
       dayOfWeek: data.dayOfWeek,
       nextSendDate: data.nextSendDate,
-      status: 'ACTIVE',
+      status: 'PENDING',
       sendFirstNow: false,
     },
   });

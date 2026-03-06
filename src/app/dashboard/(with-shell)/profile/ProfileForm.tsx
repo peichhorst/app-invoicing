@@ -84,7 +84,13 @@ export function ProfileForm({
   const defaultMailTo = initial.mailToAddressEnabled ?? !initial.mailToAddressTo;
   const [mailToAddressEnabled, setMailToAddressEnabled] = useState(defaultMailTo);
   const fallbackName = initial.name?.trim() ?? '';
-  const [companyNameValue, setCompanyNameValue] = useState(initial.companyName ?? fallbackName);
+  const resolveDisplayName = () => {
+    const companyName = initial.companyName?.trim();
+    if (companyName) return companyName;
+    return fallbackName;
+  };
+  const [companyNameValue, setCompanyNameValue] = useState(resolveDisplayName);
+  const [phoneValue, setPhoneValue] = useState(initial.phone ?? '');
   const getInitialPayableOption = (): 'same' | 'custom' => {
     if (!initial.mailToAddressTo) return 'same';
     if (initial.companyName && initial.mailToAddressTo === initial.companyName) return 'same';
@@ -107,6 +113,7 @@ export function ProfileForm({
   const [showSignatureEditor, setShowSignatureEditor] = useState(!initial.signatureDataUrl);
   const [leadTokenValue, setLeadTokenValue] = useState(initial.trackdriveLeadToken ?? '');
   const [leadTokenEnabled, setLeadTokenEnabled] = useState(initial.trackdriveLeadEnabled ?? false);
+  const stripeSectionRef = useRef<HTMLDivElement | null>(null);
   const paymentDisabled = !canAcceptPayments || !isOwner;
   const showManualWebhookWarning =
     useCustomStripe &&
@@ -169,11 +176,25 @@ export function ProfileForm({
     return `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodedQrLink}`;
   }, [venmoLink]);
 
+  const scrollToStripeSection = () => {
+    window.setTimeout(() => {
+      stripeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
   const [setAsAdministrator, setSetAsAdministrator] = useState(initialRole === 'ADMIN');
 
   useEffect(() => {
     setSetAsAdministrator(initialRole === 'ADMIN');
   }, [initialRole]);
+
+  useEffect(() => {
+    setCompanyNameValue(resolveDisplayName());
+  }, [initial.companyName, fallbackName]);
+
+  useEffect(() => {
+    setPhoneValue(initial.phone ?? '');
+  }, [initial.phone]);
 
 
   useEffect(() => {
@@ -208,6 +229,7 @@ export function ProfileForm({
         setUseCustomStripe(true);
         setStripeMessage('Stripe credentials received. Save to keep them.');
         setStripeErrorLink(null);
+        scrollToStripeSection();
       }
     };
     window.addEventListener('message', handler);
@@ -426,6 +448,7 @@ export function ProfileForm({
     const canonicalName = companyNameValue.trim() || fallbackName;
     payload.name = canonicalName;
     payload.companyName = canonicalName;
+    payload.phone = phoneValue.trim();
     payload.trackdriveLeadToken = leadTokenValue.trim();
     payload.trackdriveLeadEnabled = leadTokenEnabled ? 'true' : 'false';
     payload.signatureDataUrl = signatureDataUrl ?? '';
@@ -666,6 +689,57 @@ export function ProfileForm({
           </div>
         </div>
 
+        <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => setShowEmailUpdateSection((prev) => !prev)}
+            className="text-sm font-medium text-zinc-700  transition hover:text-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-600/30"
+            aria-expanded={showEmailUpdateSection}
+          >
+            Email (Click here to change)
+          </button>
+          <input
+            name="email"
+            type="email"
+            defaultValue={initial.email}
+            readOnly
+            disabled
+            className="w-full cursor-not-allowed rounded-lg border border-zinc-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 shadow-sm"
+          />
+        </div>
+        {showEmailUpdateSection && (
+          <div className="space-y-1">
+            <label className="text-sm font-medium text-zinc-700">Update your login email</label>
+            <div className="flex flex-wrap items-center gap-3 sm:items-end">
+              <input
+                type="email"
+                value={newEmailValue}
+                onChange={(event) => setNewEmailValue(event.target.value)}
+                placeholder="new@email.com"
+                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-100 sm:max-w-sm"
+              />
+              <button
+                type="button"
+                disabled={isEmailPending || !newEmailValue.trim()}
+                onClick={() => {
+                  if (!newEmailValue.trim()) return;
+                  startEmailTransition(async () => {
+                    const result: ChangeEmailResult = await changeEmailAction(newEmailValue);
+                    setEmailMessage(result.message);
+                    if (result.status === 'sent') {
+                      setNewEmailValue('');
+                    }
+                  });
+                }}
+                className="rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:opacity-60"
+              >
+                {isEmailPending ? 'Sending...' : 'Request verification'}
+              </button>
+            </div>
+            {emailMessage && <p className="text-xs text-zinc-500">{emailMessage}</p>}
+          </div>
+        )}
+
         {isOwner && (
           <div className="grid gap-4 md:grid-cols-2">
             {simplePositionInput ? (
@@ -788,7 +862,12 @@ export function ProfileForm({
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-1">
             <label className="text-sm font-medium text-zinc-700">Phone</label>
-            <input name="phone" defaultValue={initial.phone ?? ''} className={inputClass} />
+            <input
+              name="phone"
+              value={phoneValue}
+              onChange={(event) => setPhoneValue(event.target.value)}
+              className={inputClass}
+            />
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium text-zinc-700">Password (leave blank to keep)</label>
@@ -810,58 +889,6 @@ export function ProfileForm({
           </select>
           <p className="text-xs text-zinc-500">This timezone controls your scheduler embeds and availability.</p>
         </div>
-
-
-        <div className="space-y-1">
-          <button
-            type="button"
-            onClick={() => setShowEmailUpdateSection((prev) => !prev)}
-            className="text-sm font-medium text-zinc-700  transition hover:text-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-600/30"
-            aria-expanded={showEmailUpdateSection}
-          >
-            Email (Click here to change)
-          </button>
-          <input
-            name="email"
-            type="email"
-            defaultValue={initial.email}
-            readOnly
-            disabled
-            className="w-full cursor-not-allowed rounded-lg border border-zinc-300 bg-gray-100 px-3 py-2 text-sm text-gray-700 shadow-sm"
-          />
-        </div>
-        {showEmailUpdateSection && (
-          <div className="space-y-1">
-            <label className="text-sm font-medium text-zinc-700">Update your login email</label>
-            <div className="flex flex-wrap items-center gap-3 sm:items-end">
-              <input
-                type="email"
-                value={newEmailValue}
-                onChange={(event) => setNewEmailValue(event.target.value)}
-                placeholder="new@email.com"
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 focus:border-brand-primary-600 focus:outline-none focus:ring-2 focus:ring-brand-primary-100 sm:max-w-sm"
-              />
-              <button
-                type="button"
-                disabled={isEmailPending || !newEmailValue.trim()}
-                onClick={() => {
-                  if (!newEmailValue.trim()) return;
-                  startEmailTransition(async () => {
-                    const result: ChangeEmailResult = await changeEmailAction(newEmailValue);
-                    setEmailMessage(result.message);
-                    if (result.status === 'sent') {
-                      setNewEmailValue('');
-                    }
-                  });
-                }}
-                className="rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-primary-700 disabled:opacity-60"
-              >
-                {isEmailPending ? 'Sending...' : 'Request verification'}
-              </button>
-            </div>
-            {emailMessage && <p className="text-xs text-zinc-500">{emailMessage}</p>}
-          </div>
-        )}
 
       </section>
       )}
@@ -1018,7 +1045,7 @@ export function ProfileForm({
             )}
          
 
-          <div id="stripe" className="space-y-2">
+          <div id="stripe" ref={stripeSectionRef} className="space-y-2">
             <label className={paymentLabelClass}>
               <input
                 type="checkbox"
@@ -1193,7 +1220,11 @@ export function ProfileForm({
       </>
       )}
 
-      {message && <p className="text-sm text-rose-600">{message}</p>}
+      {message && (
+        <p className={`text-sm ${message === 'Profile updated.' ? 'text-emerald-600' : 'text-rose-600'}`}>
+          {message}
+        </p>
+      )}
 
       <div className="flex items-center justify-end gap-3 pt-2">
         {!skipRedirect && (
@@ -1210,7 +1241,7 @@ export function ProfileForm({
           disabled={isPending || uploadingLogo}
           className="rounded-lg border border-brand-primary-300 bg-brand-primary-600 px-4 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:border-brand-primary-600 hover:bg-brand-primary-700 disabled:opacity-60"
         >
-          {isPending || uploadingLogo ? 'Saving...' : (skipRedirect ? 'Save & Continue' : 'Save Changes')}
+          {isPending || uploadingLogo ? 'Saving...' : 'Save'}
         </button>
       </div>
     </form>

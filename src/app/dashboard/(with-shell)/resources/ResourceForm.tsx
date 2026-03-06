@@ -132,7 +132,13 @@ export function ResourceForm({ canManage }: Props) {
         let msg = 'Unable to create resource';
         try {
           const body = await res.json();
-          msg = (body?.error || body?.details || msg) as string;
+          const serverError = typeof body?.error === 'string' ? body.error : '';
+          const serverDetails = typeof body?.details === 'string' ? body.details : '';
+          msg =
+            serverDetails ||
+            (serverError.toLowerCase() === 'unable to create resource' ? '' : serverError) ||
+            serverError ||
+            msg;
         } catch {
           const txt = await res.text();
           if (txt) msg = txt;

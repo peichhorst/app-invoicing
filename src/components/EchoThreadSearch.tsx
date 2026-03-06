@@ -120,6 +120,13 @@ const extractDomainFromUrl = (value?: string) => {
   }
 };
 
+const normalizeWebsiteUrl = (value?: string) => {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+};
+
 const DEFAULT_SOURCES: SourceState = {
   jobdetails: true,
   theirstack: false,
@@ -128,7 +135,7 @@ const DEFAULT_SOURCES: SourceState = {
 };
 
 const SOURCE_OPTIONS: { key: SourceKey; label: string }[] = [
-  { key: 'jobdetails', label: 'Aggregated' },
+  { key: 'jobdetails', label: 'Aggregated (EchoThread + TheirStack)' },
   { key: 'jobs', label: 'Jobs' },
   { key: 'reddit', label: 'Reddit' },
 ];
@@ -430,7 +437,9 @@ export default function EchoThreadSearch() {
     )
       return 'Select at least one source to search.';
     if (loading) return 'Searching for opportunities...';
-    if (!query.trim()) return 'Enter a query to find posts!';
+    if (!query.trim()) {
+      return 'No results found for the default industry/location query. Try a custom query.';
+    }
     return `No results found for "${query.trim()}". Try another term.`;
   }, [loading, query, sources]);
 
@@ -440,11 +449,14 @@ export default function EchoThreadSearch() {
       const resultKey = getResultKey(result);
       setSavingId(resultKey);
       const applyLink = result.applyUrl ?? result.applyLink ?? result.link;
+      const resultLink = result.link || undefined;
       const notesParts = [
         result.title,
+        result.meta ? `Summary: ${result.meta}` : undefined,
         result.company ? `Company: ${result.company}` : undefined,
         result.description ?? result.body,
         applyLink ? `Apply Link: ${applyLink}` : undefined,
+        resultLink && resultLink !== applyLink ? `Result Link: ${resultLink}` : undefined,
       ];
       const normalizedDomain =
         result.companyDomain ||
@@ -487,6 +499,10 @@ export default function EchoThreadSearch() {
       if (normalizedDomain) {
         notesParts.push(`Domain: ${normalizedDomain}`);
       }
+      const websiteCandidate =
+        normalizeWebsiteUrl(result.companyWebsite) ||
+        normalizeWebsiteUrl(normalizedDomain) ||
+        undefined;
       try {
         const enrichedContact = await (async () => {
           try {
@@ -513,12 +529,12 @@ export default function EchoThreadSearch() {
         const candidateEmail = enrichedEmail || metaEmail;
         const companyPhone = companyMeta?.phone ?? undefined;
 
-        const companyName = result.company || result.author || 'Lead';
+        const companyName = result.company || companyMeta?.name || normalizedDomain || result.author || 'Lead';
         const contactName =
           (candidateEmail ? formatNameFromEmail(candidateEmail) : '') ||
           result.contactName ||
           result.author ||
-          'Lead';
+          'Lead Contact';
 
         const res = await fetch('/api/leads', {
           method: 'POST',
@@ -528,7 +544,7 @@ export default function EchoThreadSearch() {
             contactName: contactName || undefined,
             email: candidateEmail,
             phone: companyPhone,
-            website: normalizedDomain,
+            website: websiteCandidate,
             notes: notesParts.filter(Boolean).join('\n'),
             source:
               result.sourceType === 'jobs'
@@ -597,9 +613,6 @@ export default function EchoThreadSearch() {
               </button>
             </div>
             <div className="px-6 py-2">
-              {debugSourceLog && (
-                <p className="mt-2 text-xs text-rose-600">{debugSourceLog}</p>
-              )}
               <div className="mb-3 flex flex-wrap gap-2">
                 <span className="pt-1 text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Try:</span>
                 {keywordButtons.map((keyword) => (
@@ -614,7 +627,24 @@ export default function EchoThreadSearch() {
                 ))}
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Sources:</span>
+                {SOURCE_OPTIONS.map((option) => (
+                  <label key={option.key} className="inline-flex items-center gap-2 text-sm text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={sources[option.key]}
+                      onChange={() => setSources((prev) => ({ ...prev, [option.key]: !prev[option.key] }))}
+                      className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-2 focus:ring-brand-primary-400"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Aggregated includes EchoThread combined results, including TheirStack-sourced opportunities.
+              </p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
                 <input
                   type="text"
                   value={query}
@@ -634,21 +664,9 @@ export default function EchoThreadSearch() {
                   {loading ? 'Searching...' : 'Search'}
                 </button>
               </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <span className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Sources:</span>
-                {SOURCE_OPTIONS.map((option) => (
-                  <label key={option.key} className="inline-flex items-center gap-2 text-sm text-zinc-700">
-                    <input
-                      type="checkbox"
-                      checked={sources[option.key]}
-                      onChange={() => setSources((prev) => ({ ...prev, [option.key]: !prev[option.key] }))}
-                      className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-2 focus:ring-brand-primary-400"
-                    />
-                    {option.label}
-                  </label>
-                ))}
-              </div>
+              {debugSourceLog && (
+                <p className="mt-2 text-xs text-rose-600">{debugSourceLog}</p>
+              )}
 
               <div className="mt-6 max-h-[50vh] overflow-y-auto pr-8">
               {results.length > 0 ? (

@@ -79,14 +79,25 @@ describe('Stripe Refund Webhook', () => {
         request: null,
         data: {
           object: {
-            id: 'refund_123',
-            object: 'refund',
+            id: 'ch_123',
+            object: 'charge',
             amount: 10000, // $100.00 in cents
-            charge: 'ch_123',
+            amount_refunded: 10000,
             currency: 'usd',
             payment_intent: 'pi_123',
             status: 'succeeded',
-          } as Stripe.Refund,
+            refunds: {
+              data: [
+                {
+                  id: 'refund_123',
+                  object: 'refund',
+                  amount: 10000,
+                  currency: 'usd',
+                  status: 'succeeded',
+                } as Stripe.Refund,
+              ],
+            },
+          } as Stripe.Charge,
         },
       };
 
@@ -131,7 +142,7 @@ describe('Stripe Refund Webhook', () => {
     });
 
     it('should handle partial refund correctly', async () => {
-      const partialRefundEvent: Stripe.Event = {
+      const partialRefundEvent = {
         id: 'evt_refund_partial',
         object: 'event',
         type: 'charge.refunded',
@@ -151,7 +162,7 @@ describe('Stripe Refund Webhook', () => {
             status: 'succeeded',
           } as Stripe.Refund,
         },
-      };
+      } as unknown as Stripe.Event;
 
       // Mock Stripe charge retrieve
       (stripe.charges.retrieve as any).mockResolvedValue({
@@ -191,7 +202,7 @@ describe('Stripe Refund Webhook', () => {
     });
 
     it('should handle multiple partial refunds', async () => {
-      const secondRefundEvent: Stripe.Event = {
+      const secondRefundEvent = {
         id: 'evt_refund_second',
         object: 'event',
         type: 'charge.refunded',
@@ -211,7 +222,7 @@ describe('Stripe Refund Webhook', () => {
             status: 'succeeded',
           } as Stripe.Refund,
         },
-      };
+      } as unknown as Stripe.Event;
 
       // Mock payment already has $35 refunded
       const partiallyRefundedPayment = {
@@ -247,7 +258,7 @@ describe('Stripe Refund Webhook', () => {
     });
 
     it('should mark as fully refunded when cumulative refunds equal payment amount', async () => {
-      const finalRefundEvent: Stripe.Event = {
+      const finalRefundEvent = {
         id: 'evt_refund_final',
         object: 'event',
         type: 'charge.refunded',
@@ -267,7 +278,7 @@ describe('Stripe Refund Webhook', () => {
             status: 'succeeded',
           } as Stripe.Refund,
         },
-      };
+      } as unknown as Stripe.Event;
 
       const partiallyRefundedPayment = {
         ...mockPayment,
@@ -302,7 +313,7 @@ describe('Stripe Refund Webhook', () => {
     });
 
     it('should handle missing payment gracefully', async () => {
-      const refundEvent: Stripe.Event = {
+      const refundEvent = {
         id: 'evt_refund_missing',
         object: 'event',
         type: 'charge.refunded',
@@ -322,7 +333,7 @@ describe('Stripe Refund Webhook', () => {
             status: 'succeeded',
           } as Stripe.Refund,
         },
-      };
+      } as unknown as Stripe.Event;
 
       (stripe.charges.retrieve as any).mockResolvedValue({
         id: 'ch_nonexistent',
@@ -342,7 +353,7 @@ describe('Stripe Refund Webhook', () => {
     });
 
     it('should use Decimal arithmetic to prevent rounding errors', async () => {
-      const refundEvent: Stripe.Event = {
+      const refundEvent = {
         id: 'evt_refund_decimal',
         object: 'event',
         type: 'charge.refunded',
@@ -362,7 +373,7 @@ describe('Stripe Refund Webhook', () => {
             status: 'succeeded',
           } as Stripe.Refund,
         },
-      };
+      } as unknown as Stripe.Event;
 
       (stripe.charges.retrieve as any).mockResolvedValue({
         id: 'ch_123',

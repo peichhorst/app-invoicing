@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCurrentUser } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { resolveAppBaseUrl } from '@/lib/app-url';
 
 export async function POST(
   req: NextRequest,
@@ -59,7 +60,7 @@ export async function POST(
     // If redirect is requested, redirect to the new client's page
     const formData = await req.formData().catch(() => null);
     if (formData && formData.get('redirect') === '1') {
-      const baseUrl = req.nextUrl.origin || process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+      const baseUrl = req.nextUrl.origin || resolveAppBaseUrl();
       return NextResponse.redirect(`${baseUrl}/dashboard/clients/${client.id}`);
     }
 

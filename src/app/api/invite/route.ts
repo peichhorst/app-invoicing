@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { hashPassword, getCurrentUser } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { sendInviteEmail } from '@/lib/email';
+import { resolveAppBaseUrl } from '@/lib/app-url';
 
 export async function POST(request: Request) {
   try {
@@ -85,7 +86,7 @@ export async function POST(request: Request) {
 
     const inviterName = user.name ?? user.email;
     const companyName = ownerCompanyName ?? user.companyName ?? undefined;
-    const appBase = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const appBase = resolveAppBaseUrl();
     const confirmUrl = new URL('/confirm-invite', appBase);
     confirmUrl.searchParams.set('token', token);
     try {

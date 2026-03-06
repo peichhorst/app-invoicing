@@ -93,6 +93,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'CSV must include headers' }, { status: 400 });
   }
 
+  const normalizedHeaders = parsed.headers.map(normalizeCsvHeader);
+  const looksLikeLeadTemplate =
+    (normalizedHeaders.includes('status') || normalizedHeaders.includes('source')) &&
+    !normalizedHeaders.includes('contact name') &&
+    !normalizedHeaders.includes('address line 1');
+  if (looksLikeLeadTemplate) {
+    return NextResponse.json(
+      { error: 'This looks like a Leads CSV template. Use Leads -> Import Leads instead.' },
+      { status: 400 }
+    );
+  }
+
   if (!parsed.rows.length) {
     return NextResponse.json({ error: 'CSV must include at least one row' }, { status: 400 });
   }

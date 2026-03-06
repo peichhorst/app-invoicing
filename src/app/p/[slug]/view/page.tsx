@@ -2,6 +2,7 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { describePlan, ensureTrialState } from '@/lib/plan';
 import type { Company } from '@prisma/client';
+import type { CSSProperties } from 'react';
 import SignProposalAction from './SignProposalAction';
 import SignatureBlock from '@/components/invoicing/SignatureBlock';
 import ProposalDetailsSection from '@/components/invoicing/ProposalDetailsSection';
@@ -9,11 +10,50 @@ import DocumentHeader from '@/components/invoicing/shared/DocumentHeader';
 import LineItemsTable from '@/components/invoicing/shared/LineItemsTable';
 import TotalsSection from '@/components/invoicing/shared/TotalsSection';
 import PaymentTermsFooter from '@/components/invoicing/shared/PaymentTermsFooter';
+import { resolveInvoicePaymentMethods } from '@/lib/invoice-presentation';
 import ProposalSignatureForm from './ProposalSignatureForm';
 
 type ViewInvoicePageProps = {
   params: Promise<{ slug?: string }>;
   searchParams?: Promise<{ slug?: string | string[] }>;
+};
+
+const isUsableOfficialPdfUrl = (value?: string | null) => {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes('mock-cloudinary-url.com')) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const resolveBrandColor = (value?: string | null) => {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  const colorMap: Record<string, string> = {
+    purple: '#a855f7',
+    blue: '#1d4ed8',
+    green: '#22c55e',
+    red: '#ef4444',
+  };
+  return colorMap[normalized] || value;
+};
+
+const buildBrandStyle = (value?: string | null): CSSProperties => {
+  const brand = resolveBrandColor(value);
+  if (!brand) return {};
+  return {
+    ['--color-brand-primary-500' as any]: brand,
+    ['--color-brand-primary-600' as any]: brand,
+    ['--color-brand-primary-700' as any]: brand,
+    ['--color-brand-accent-500' as any]: brand,
+    ['--color-brand-accent-600' as any]: brand,
+    ['--color-brand-accent-700' as any]: brand,
+  } as CSSProperties;
 };
 
 export default async function ViewInvoicePage({ params, searchParams }: ViewInvoicePageProps) {
@@ -30,7 +70,7 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
   
   if (!slug) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-brand-primary-900 via-brand-primary-950 to-brand-primary-950 text-white">
+      <div className="min-h-screen bg-[#d8e6f2] text-zinc-900">
         <div className="mx-auto max-w-4xl px-4 py-10">
           <p className="text-sm">Missing invoice identifier.</p>
         </div>
@@ -58,7 +98,10 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
   const canonicalUser = await ensureTrialState(invoice.user);
   type InvoiceUser = typeof canonicalUser & { company?: Company | null };
   const plan = describePlan(canonicalUser);
-  const hasStripeConfig = Boolean(canonicalUser.stripePublishableKey && canonicalUser.stripeAccountId);
+  const hasStripeConfig = Boolean(
+    (canonicalUser.company?.stripePublishableKey ?? canonicalUser.stripePublishableKey) &&
+      (canonicalUser.company?.stripeAccountId ?? canonicalUser.stripeAccountId)
+  );
   const alwaysPro = process.env.NEXT_PUBLIC_ALWAYS_PRO === 'true';
   const payOnlineEnabled = (plan.effectiveTier === 'PRO' && hasStripeConfig) || alwaysPro;
   const portalToken = invoice.client?.portalUser?.portalToken;
@@ -66,26 +109,18 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
   const issuedOn = invoice.issueDate ? new Date(invoice.issueDate).toLocaleDateString() : '—';
   const dueOn = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : '—';
   const isPaid = invoice.status === 'PAID';
-  const payOnlineAvailable = payOnlineEnabled && !isPaid;
   const paidOn = invoice.updatedAt ? new Date(invoice.updatedAt).toLocaleDateString() : null;
   const appBase = process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.clientwave.app';
-  const payLink = shortCode ? `${appBase}/p/${shortCode}` : `${appBase}/payment?seller=${invoice.userId}&invoice=${invoice.id}`;
   const invoiceUser = canonicalUser as InvoiceUser;
-  const venmoLink =
-    invoiceUser?.venmoHandle && typeof invoiceUser.venmoHandle === 'string'
-      ? `https://venmo.com/${invoiceUser.venmoHandle.replace(/^@/, '')}`
-      : null;
-  const mailToTargetText = invoiceUser?.mailToAddressTo?.trim();
-  const mailRecipientName =
-    mailToTargetText || invoiceUser?.company?.name || invoiceUser?.companyName || invoiceUser?.name || 'Invoice sender';
-  const mailToLines = [
-    mailRecipientName,
-    invoiceUser?.company?.addressLine1,
-    invoiceUser?.company?.addressLine2,
-    [invoiceUser?.company?.city, invoiceUser?.company?.state, invoiceUser?.company?.postalCode].filter(Boolean).join(', '),
-    invoiceUser?.company?.country ?? 'USA',
-  ].filter(Boolean);
-  const showMailBlock = (invoiceUser?.mailToAddressEnabled ?? false) && mailToLines.length > 0;
+  const brandStyle = buildBrandStyle(invoiceUser.company?.primaryColor ?? null);
+  const paymentMethods = resolveInvoicePaymentMethods(invoiceUser, { invoiceId: invoice.id, appBase });
+  const payOnlineAvailable = (payOnlineEnabled && paymentMethods.payOnlineEnabled) && !isPaid;
+  const payLink = paymentMethods.payLink;
+  const venmoLink = paymentMethods.venmoHandle
+    ? `https://venmo.com/${paymentMethods.venmoHandle.replace(/^@/, '')}`
+    : null;
+  const mailToLines = (paymentMethods.checkToLines ?? []).filter((line) => line.trim().length > 0);
+  const showMailBlock = Boolean(paymentMethods.checkEnabled) && mailToLines.length > 0;
   const totals = {
     subtotal: invoice.subTotal ?? 0,
     tax: invoice.taxAmount ?? 0,
@@ -95,11 +130,8 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
   const invoiceClient = invoice.client;
 
   return (
-    <div className="relative flex min-h-screen items-start justify-center overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 pt-10 pb-16 text-white">
-      <div className="absolute inset-0 opacity-40">
-        <div className="grid-overlay" />
-      </div>
-      <div className="relative w-full max-w-5xl space-y-6 rounded-3xl border border-white/10 bg-white p-8 shadow-2xl">
+    <div className="flex min-h-screen items-start justify-center bg-[#d8e6f2] px-4 pb-16 pt-10" style={brandStyle}>
+      <div className="w-full max-w-5xl space-y-6 rounded-3xl border border-zinc-200 bg-white p-8 shadow-xl">
         <div className="space-y-6">
           {/* Status Badge */}
           <div className="flex items-center justify-between border-b border-gray-200 pb-4">
@@ -169,19 +201,11 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
           <PaymentTermsFooter
             paymentTerms={invoice.notes || undefined}
             dueDate={invoice.dueDate ? new Date(invoice.dueDate) : undefined}
-            bankDetails={
-              showMailBlock
-                ? {
-                    accountName: mailRecipientName,
-                    bankName: 'Mail check to',
-                  }
-                : undefined
-            }
             documentType="invoice"
           />
 
           {/* Invoice-Specific Payment Methods */}
-          {(showMailBlock || venmoLink || invoiceUser?.zelleHandle) && (
+          {(showMailBlock || venmoLink || paymentMethods.zelleHandle) && (
             <div className="space-y-4 rounded-lg border border-brand-primary-200 bg-brand-primary-50 p-6">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-primary-900">
                 Payment Methods
@@ -204,10 +228,10 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
                   </a>
                 </div>
               )}
-              {invoiceUser?.zelleHandle && (
+              {paymentMethods.zelleHandle && (
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-gray-900">Zelle:</p>
-                  <p className="text-sm text-gray-700">{invoiceUser.zelleHandle}</p>
+                  <p className="text-sm text-gray-700">{paymentMethods.zelleHandle}</p>
                 </div>
               )}
             </div>
@@ -225,7 +249,7 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
                 ← Back to portal
               </Link>
             )}
-            {invoice.pdfUrl ? (
+            {isUsableOfficialPdfUrl(invoice.pdfUrl) ? (
               <a
                 href={invoice.pdfUrl}
                 target="_blank"
@@ -244,7 +268,7 @@ export default async function ViewInvoicePage({ params, searchParams }: ViewInvo
             )}
             {payOnlineAvailable && (
               <Link
-                href={`/p/${shortCode}`}
+                href={payLink}
                 className="rounded-lg bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-primary-700"
               >
                 Pay online
@@ -268,7 +292,7 @@ async function renderProposalView(slug: string) {
 
   if (!proposal) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-brand-primary-900 via-brand-primary-950 to-brand-primary-950 text-white">
+      <div className="min-h-screen bg-[#d8e6f2] text-zinc-900">
         <div className="mx-auto max-w-4xl px-4 py-10">
           <p className="text-sm">We couldn't find a proposal with that link.</p>
         </div>
@@ -325,6 +349,7 @@ async function renderProposalView(slug: string) {
     email: companyContact?.company?.email || companyContact?.email || undefined,
     phone: companyContact?.company?.phone || companyContact?.phone || undefined,
   };
+  const brandStyle = buildBrandStyle(companyContact?.company?.primaryColor ?? null);
   const clientInfo = {
     name: proposal.client?.contactName || '',
     companyName: proposal.client?.companyName || undefined,
@@ -343,11 +368,8 @@ async function renderProposalView(slug: string) {
       : undefined;
 
   return (
-    <div className="relative flex min-h-screen items-start justify-center overflow-hidden bg-gradient-to-br from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-4 pt-10 pb-16 text-white">
-      <div className="absolute inset-0 opacity-40">
-        <div className="grid-overlay" />
-      </div>
-      <div className="relative w-full max-w-5xl space-y-6 rounded-3xl border border-white/10 bg-white p-8 shadow-2xl text-zinc-900">
+    <div className="flex min-h-screen items-start justify-center bg-[#d8e6f2] px-4 pb-16 pt-10" style={brandStyle}>
+      <div className="w-full max-w-5xl space-y-6 rounded-3xl border border-zinc-200 bg-white p-8 shadow-xl text-zinc-900">
         <div className="space-y-6">
           <div className="flex items-center justify-between border-b border-zinc-200 pb-4">
             <div className="space-y-1">
@@ -430,7 +452,7 @@ async function renderProposalView(slug: string) {
           )}
           
           <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-6">
-            {proposal.pdfUrl ? (
+            {isUsableOfficialPdfUrl(proposal.pdfUrl) ? (
               <a
                 href={proposal.pdfUrl}
                 target="_blank"

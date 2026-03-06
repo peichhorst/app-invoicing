@@ -8,6 +8,28 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
   if (!user) {
     redirect('/');
   }
-  return <DashboardShell>{children}</DashboardShell>;
-}
 
+  return (
+    <DashboardShell
+      sidebarRole={user.role ?? null}
+      sidebarProfile={{
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
+        name: user.name ?? null,
+        email: user.email ?? null,
+        companyName: user.companyName ?? user.company?.name ?? null,
+        role: user.role ?? null,
+        position: user.position ?? null,
+        positionCustom: user.positionCustom ?? null,
+        company: user.company
+          ? {
+              name: user.company.name ?? null,
+              logoUrl: user.company.logoUrl ?? null,
+            }
+          : null,
+      }}
+    >
+      {children}
+    </DashboardShell>
+  );
+}

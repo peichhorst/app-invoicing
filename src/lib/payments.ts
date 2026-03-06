@@ -1,5 +1,6 @@
 import { Invoice, InvoiceStatus, PaymentStatus, Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
+import { isPastDueDateByDay } from '@/lib/date-status';
 
 const SUCCESSFUL_PAYMENT_STATUSES = [
   PaymentStatus.succeeded,
@@ -57,7 +58,7 @@ export async function reconcileInvoiceStatus(invoiceId: string): Promise<Invoice
     nextStatus = InvoiceStatus.PAID;
   } else if (paidAmount.greaterThan(zero)) {
     nextStatus = InvoiceStatus.PARTIALLY_PAID;
-  } else if (invoice.dueDate && invoice.dueDate.getTime() < now.getTime()) {
+  } else if (isPastDueDateByDay(invoice.dueDate, now)) {
     nextStatus = InvoiceStatus.OVERDUE;
   } else {
     nextStatus = InvoiceStatus.OPEN;

@@ -3,6 +3,7 @@ import DocumentHeader from '@/components/invoicing/shared/DocumentHeader';
 import LineItemsTable from '@/components/invoicing/shared/LineItemsTable';
 import TotalsSection from '@/components/invoicing/shared/TotalsSection';
 import PaymentTermsFooter from '@/components/invoicing/shared/PaymentTermsFooter';
+import { getNoPaymentMethodsMessage } from '@/lib/invoice-presentation';
 
 export type PreviewCompany = {
   name: string;
@@ -40,6 +41,18 @@ export type PreviewTotals = {
   currency?: string;
 };
 
+export type PreviewPaymentMethods = {
+  payOnlineEnabled?: boolean;
+  payLink?: string;
+  checkEnabled?: boolean;
+  checkToLines?: string[];
+  zelleHandle?: string;
+  venmoHandle?: string;
+  venmoQrUrl?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+};
+
 export interface DocumentPreviewProps {
   type: 'invoice' | 'proposal' | 'contract';
   company?: PreviewCompany;
@@ -52,9 +65,12 @@ export interface DocumentPreviewProps {
   endDate?: Date;
   dueDate?: Date;
   paymentTerms?: string;
+  recurringPaymentTerms?: string;
   notes?: string;
   proposalTitle?: string;
   proposalDescription?: string;
+  paymentMethods?: PreviewPaymentMethods;
+  showPoweredByClientWave?: boolean;
 }
 
 export default function DocumentPreview({
@@ -70,9 +86,12 @@ export default function DocumentPreview({
   endDate,
   dueDate,
   paymentTerms,
+  recurringPaymentTerms,
   notes,
   proposalTitle,
   proposalDescription,
+  paymentMethods,
+  showPoweredByClientWave = false,
 }: DocumentPreviewProps) {
   const hasContent =
     company || client || lineItems.length > 0 || totals.total > 0 || !!paymentTerms || !!notes;
@@ -83,27 +102,50 @@ export default function DocumentPreview({
     Boolean(proposalTitle?.trim()) ||
     Boolean(type === 'proposal' && proposalDescription?.trim()) ||
     Boolean(type === 'proposal' && notes?.trim()) ||
-    Boolean(paymentTerms?.trim());
+    Boolean(type !== 'invoice' && paymentTerms?.trim()) ||
+    Boolean(type !== 'invoice' && recurringPaymentTerms?.trim());
 
+  const hasPaymentMethods =
+    Boolean(paymentMethods?.payOnlineEnabled) ||
+    Boolean(paymentMethods?.checkEnabled && paymentMethods?.checkToLines?.some((line) => line.trim().length > 0)) ||
+    Boolean(paymentMethods?.zelleHandle?.trim()) ||
+    Boolean(paymentMethods?.venmoHandle?.trim());
+
+  const checkToLines = (paymentMethods?.checkToLines ?? []).filter((line) => line.trim().length > 0);
+  const showVenmoCard = Boolean(paymentMethods?.venmoHandle?.trim());
+  const showZelleCard = Boolean(paymentMethods?.zelleHandle?.trim());
+  const showCheckCard = Boolean(paymentMethods?.checkEnabled && checkToLines.length > 0);
+
+  const noMethodsMessage = getNoPaymentMethodsMessage(
+    paymentMethods?.contactPhone,
+    paymentMethods?.contactEmail
+  );
 
   return (
     <div className="w-full">
-      <div className="mb-3 flex items-baseline justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-brand-primary-600">
-          Live preview
-        </h2>
-        <p className="text-xs text-gray-400">This is how your {type} will appear to clients.</p>
-      </div>
-
+      {type === 'invoice' && (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="rounded-full border border-[var(--color-brand-logo-text)] bg-zinc-100 px-2 py-0.5 text-[0.65rem] font-semibold uppercase text-[var(--color-brand-logo-text)]">
+            Invoice Preview
+          </span>
+        </div>
+      )}
       <div className="relative flex justify-center">
         <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-br from-brand-primary-50 via-white to-brand-primary-50" />
         <div className="relative w-full max-w-[1900px] rounded-2xl border border-gray-200 bg-white shadow-[0_18px_45px_rgba(15,23,42,0.12)]">
           <div className="mx-auto w-full max-w-[1200px] px-6 py-6 sm:px-8 sm:py-8">
             <div className="space-y-8">
               <DocumentHeader
-                company={company}
+                company={
+                  company
+                    ? {
+                        ...company,
+                        logo: company.logoUrl,
+                      }
+                    : undefined
+                }
                 client={client}
-                documentNumber={undefined}
+                documentNumber={documentNumber}
                 documentType={type}
                 documentDate={type === 'contract' ? new Date() : issueDate}
                 startDate={type === 'contract' ? startDate : undefined}
@@ -115,7 +157,7 @@ export default function DocumentPreview({
                 <div className="space-y-2">
                   {proposalTitle && (
                     <div>
-                      <span className="font-semibold">Title:</span> {proposalTitle}
+                      {proposalTitle}
                     </div>
                   )}
                   {type === 'proposal' && proposalDescription && (
@@ -128,9 +170,14 @@ export default function DocumentPreview({
                       <span className="font-semibold">Scope of Work:</span> {notes}
                     </div>
                   )}
-                  {paymentTerms && (
+                  {type !== 'invoice' && paymentTerms && (
                     <div>
                       <span className="font-semibold">{type === 'proposal' ? 'Notes' : 'Terms & Conditions'}:</span> {paymentTerms}
+                    </div>
+                  )}
+                  {type !== 'invoice' && recurringPaymentTerms && (
+                    <div>
+                      <span className="font-semibold">Payment Terms:</span> {recurringPaymentTerms}
                     </div>
                   )}
                 </div>
@@ -181,14 +228,84 @@ export default function DocumentPreview({
                 </div>
               )}
 
+              {type === 'invoice' && (
+                <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                  <h3 className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-700">
+                    Payment Methods
+                  </h3>
+                  {(showVenmoCard || showZelleCard || showCheckCard) && (
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      {showVenmoCard && (
+                        <div className="rounded-lg border border-zinc-200 bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-700">Venmo</p>
+                          <p className="mt-2 text-sm text-zinc-700">{paymentMethods?.venmoHandle}</p>
+                          {paymentMethods?.venmoQrUrl && (
+                            <img
+                              src={paymentMethods.venmoQrUrl}
+                              alt="Venmo QR code preview"
+                              className="mt-2 h-16 w-16 rounded border border-zinc-200"
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {showZelleCard && (
+                        <div className="rounded-lg border border-zinc-200 bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-700">Zelle</p>
+                          <p className="mt-2 text-sm text-zinc-700">{paymentMethods?.zelleHandle}</p>
+                        </div>
+                      )}
+
+                      {showCheckCard && (
+                        <div className="rounded-lg border border-zinc-200 bg-white p-3">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-700">Check</p>
+                          <div className="mt-2 space-y-1 text-sm text-zinc-700">
+                            {checkToLines.map((line) => (
+                              <p key={line}>{line}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {paymentMethods?.payOnlineEnabled && (
+                    <div className="mt-3">
+                      {paymentMethods.payLink ? (
+                        <a
+                          href={paymentMethods.payLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center justify-center rounded-md border border-brand-primary-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-brand-primary-700 shadow-sm transition hover:border-brand-primary-300 hover:bg-brand-primary-50"
+                        >
+                          Click Here to Pay Invoice Online
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-500 shadow-sm">
+                          Click Here to Pay Invoice Online
+                        </span>
+                      )}
+                      {!paymentMethods.payLink ? (
+                        <p className="mt-2 text-xs text-zinc-500">Payment link will be generated when sent.</p>
+                      ) : null}
+                    </div>
+                  )}
+
+                  {!hasPaymentMethods && (
+                    <p className="mt-3 text-sm text-zinc-600">{noMethodsMessage}</p>
+                  )}
+                </div>
+              )}
+
           
 
               {type !== 'proposal' ? (
                 <PaymentTermsFooter
-                paymentTerms={paymentTerms}
-                notes={notes}
+                paymentTerms={type === 'invoice' ? undefined : paymentTerms}
+                notes={type === 'invoice' ? (notes?.trim() ? notes : 'No notes added.') : notes}
                 documentType={type}
-                dueDate={dueDate}
+                dueDate={type === 'invoice' ? undefined : dueDate}
+                showPoweredByClientWave={showPoweredByClientWave}
               />
               ) : null}
             </div>

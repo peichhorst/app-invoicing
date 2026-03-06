@@ -158,11 +158,15 @@ export default function CalendarPicker({
     [dateFormatter],
   );
 
+  const selectedIso = useMemo(() => {
+    if (!selectedDate) return "";
+    if (typeof selectedDate === "string") return selectedDate;
+    return formatAsIso(selectedDate);
+  }, [selectedDate, formatAsIso]);
+
   return (
     <div className="w-full rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-      <div className="mb-2 text-xs text-zinc-500">
-        <span>Available days this month: <b>{availableCount}</b></span> | <span>Booked out days: <b>{bookedCount}</b></span>
-      </div>
+     
       <DayPicker
         components={{ Nav: CalendarNavigation }}
         mode="single"
@@ -196,7 +200,7 @@ export default function CalendarPicker({
           available: (date) => {
             const iso = formatAsIso(new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0)));
             const inMonth = date.getUTCFullYear() === currentMonth.getUTCFullYear() && date.getUTCMonth() === currentMonth.getUTCMonth();
-            return availableSet.has(iso) && !bookedOutSet.has(iso) && inMonth;
+            return availableSet.has(iso) && !bookedOutSet.has(iso) && inMonth && iso !== selectedIso;
           },
           unavailable: (date) => {
             const iso = formatAsIso(new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0)));
@@ -211,7 +215,7 @@ export default function CalendarPicker({
           unavailable: "!bg-white !text-zinc-400 cursor-not-allowed unavailable-day",
           outside:
             "bg-white text-zinc-400 opacity-80 hover:!bg-white pointer-events-none !border-transparent !bg-white",
-          selected: "!bg-green-100 available-day-selected",
+          selected: "available-day-selected",
         }}
         classNames={{
           root: "w-full",

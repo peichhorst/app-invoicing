@@ -7,9 +7,11 @@ import DocumentPreview from '@/components/invoicing/DocumentPreview';
 import { renderToBuffer } from '@react-pdf/renderer';
 import prisma from '@/lib/prisma';
 import crypto from 'crypto';
+import { resolveAppBaseUrl } from '@/lib/app-url';
+import { getStripeFeeConfig, getStripeFeeConfigForMethod } from '@/lib/payments/stripe-fees';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
-const defaultFrom = process.env.RESEND_FROM || 'invoices@858webdesign.com';
+const defaultFrom = process.env.RESEND_FROM || 'no-reply@clientwave.app';
 const adminAlertEmail = process.env.REGISTRATION_ALERT_EMAIL || 'petere2103@gmail.com';
 const emailsEnabled =
   process.env.NODE_ENV !== 'development' || process.env.ENABLE_DEV_EMAIL === 'true';
@@ -45,6 +47,42 @@ const resolveEmailButtonTextColor = (hex: string) => {
   const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
   const luminance = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
   return luminance > 0.55 ? '#0f172a' : '#ffffff';
+};
+
+const formatBpsPercent = (bps: number) => {
+  const normalized = Math.max(0, Math.round(bps));
+  const value = (normalized / 100).toFixed(2).replace(/\.?0+$/, '');
+  return `${value}%`;
+};
+
+const formatUsdCents = (cents: number) => `$${(Math.max(0, Math.round(cents)) / 100).toFixed(2)}`;
+
+const isUsableOfficialPdfUrl = (value?: string | null) => {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (trimmed.includes('mock-cloudinary-url.com')) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
+const toSafeFilePart = (value?: string | null) =>
+  (value || 'Unknown')
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 60) || 'Unknown';
+
+const resolveReplyToEmail = (user: any): string | undefined => {
+  const companyEmail =
+    typeof user?.company?.email === 'string' ? user.company.email.trim() : '';
+  if (companyEmail) return companyEmail;
+  const userEmail = typeof user?.email === 'string' ? user.email.trim() : '';
+  return userEmail || undefined;
 };
 
 export async function sendEmail(payload: Parameters<typeof resend.emails.send>[0]) {
@@ -154,8 +192,7 @@ export async function sendEmailChangeVerificationEmail(
   primaryColor?: string | null
 ) {
   const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
-  const verifyUrl = new URL('/settings/email/verify', appBase);
-  verifyUrl.searchParams.set('token', token);
+  const verifyUrl = new URL(`/settings/email/verify/${encodeURIComponent(token)}`, appBase);
 
   await sendEmail({
     from: defaultFrom,
@@ -196,7 +233,7 @@ export async function sendMagicLoginEmail(
   token: string,
   primaryColor?: string | null
 ) {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const baseUrl = resolveAppBaseUrl();
   const loginUrl = `${baseUrl}/api/auth/magic-login?token=${token}`;
 
   await sendEmail({
@@ -280,30 +317,35 @@ export async function sendInvoiceEmail(
     });
   }
   const portalLink = portalUser ? `${appBase}/client/${encodeURIComponent(portalUser.portalToken)}` : null;
+  const pdfFilename = `${toSafeFilePart(
+    user?.company?.name ?? user?.companyName ?? user?.name
+  )} - ${toSafeFilePart(client?.companyName ?? client?.contactName ?? client?.email)} - Invoice ${toSafeFilePart(
+    invoice?.invoiceNumber
+  )}.pdf`;
 
   // Attachments - Use stored PDF URL if available, otherwise generate on-the-fly
   let attachments: any[] = [];
   if (invoice.pdfUrl) {
     // If we have a stored PDF URL, we can reference it but we can't attach it directly from external storage
     // So we'll still generate the PDF for attachment but note that the stored version exists
-    const pdfElement = React.createElement(InvoicePDF as any, { invoice, client, user }) as ReactElement;
+    const pdfElement = React.createElement(InvoicePDF as any, { invoice, client, user, portalLink }) as ReactElement;
     const pdfBuffer = await renderToBuffer(pdfElement as any);
     const pdfBase64 = pdfBuffer.toString('base64');
     attachments = [
       {
-        filename: `Invoice-${invoice.invoiceNumber}.pdf`,
+        filename: pdfFilename,
         content: pdfBase64,
         contentType: 'application/pdf',
       },
     ];
   } else {
     // Generate PDF on-the-fly for attachment
-    const pdfElement = React.createElement(InvoicePDF as any, { invoice, client, user }) as ReactElement;
+    const pdfElement = React.createElement(InvoicePDF as any, { invoice, client, user, portalLink }) as ReactElement;
     const pdfBuffer = await renderToBuffer(pdfElement as any);
     const pdfBase64 = pdfBuffer.toString('base64');
     attachments = [
       {
-        filename: `Invoice-${invoice.invoiceNumber}.pdf`,
+        filename: pdfFilename,
         content: pdfBase64,
         contentType: 'application/pdf',
       },
@@ -312,6 +354,7 @@ export async function sendInvoiceEmail(
 
   // ——— REST OF EMAIL (unchanged) ———
   const formatCurrency = (n: any) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(n ?? 0));
+  const officialPdfUrl = isUsableOfficialPdfUrl(invoice?.pdfUrl) ? invoice.pdfUrl : null;
   const totalFormatted = formatCurrency(invoice?.total ?? 0);
   const isPaid = invoice?.status === 'PAID';
   const paidOn = isPaid && invoice?.updatedAt ? new Date(invoice.updatedAt).toLocaleDateString() : null;
@@ -322,7 +365,18 @@ export async function sendInvoiceEmail(
     ? `<span style="display:inline-block; margin-left:8px; padding:2px 8px; border-radius:12px; background:#e0e7ff; color:#4338ca; font-size:12px; font-weight:700;">Reminder</span>`
     : '';
 
-  const mailToTargetText = user?.mailToAddressTo?.trim();
+  const mailToAddressTo = user?.company?.mailToAddressTo ?? user?.mailToAddressTo;
+  const mailToAddressEnabled = user?.company?.mailToAddressEnabled ?? user?.mailToAddressEnabled;
+  const displayCompanyName = user?.company?.name || user?.companyName || user?.name || 'Your Company';
+  const zelleHandleRaw = user?.company?.zelleHandle ?? user?.zelleHandle;
+  const venmoHandleRaw = user?.company?.venmoHandle ?? user?.venmoHandle;
+  const zelleHandle = typeof zelleHandleRaw === 'string' ? zelleHandleRaw.trim() : '';
+  const venmoHandle = typeof venmoHandleRaw === 'string' ? venmoHandleRaw.trim() : '';
+  const venmoLink = venmoHandle ? `https://venmo.com/${venmoHandle.replace(/^@/, '')}` : '';
+  const venmoQrUrl = venmoLink
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(venmoLink)}`
+    : '';
+  const mailToTargetText = typeof mailToAddressTo === 'string' ? mailToAddressTo.trim() : '';
   const mailRecipientName =
     mailToTargetText || user?.company?.name || user?.companyName || user?.name;
   const mailToLines = [
@@ -332,7 +386,7 @@ export async function sendInvoiceEmail(
     [user?.company?.city, user?.company?.state, user?.company?.postalCode].filter(Boolean).join(', '),
     user?.company?.country ?? 'USA',
   ].filter(Boolean);
-  const showMailBlock = (user?.mailToAddressEnabled ?? false) && mailToLines.length > 0;
+  const showMailBlock = Boolean(mailToAddressEnabled) && mailToLines.length > 0;
   const mailHeading = 'Mail & Issue Check To:';
   const mailBlock = showMailBlock
     ? `<div style="margin-top:8px; padding:8px; border:1px solid #eee; border-radius:6px; background:#fff;">
@@ -341,28 +395,55 @@ export async function sendInvoiceEmail(
        </div>`
     : '';
 
-  const hasStripeCredentials = Boolean(user?.stripeAccountId && user?.stripePublishableKey);
-  const onlinePaymentSection = hasStripeCredentials
-    ? `<p style="margin:0 0 12px 0;">
-        <a
+  const stripeAccountId = user?.company?.stripeAccountId ?? null;
+  const stripePublishableKey = user?.company?.stripePublishableKey ?? null;
+  const buttonColor = resolveEmailButtonColor(user?.company?.primaryColor ?? null);
+  const buttonTextColor = resolveEmailButtonTextColor(buttonColor);
+  const applyStripeFee = (user?.company?.stripeFeeResponsibility ?? 'business_absorbs') === 'client_pays';
+  const cardFeeConfig = getStripeFeeConfig();
+  const achFeeConfig = getStripeFeeConfigForMethod('us_bank_account');
+  const processingFeeMessage = applyStripeFee
+    ? `Online processing fees apply:<br />Credit Card: ${formatBpsPercent(cardFeeConfig.rateBps)}${
+        cardFeeConfig.fixedCents > 0 ? ` + ${formatUsdCents(cardFeeConfig.fixedCents)}` : ''
+      }<br />Bank Transfer (ACH): ${formatBpsPercent(achFeeConfig.rateBps)}${
+        achFeeConfig.fixedCents > 0 ? ` + ${formatUsdCents(achFeeConfig.fixedCents)}` : ''
+      }${typeof achFeeConfig.maxCents === 'number' ? ` (max ${formatUsdCents(achFeeConfig.maxCents)})` : ''}`
+    : '';
+  const hasStripeCredentials = Boolean(stripeAccountId && stripePublishableKey);
+  const payOnlineButton = hasStripeCredentials
+    ? `<a
           href="${payUrl}"
-          style="background:${resolveEmailButtonColor(user?.company?.primaryColor ?? null)}; color:white; padding:12px 24px; text-decoration:none; border-radius:8px; display:inline-block;"
+          style="background:${buttonColor}; color:${buttonTextColor}; padding:12px 24px; text-decoration:none; border-radius:8px; display:inline-block; font-weight:700;"
         >
           Pay Invoice Online
-        </a>
-      </p>`
+        </a>`
     : '';
+  const portalButton = portalLink
+    ? `<a
+          href="${portalLink}"
+          style="background:${buttonColor}; color:${buttonTextColor}; padding:12px 24px; text-decoration:none; border-radius:8px; display:inline-block; font-weight:700;"
+        >
+          Access Client Portal
+        </a>`
+    : '';
+  const onlinePaymentSection =
+    payOnlineButton || portalButton
+      ? `<div style="margin:10px 0 12px 0;">
+          <table role="presentation" style="border-collapse:separate; border-spacing:0;">
+            <tr>
+              ${payOnlineButton ? `<td style="padding:0 12px 0 0;">${payOnlineButton}</td>` : ''}
+              ${portalButton ? `<td style="padding:0;">${portalButton}</td>` : ''}
+            </tr>
+          </table>
+          ${hasStripeCredentials && processingFeeMessage ? `<p style="margin:8px 0 0 0; color:#6b7280; font-size:12px; line-height:1.35;">${processingFeeMessage}</p>` : ''}
+        </div>`
+      : '';
   const hasPaymentOptions =
     hasStripeCredentials ||
     showMailBlock ||
-    Boolean(user?.zelleHandle) ||
-    Boolean(user?.venmoHandle);
+    Boolean(zelleHandle) ||
+    Boolean(venmoHandle);
 
-  const portalSection = portalLink
-    ? `<div style="margin-top:12px; padding:10px; border-radius:8px; background:#eef2ff; text-align:center;">
-        <a href="${portalLink}" style="font-weight:600; color:#4f46e5;">View all your invoices</a>
-      </div>`
-    : '';
   const poweredByFooter =
     user?.planTier === 'FREE'
       ? `<p style="margin:16px 0 0; font-size:10px; color:#9ca3af; text-align:center;">Powered by ClientWave</p>`
@@ -372,20 +453,24 @@ export async function sendInvoiceEmail(
     ? `
       <div style="margin-top:16px; padding:12px; border:1px dashed #ddd; border-radius:8px; background:#fafafa;">
         <p style="margin:0 0 6px 0; color:#555; font-weight:900; font-size:20px; padding-bottom:10px;">Payment options:</p>
-        ${onlinePaymentSection}
+        ${venmoHandle ? `<div style="margin:0 0 10px 0; color:#444;">
+          <p style="margin:0 0 4px 0; color:#444;">Venmo: ${venmoHandle}</p>
+          ${venmoQrUrl ? `<img src="${venmoQrUrl}" alt="Venmo QR code" width="96" height="96" style="display:block; border:1px solid #e5e7eb; border-radius:6px; background:#fff;" />` : ''}
+        </div>` : ''}
+        ${zelleHandle ? `<p style="margin:0 0 4px 0; color:#444;">Zelle: ${zelleHandle}</p>` : ''}
         ${mailBlock ? `<div style="margin-bottom:12px;">${mailBlock}</div>` : ''}
-        ${user?.zelleHandle ? `<p style="margin:0 0 4px 0; color:#444;">Zelle: ${user.zelleHandle}</p>` : ''}
-        ${user?.venmoHandle ? `<p style="margin:0 0 4px 0; color:#444;">Venmo: ${user.venmoHandle}</p>` : ''}
+        ${onlinePaymentSection}
       </div>`
     : '';
 
   const buildHtml = (copyNotice?: string) => `
     <div style="font-family:system-ui,sans-serif; max-width:600px; margin:0 auto; padding:20px; border:1px solid #eee; border-radius:12px;">
+      ${copyNotice ? `<p style="padding:10px 12px; background:#f4f4ff; border-radius:8px; color:#4f46e5; font-weight:600; margin:0 0 12px 0;">${copyNotice}</p>` : ''}
       <table style="width:100%; border-collapse:collapse; margin-bottom:12px;">
         <tr>
           <td style="vertical-align:top;">
             <h1 style="color:#1a1a1a; margin:0 0 6px 0;">Invoice ${paidBadge}${reminderBadge}</h1>
-            <p style="margin:0; color:#444;">From: ${user?.companyName || 'Your Company'}</p>
+            <p style="margin:0; color:#444;">From: ${displayCompanyName}</p>
             <p style="margin:10px 0 0 0; color:#444;">${isPaid ? 'Receipt' : 'Invoice'} #${invoice.invoiceNumber}</p>
             ${paidOn ? `<p style="margin:2px 0 0 0; color:#444;">Paid on ${paidOn}</p>` : ''}
           </td>
@@ -395,24 +480,25 @@ export async function sendInvoiceEmail(
         </tr>
       </table>
 
-      ${copyNotice ? `<p style="padding:10px 12px; background:#f4f4ff; border-radius:8px; color:#4f46e5; font-weight:600;">${copyNotice}</p>` : ''}
-
       <p>Hi ${client.contactName?.split(' ')[0] || 'there'},</p>
-      <p>Thank you for your business! Please find your invoice attached.</p>
+      <p>${
+        isPaid
+          ? 'Thank you for your business! Please find your receipt for your invoice attached.'
+          : 'Thank you for your business! Please find your invoice attached.'
+      }</p>
       <p style="margin:12px 0 18px 0; color:#111; font-weight:700;">Invoice Total: ${totalFormatted}</p>
 
       ${isPaid
         ? `<p style="padding:12px; border:1px dashed #ddd; border-radius:8px; background:#fafafa; color:#15803d; font-weight:700;">Paid${paidOn ? ` on ${paidOn}` : ''}. This is your receipt.</p>`
       : paymentOptionsBlock}
       
-      ${invoice.pdfUrl ? `<p style="margin:12px 0 0 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
-        <strong>Official PDF:</strong> <a href="${invoice.pdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
+      ${officialPdfUrl ? `<p style="margin:12px 0 0 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
+        <strong>Official PDF:</strong> <a href="${officialPdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
       </p>` : ''}
 
       <p>Questions? Just reply to this email.</p>
       <hr style="margin:40px 0; border:none; border-top:1px solid #eee;" />
-      <small>${user?.companyName || 'Your Company'} - ${user?.email || defaultFrom}</small>
-      ${portalSection}
+      <small>${displayCompanyName} - ${user?.email || defaultFrom}</small>
       ${poweredByFooter}
     </div>
   `;
@@ -420,36 +506,34 @@ export async function sendInvoiceEmail(
   const baseSubject =
     invoice.status === 'PAID'
       ? 'Paid Invoice Receipt'
-      : `Invoice from ${user?.companyName || 'Your Company'}`;
+      : `Invoice from ${displayCompanyName}`;
   const subject = options.reminderSubject ?? baseSubject;
 
-  const adminInvoiceEmail = process.env.INVOICE_ADMIN_EMAIL || 'petere2103@gmail.com';
   const toRecipients = Array.from(
     new Set(
-      [client.email, adminInvoiceEmail]
+      [client.email]
         .filter(Boolean)
         .map((value) => value!.trim())
+    )
+  );
+  const bccRecipients = Array.from(
+    new Set(
+      [user?.email]
+        .filter(Boolean)
+        .map((value) => value!.trim())
+        .filter((value) => value && value !== client.email?.trim())
     )
   );
 
   await sendEmail({
     from: defaultFrom,
-    replyTo: user?.email || undefined,
+    replyTo: resolveReplyToEmail(user),
     to: toRecipients,
+    bcc: bccRecipients.length ? bccRecipients : undefined,
     subject,
     html: buildHtml(options.reminderNotice),
     attachments,
   });
-
-  if (user?.email && user.email !== client.email) {
-    await sendEmail({
-      from: defaultFrom,
-      to: [user.email],
-      subject: `Copy: Invoice #${invoice.invoiceNumber} sent to ${client.companyName || 'client'}`,
-      html: buildHtml('Copy of the invoice that was sent to the client.'),
-      attachments,
-    });
-  }
 }
 
 function formatDocumentLabel(type?: string) {
@@ -507,6 +591,7 @@ export async function sendProposalEmail(proposal: any, client: any, user: any) {
 
   const label = formatDocumentLabel(proposal.type);
   const lower = formatDocumentLower(proposal.type);
+  const officialPdfUrl = isUsableOfficialPdfUrl(proposal?.pdfUrl) ? proposal.pdfUrl : null;
   
   // Generate attachment PDF - use stored PDF if available, otherwise generate on-the-fly
   let pdfBase64: string;
@@ -591,8 +676,8 @@ export async function sendProposalEmail(proposal: any, client: any, user: any) {
       ${proposal.scope ? `<p style="color:#444; margin-bottom:12px;"><strong>Scope:</strong> ${proposal.scope}</p>` : ''}
       ${proposal.description ? `<p style="color:#444; margin-bottom:12px;"><strong>Description:</strong> ${proposal.description}</p>` : ''}
       ${proposal.notes ? `<p style="color:#444; margin-bottom:12px;"><strong>Notes:</strong> ${proposal.notes}</p>` : ''}
-      ${proposal.pdfUrl ? `<p style="margin:12px 0 12px 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
-        <strong>Official PDF:</strong> <a href="${proposal.pdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
+      ${officialPdfUrl ? `<p style="margin:12px 0 12px 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
+        <strong>Official PDF:</strong> <a href="${officialPdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
       </p>` : ''}
       <p style="color:#94a3b8; font-size:12px; margin-top:24px;">To finalize this ${lower}, simply sign it in ClientWave.</p>
       <p style="margin-top:24px; font-size:11px; color:#94a3b8;">You're receiving this because you're listed as the client on this ${lower}.</p>
@@ -612,6 +697,7 @@ export async function sendProposalEmail(proposal: any, client: any, user: any) {
 
   await sendEmail({
     from: defaultFrom,
+    replyTo: resolveReplyToEmail(user),
     to: toRecipients,
     subject,
     html,
@@ -638,8 +724,10 @@ export async function sendProposalSentNotification(proposal: any, client: any, u
   const companyName = user?.company?.name || user?.companyName || 'Your Company';
   const label = formatDocumentLabel(proposal.type);
   const lower = formatDocumentLower(proposal.type);
+  const officialPdfUrl = isUsableOfficialPdfUrl(proposal?.pdfUrl) ? proposal.pdfUrl : null;
   await sendEmail({
     from: defaultFrom,
+    replyTo: resolveReplyToEmail(user),
     to: [client.email],
     subject: `${label} sent from ${companyName}`,
     html: `
@@ -653,8 +741,8 @@ export async function sendProposalSentNotification(proposal: any, client: any, u
           )}; color:white; text-decoration:none; border-radius:8px; font-weight:600;"
         >View ${lower}</a>
         <p style="margin:0; color:#1f2937;">Total: <strong>${new Intl.NumberFormat('en-US', { style: 'currency', currency: proposal.currency || 'USD' }).format(Number(proposal.total) || 0)}</strong></p>
-        ${proposal.pdfUrl ? `<p style="margin:12px 0 0 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
-          <strong>Official PDF:</strong> <a href="${proposal.pdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
+        ${officialPdfUrl ? `<p style="margin:12px 0 0 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
+          <strong>Official PDF:</strong> <a href="${officialPdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
         </p>` : ''}
       </div>
     `,
@@ -684,8 +772,10 @@ export async function sendProposalSignedNotification(proposal: any, client: any,
   if (!recipients.length) return;
   const label = formatDocumentLabel(proposal.type);
   const lower = formatDocumentLower(proposal.type);
+  const officialPdfUrl = isUsableOfficialPdfUrl(proposal?.pdfUrl) ? proposal.pdfUrl : null;
   await sendEmail({
     from: defaultFrom,
+    replyTo: resolveReplyToEmail(user),
     to: recipients,
     subject: `${label} signed: ${proposal.title}`,
     html: `
@@ -693,8 +783,8 @@ export async function sendProposalSignedNotification(proposal: any, client: any,
         <h1 style="color:#111; margin-bottom:12px;">${label} signed</h1>
         <p style="margin-bottom:12px; color:#444;">${proposal.client?.companyName || proposal.client?.contactName || 'A client'} signed the ${lower}.</p>
         <p style="margin:0; color:#1f2937;">Total: <strong>${new Intl.NumberFormat('en-US', { style: 'currency', currency: proposal.currency || 'USD' }).format(Number(proposal.total) || 0)}</strong></p>
-        ${proposal.pdfUrl ? `<p style="margin:12px 0 0 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
-          <strong>Official PDF:</strong> <a href="${proposal.pdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
+        ${officialPdfUrl ? `<p style="margin:12px 0 0 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
+          <strong>Official PDF:</strong> <a href="${officialPdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
         </p>` : ''}
       </div>
     `,
@@ -707,6 +797,7 @@ export async function sendProposalCompletedNotification(proposal: any, client: a
   const lower = formatDocumentLower(proposal.type);
   await sendEmail({
     from: defaultFrom,
+    replyTo: resolveReplyToEmail(user),
     to: [client.email],
     subject: `${label} completed: ${proposal.title}`,
     html: `
@@ -744,7 +835,7 @@ export async function sendContractSignedEmail(invoice: any, client: any, user: a
       <p style="margin-bottom:12px;">
         View the signed document: <a href="${appBase}/dashboard/invoices/${invoice.id}" style="color:#4f46e5;">Dashboard invoice</a>
       </p>
-      ${invoice.pdfUrl ? `<p style="margin:12px 0 12px 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
+      ${isUsableOfficialPdfUrl(invoice?.pdfUrl) ? `<p style="margin:12px 0 12px 0; padding:8px; border:1px solid #e2e8f0; border-radius:6px; background:#f8fafc; font-size:14px;">
         <strong>Official PDF:</strong> <a href="${invoice.pdfUrl}" style="color:#4f46e5; text-decoration:underline;">Download permanent copy</a>
       </p>` : ''}
       <p style="margin-top:24px; font-size:12px; color:#777;">Signed contracts are tracked inside ClientWave.</p>
@@ -762,6 +853,7 @@ export async function sendPasswordResetEmail(email: string, token: string) {
   const appBase = process.env.NEXT_PUBLIC_APP_URL || 'https://www.clientwave.app';
   const resetUrl = new URL('/reset-password', appBase);
   resetUrl.searchParams.set('token', token);
+  resetUrl.searchParams.set('email', email);
 
   await sendEmail({
     from: defaultFrom,

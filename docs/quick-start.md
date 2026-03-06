@@ -19,8 +19,7 @@ Get up and running with ClientWave in just a few minutes. This guide will walk y
 ### Connect Integrations
 1. Go to **Settings > Integrations**
 2. Connect your calendar (Google Calendar or Outlook)
-3. Link your accounting software (QuickBooks Online)
-4. Configure payment processors (Stripe, Square, etc.)
+3. Configure payment processors (Stripe, Square, etc.)
 
 ## First Opportunity
 
@@ -51,3 +50,7 @@ Get up and running with ClientWave in just a few minutes. This guide will walk y
 ## Support
 
 Need help? Check out our [FAQ](./faq.md) or contact our support team for personalized assistance.
+
+## Production Deploys
+
+Before production updates, follow the [Canary Release Runbook](./release-canary.md) to reduce risk while operating without a dedicated staging environment.

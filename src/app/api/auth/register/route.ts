@@ -25,7 +25,9 @@ type PrismaCandidate = {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as RegisterPayload;
-    const { email, password } = body;
+    const rawEmail = typeof body.email === 'string' ? body.email : '';
+    const email = rawEmail.trim().toLowerCase();
+    const password = body.password;
 
     if (!email || !password) {
       return new Response('Email and password are required.', {
@@ -58,27 +60,17 @@ export async function POST(request: Request) {
         error: 'Prisma client methods not available'
       });
       
-      return new Response(
-        `Database unavailable. Details:\n` +
-        `- Prisma client exists: ${!!prismaCandidate}\n` +
-        `- Prisma marked unavailable: ${!!prismaCandidate?.__databaseUnavailable}\n` +
-        `- Prisma unavailable reason: ${prismaCandidate?.__databaseUnavailableReason ?? 'n/a'}\n` +
-        `- User methods available: ${!!prismaCandidate?.user}\n` +
-        `- findUnique method: ${typeof prismaCandidate?.user?.findUnique === 'function'}\n` +
-        `- create method: ${typeof prismaCandidate?.user?.create === 'function'}\n` +
-        `- company.create method: ${typeof prismaCandidate?.company?.create === 'function'}\n` +
-        `- DATABASE_URL configured: ${!!process.env.DATABASE_URL}\n` +
-        `- Environment: ${process.env.NODE_ENV}\n\n` +
-        `Please check your database configuration and ensure your Supabase connection is working.`,
-        {
-          status: 503,
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-        }
-      );
+      return new Response('Database unavailable. Please try again shortly.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
     }
 
     // If we have a working Prisma client, perform the actual registration
-    const existing = await prisma.user.findUnique({ where: { email } });
+    const existing = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      select: { id: true },
+    });
     if (existing) {
       return new Response('Email already registered.', {
         status: 409,
@@ -128,15 +120,9 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     console.error('Registration failed', error);
     
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : '';
-    
-    return new Response(
-      `Registration failed. Please try again.\n\nDebug info:\n${errorMessage}\n\n${process.env.NODE_ENV === 'development' ? errorStack : ''}`,
-      {
-        status: 500,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      }
-    );
+    return new Response('Registration failed. Please try again.', {
+      status: 500,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   }
 }

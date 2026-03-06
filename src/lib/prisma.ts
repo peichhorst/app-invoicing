@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg as PrismaPgAdapter } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { getDatabaseRuntimeConfig } from './database-config';
 
 const RealPrismaClient = PrismaClient;
 const PrismaPg = PrismaPgAdapter;
@@ -50,6 +51,8 @@ class PrismaWrapper {
     findFirst: ({ where, include, select }: { where?: any; include?: any; select?: any }) => Promise<any | null>;
     findUnique: ({ where, include, select }: { where: { id?: string }; include?: any; select?: any }) => Promise<any | null>;
     create: ({ data }: { data: any }) => Promise<any>;
+    update: ({ where, data, select }: { where: { id: string }; data: any; select?: any }) => Promise<any>;
+    delete: ({ where }: { where: { id: string } }) => Promise<any>;
   };
   public availability: {
     findMany: ({ where, orderBy, select }: { where?: any; orderBy?: any; select?: any }) => Promise<any[]>;
@@ -59,45 +62,17 @@ class PrismaWrapper {
   };
 
   constructor() {
-    const ensureQueryParam = (url: string, key: string, value: string) => {
-      try {
-        const parsed = new URL(url);
-        if (!parsed.searchParams.has(key)) {
-          parsed.searchParams.set(key, value);
-        }
-        return parsed.toString();
-      } catch {
-        return url;
-      }
-    };
-
-    const normalizeDatabaseUrl = (url?: string) => {
-      if (!url) return url;
-      try {
-        const parsed = new URL(url);
-        const isSupabasePooler = parsed.hostname.endsWith('.pooler.supabase.com');
-        const usesTransactionPooler =
-          parsed.port === '6543' || parsed.searchParams.get('pgbouncer') === 'true';
-        if (isSupabasePooler && usesTransactionPooler) {
-          let normalized = ensureQueryParam(url, 'pgbouncer', 'true');
-          normalized = ensureQueryParam(normalized, 'statement_cache_size', '0');
-          return normalized;
-        }
-      } catch {
-        return url;
-      }
-      return url;
-    };
-
-    const resolvedDatabaseUrl = normalizeDatabaseUrl(
-      process.env.DATABASE_URL || process.env.DIRECT_URL,
-    );
+    const dbRuntimeConfig = getDatabaseRuntimeConfig(process.env);
+    const resolvedDatabaseUrl = dbRuntimeConfig.resolvedUrl;
 
     if (realPrismaAvailable && RealPrismaClient && PrismaPg && pg) {
-      let connectionString = resolvedDatabaseUrl || process.env.DATABASE_URL;
+      let connectionString = resolvedDatabaseUrl;
 
       if (!connectionString) {
-        this.prismaClient = this.createUnavailableClient('DATABASE_URL is not configured');
+        const reason =
+          dbRuntimeConfig.errors.join(' ') ||
+          'DATABASE_URL and DIRECT_URL are not configured';
+        this.prismaClient = this.createUnavailableClient(reason);
       } else {
         connectionString = connectionString.replace(/[?&]sslmode=[^&]*/g, '');
 
@@ -107,7 +82,8 @@ class PrismaWrapper {
 
         const poolConfig: any = {
           connectionString,
-          connectionTimeoutMillis: 10000,
+          connectionTimeoutMillis: 20000,
+          idleTimeoutMillis: 30000,
         };
 
         if (needsSSL) {
@@ -508,6 +484,26 @@ class PrismaWrapper {
         };
         this.bookings.push(record);
         return record;
+      },
+      update: async ({ where, data, select }: { where: { id: string }; data: any; select?: any }) => {
+        const index = this.bookings.findIndex((booking) => booking.id === where.id);
+        if (index === -1) {
+          return null;
+        }
+        this.bookings[index] = { ...this.bookings[index], ...data };
+        if (!select) return this.bookings[index];
+        return Object.keys(select).reduce((acc, key) => {
+          if (select[key]) acc[key] = this.bookings[index][key];
+          return acc;
+        }, {} as Record<string, any>);
+      },
+      delete: async ({ where }: { where: { id: string } }) => {
+        const index = this.bookings.findIndex((booking) => booking.id === where.id);
+        if (index === -1) {
+          return null;
+        }
+        const [removed] = this.bookings.splice(index, 1);
+        return removed ?? null;
       },
     };
   }

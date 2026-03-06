@@ -48,6 +48,8 @@ type OnboardingUser = {
     updatedAt?: string | null;
     stripeAccountId?: string | null;
     stripePublishableKey?: string | null;
+    stripeAccountType?: 'none' | 'standard' | 'express' | 'custom' | null;
+    stripeFeeResponsibility?: 'business_absorbs' | 'client_pays' | null;
     venmoHandle?: string | null;
     zelleHandle?: string | null;
     mailToAddressEnabled?: boolean | null;
@@ -113,6 +115,10 @@ export function OnboardingWizard({
   }, []);
 
   const company = user.company;
+  const goToStep = (nextStep: OnboardingStep) => {
+    setStep(nextStep);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return (
     <div className="space-y-6">
@@ -194,7 +200,7 @@ export function OnboardingWizard({
             showPaymentAndLead={false}
             showProfileDetails={true}
             skipRedirect
-            onSaveSuccess={() => setStep(showBusiness ? 2 : 2)}
+            onSaveSuccess={() => goToStep(showBusiness ? 2 : 2)}
             simplePositionInput
             allowSetAsAdministrator={Boolean(user.role)}
             initialRole={user.role ?? null}
@@ -214,6 +220,8 @@ export function OnboardingWizard({
             initialEmail={company.email ?? user.email ?? null}
             initialStripeAccountId={company.stripeAccountId ?? null}
             initialStripePublishableKey={company.stripePublishableKey ?? null}
+            initialStripeFeeResponsibility={company.stripeFeeResponsibility ?? null}
+            stripeAccountType={company.stripeAccountType ?? null}
             initialVenmoHandle={company.venmoHandle ?? null}
             initialZelleHandle={company.zelleHandle ?? null}
             initialMailToAddressEnabled={company.mailToAddressEnabled ?? null}
@@ -233,7 +241,7 @@ export function OnboardingWizard({
             initialUseHeaderLogo={company.useHeaderLogo ?? null}
             initialIndustry={company.industry ?? null}
             onboardingMode
-            onSaveSuccess={() => setStep(3)}
+            onSaveSuccess={() => goToStep(3)}
             hidePersonalFields
           />
         </div>

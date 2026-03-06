@@ -44,6 +44,40 @@ import { ensureTrialState } from './plan';
 export const SESSION_COOKIE = 'session_token';
 const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const maybeCode = (error as { code?: unknown }).code;
+  return maybeCode === 'P2022';
+}
+
+function normalizeCookieDomain(input?: string | null): string | undefined {
+  if (!input) return undefined;
+  const trimmed = input.trim();
+  if (!trimmed) return undefined;
+
+  // Accept full URLs, plain hosts, and optional leading dot.
+  let candidate = trimmed;
+  try {
+    if (/^https?:\/\//i.test(trimmed)) {
+      candidate = new URL(trimmed).hostname;
+    }
+  } catch {
+    return undefined;
+  }
+
+  candidate = candidate
+    .replace(/^www\./i, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '')
+    .replace(/^\.+/, '');
+
+  if (!candidate || candidate === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(candidate)) {
+    return undefined;
+  }
+
+  return `.${candidate.toLowerCase()}`;
+}
+
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
 }
@@ -76,19 +110,11 @@ export async function createSession(userId: string) {
 export function sessionCookieOptions() {
   const isProd = process.env.NODE_ENV === 'production';
   const cookieDomain = isProd
-    ? process.env.COOKIE_DOMAIN ||
+    ? normalizeCookieDomain(process.env.COOKIE_DOMAIN) ||
       (() => {
-        try {
-          const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-          if (!appUrl) return undefined;
-          const hostname = new URL(appUrl).hostname;
-          if (hostname.endsWith('.clientwave.app') || hostname === 'clientwave.app') {
-            return '.clientwave.app';
-          }
-          return hostname;
-        } catch {
-          return undefined;
-        }
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+        if (!appUrl) return undefined;
+        return normalizeCookieDomain(appUrl);
       })()
     : undefined;
   return {
@@ -97,6 +123,7 @@ export function sessionCookieOptions() {
     sameSite: 'lax' as const,
     path: '/',
     maxAge: SESSION_MAX_AGE,
+    expires: new Date(Date.now() + SESSION_MAX_AGE * 1000),
     ...(cookieDomain ? { domain: cookieDomain } : {}),
   };
 }
@@ -135,11 +162,56 @@ export async function getCurrentUser(): Promise<(User & { company?: Company | nu
       });
       
       if (user) {
-        // Find the user's company using the correct field name
-        const company = await prisma.company.findUnique({
-          where: { id: user.companyId || '' }
-        });
-        
+        let company = null;
+        if (user.companyId) {
+          try {
+            // Select explicit fields so auth does not break when newer Company columns
+            // exist in schema but not yet in the deployed DB.
+            company = await prisma.company.findUnique({
+              where: { id: user.companyId },
+              select: {
+                id: true,
+                name: true,
+                website: true,
+                logoUrl: true,
+                email: true,
+                phone: true,
+                addressLine1: true,
+                addressLine2: true,
+                city: true,
+                state: true,
+                postalCode: true,
+                country: true,
+                stripeAccountId: true,
+                stripePublishableKey: true,
+                stripeFeeResponsibility: true,
+                stripePaymentMethodCard: true,
+                stripePaymentMethodAch: true,
+                stripeAccountType: true,
+                stripeWebhookMode: true,
+                stripeWebhookStatus: true,
+                stripeWebhookLastError: true,
+                venmoHandle: true,
+                zelleHandle: true,
+                mailToAddressEnabled: true,
+                mailToAddressTo: true,
+                industry: true,
+                iconUrl: true,
+                slogan: true,
+                primaryColor: true,
+                useHeaderLogo: true,
+                updatedAt: true,
+              },
+            });
+          } catch (companyError) {
+            if (isMissingColumnError(companyError)) {
+              console.warn('Company schema drift detected while resolving auth session; continuing without company hydration.');
+            } else {
+              throw companyError;
+            }
+          }
+        }
+
         // For positionCustom, return null since we don't have a position table in our mock
         (session as any).user = {
           ...user,

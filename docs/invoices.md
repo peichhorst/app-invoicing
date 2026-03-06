@@ -70,22 +70,100 @@ The Invoices module allows you to create, send, and track professional invoices 
 - **Due on Receipt**: Immediate payment required
 - **Custom Terms**: User-defined payment schedules
 - **Deposit Requirements**: Upfront payment for large projects
+- **Refund policy (Stripe pass-through)**: Refunds apply to service amount only; processing fees are non-refundable.
 
 ### Online Payment Portal
 - Secure client payment portal
+- Invoice checkout now uses Stripe **Payment Element** (instead of card-only Card Element).
+- If ACH (`us_bank_account`) is enabled and eligible on the connected Stripe account, ACH appears in checkout alongside card.
+- When both Card and ACH are enabled, checkout shows explicit Card/ACH tabs (Card selected by default).
+- If **Client pays Stripe fees** is enabled, switching tabs recalculates totals using the selected method fee schedule.
+- If **Business absorbs Stripe fees** is enabled, the main Stripe form keeps all enabled methods available.
+- Optional Stripe fee pass-through logic is now supported in checkout APIs via `applyStripeFee`.
+  By default, this is controlled by **Business Settings -> Stripe Processing Fees**.
+  When enabled, checkout computes:
+  - `Invoice amount` (base)
+  - `Processing fee` (derived from configured Stripe fee rate/fixed cents)
+  - `Total` (base + fee)
+- In invoice email content and PDF, when **Client pays Stripe fees** is enabled, the Pay Online section now shows a short processing-fee notice under the button (Credit Card rate and ACH rule/cap).
 - Automatic receipt generation
 - Payment confirmation notifications
 - Transaction history tracking
+
+### Invoices Page Layout
+- The primary **New Invoice** button is shown in the top invoices header area.
+- Filter controls are positioned directly below the invoice summary section for clearer scanning flow.
+- The resend control opens a mode picker with **Send as Original** (neutral resend copy) and **Send as Reminder** (explicit reminder labeling).
+
+### Invoice PDF Payment Methods
+- The invoice PDF only shows **Pay online** when Stripe is configured (both `stripeAccountId` and `stripePublishableKey` are present).
+- The invoice PDF shows **Zelle** only when a Zelle handle is saved.
+- The invoice PDF shows **Venmo** only when a Venmo handle is saved, and includes a Venmo QR code.
+- Invoice email payment options also show a Venmo QR code when a Venmo handle is configured.
+- Payment settings are resolved from Company Settings first, then user-level profile fields as fallback.
+- In the PDF payment section, **Venmo / Zelle / Check** are shown first (Venmo first, Check last), and the **Pay Invoice** online button appears last on its own line.
+- Invoice emails and PDFs now include a branded **View Public Portal** button (matching the pay CTA style) so clients can jump directly into their portal from either format.
+- If no payment methods are configured, the PDF shows a fallback note asking the client to call or email to arrange payment.
+
+### Invoice Live Preview Payment Methods
+- The invoice editor live preview now shows the same payment-method section while creating/editing invoices.
+- It shows only configured **Venmo / Zelle / Check** cards first (Venmo first, Check last), and **Pay Invoice** (when Stripe is configured) appears last. Unset methods are hidden.
+- Pay-link presentation is now button-style in both preview and emailed/attached PDF (instead of rendering long raw URLs), with a short helper note when the link is generated only after send.
+- For unpaid invoice PDFs, payment methods are rendered on a dedicated second page, and page one shows a short note: "View next page for payment methods."
+- Stripe webhook handling now includes secret-resolution fallback (platform and stored account secrets) and can create a fallback payment row from `invoiceId` metadata on `payment_intent.succeeded` when a pre-created payment row is missing.
+- It uses Company Settings payment values first, with user-level profile values as fallback.
+- Issue date and due date in live preview are parsed as local calendar dates to avoid timezone day-shift.
+- The preview header shows the company logo (when a logo URL is configured).
+- In invoice mode, the live preview header shows an invoice number line only when a real invoice number exists.
+- Preview and email PDF now share a common invoice presentation mapping utility for payment method resolution (company-first fallback, pay-link visibility, Venmo/Zelle/Check ordering, and no-method fallback message).
+- The emailed invoice PDF layout/branding now mirrors the live preview structure more closely (header placement, Bill To card, table styling, totals emphasis, payment cards, and footer branding).
+- The emailed invoice PDF now uses your workspace primary brand color for key accents (company name, invoice heading, total highlight, and pay link) instead of a fixed default blue.
+- Invoice phone numbers now use a shared display format across preview and email/PDF contexts (US numbers shown as `(###) ###-####`, with graceful fallback for other formats).
+- On Free plan workspaces, preview shows **Powered by ClientWave** directly below "Thank you for your business!"
+- In the invoice creator layout, the **Save Draft** and **Save & Send** buttons are positioned below the preview section.
+- Invoice and recurring-invoice previews stay in the inline editor preview, while the emailed/attached PDF applies the same payment-method visibility and ordering rules (Pay Invoice line, then Venmo / Zelle / Check columns).
+- In invoice mode, the live preview now shows a small **Preview** badge above the main preview container, and the check-payment card label reads **Check**.
+- For recurring invoices, the live preview now shows recurring payment terms (for example monthly terms), and the same recurring terms are included in emailed/downloaded PDFs.
+
+### Usage Example (Invoice PDF)
+1. Leave Stripe, Venmo, and Zelle blank in company settings.
+2. Send an unpaid invoice and open its PDF.
+3. The **Payment Methods** section will display: "No payment methods are set on this invoice. Please call or email to arrange payment."
+4. Add a Venmo handle and resend.
+5. The PDF now shows the Venmo handle plus a QR code for scan-to-pay.
+6. Add a Zelle handle.
+7. The PDF now includes both Venmo and Zelle entries.
+8. Connect Stripe (set `stripeAccountId` and `stripePublishableKey`).
+9. The PDF now includes the **Pay online** payment link.
+
+### Usage Example: Stripe Fee Pass-Through (API/Checkout Foundation)
+1. Set **Business Settings -> Stripe Processing Fees -> Client pays Stripe fees**.
+2. Open an invoice payment link.
+3. Checkout will automatically include processing fee lines.
+4. The server computes a gross amount that covers Stripe processing fees and returns:
+   - `baseAmountCents`
+   - `stripeFeeCents`
+   - `amountCents` (final charge)
+5. Checkout displays the fee breakdown and charges the final amount.
 
 ## Invoice Tracking
 
 ### Status Monitoring
 - **Draft**: Invoice created but not sent
-- **Sent**: Invoice delivered to client
+- **Open**: Invoice sent and unpaid (active receivable)
 - **Viewed**: Client opened the invoice
 - **Partial Payment**: Some payment received
 - **Paid**: Full payment received
 - **Overdue**: Payment past due date
+  Overdue starts the day after the due date (not on the due date itself).
+- Legacy note: older records may still show `UNPAID` temporarily, but the active canonical unpaid status is `OPEN`.
+- **Paid Date Editing**: The invoice list paid-date editor reads/writes the invoice `paidAt` field, which is also used by reporting.
+- **Invoice List Status Column**: The list now combines status context in one column; paid invoices show `Paid on <date>`, and unpaid invoices show `Sent: <count>` or `Not Sent`.
+
+### Delete vs Void Behavior
+- Draft invoices with no payment records are permanently deleted.
+- Any invoice with payment history, or any non-draft invoice, is marked `VOID` instead of hard-deleted.
+- This preserves payment/reporting history while still removing the invoice from active collections workflows.
 
 ### Payment Tracking
 - Record all payment methods
@@ -100,6 +178,12 @@ The Invoices module allows you to create, send, and track professional invoices 
 - Configure seasonal billing schedules
 - Adjust amounts based on usage or time
 - Cancel or modify recurring invoices
+- In the standard **New Invoice** form, checking recurring now maps directly to recurring schedule payload fields (`recurring`, interval/day, next occurrence), so a recurring parent schedule is actually created (not a one-time invoice only).
+- In `/dashboard/invoices/recurring-new`, saving now uses the same invoice payload flow as standard invoices (including recurring schedule fields), and form validation failures show a visible error toast.
+- Forced-recurring forms now keep recurring interval/payment terms controls visible even after validation errors.
+- Validation errors in the editor now surface the first concrete field message in the toast, so hidden/implicit failures are easier to diagnose.
+- New recurring schedules start in `PENDING` and only transition to `ACTIVE` after the first invoice in that series is marked paid.
+- Recurring list "Subscription" badges are now payment-aware: they display `PENDING` until first paid invoice is detected (via `firstPaidAt` or paid child invoice), while `PAUSED` and `CANCELLED` remain authoritative.
 
 ### Reminders
 - **First Reminder**: Sent at due date
@@ -170,6 +254,7 @@ The Invoices module allows you to create, send, and track professional invoices 
 - **Payment Processing**: Verify payment processor configurations
 - **Tax Calculations**: Check tax settings and regulations
 - **Integration Errors**: Confirm connection settings
+- **Broken "Official PDF" Link in Email**: If storage is not fully configured and a placeholder URL is present, the email suppresses the "Official PDF" link to avoid sending a broken URL.
 
 ## Support
 

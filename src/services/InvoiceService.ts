@@ -118,7 +118,7 @@ function calculateInvoiceTotals(
 /**
  * Generate and upload PDF for an invoice
  */
-async function generateAndUploadInvoicePDF(invoice: Invoice, client: Client, user: User): Promise<string> {
+async function generateAndUploadInvoicePDF(invoice: Invoice, client: Client, user: any): Promise<string> {
   // Get the invoice with items to generate the PDF
   const invoiceWithItems = await prisma.invoice.findUnique({
     where: { id: invoice.id },
@@ -212,14 +212,17 @@ export async function createInvoice(input: CreateInvoiceInput): Promise<Invoice>
         where: { id: newInvoice.id },
         include: { items: true }
       }),
-      prisma.user.findUnique({ where: { id: input.userId } }),
+      prisma.user.findUnique({
+        where: { id: input.userId },
+        include: { company: true },
+      }),
       prisma.client.findUnique({ where: { id: input.clientId } })
     ]);
 
     if (invoiceWithRelations && user && client) {
-      // Generate and store PDF if status is SENT or UNPAID
+      // Generate and store PDF if status is SENT or OPEN
       let finalInvoice = invoiceWithRelations;
-      if (['SENT', 'UNPAID'].includes(invoiceWithRelations.status)) {
+      if (['SENT', 'OPEN'].includes(invoiceWithRelations.status)) {
         const pdfUrl = await generateAndUploadInvoicePDF(invoiceWithRelations, client, user);
         // Update the invoice with the PDF URL
         await prisma.invoice.update({
@@ -293,16 +296,19 @@ export async function updateInvoice(input: UpdateInvoiceInput): Promise<Invoice>
     return updatedInvoice;
   });
 
-  // Generate and store PDF if status changes to SENT or UNPAID
+  // Generate and store PDF if status changes to SENT or OPEN
   let finalInvoice = updatedInvoice;
-  if (['SENT', 'UNPAID'].includes(input.status!) && !updatedInvoice.pdfUrl) {
+  if (['SENT', 'OPEN'].includes(input.status!) && !updatedInvoice.pdfUrl) {
     const [invoiceWithItems, client, user] = await Promise.all([
       prisma.invoice.findUnique({
         where: { id: updatedInvoice.id },
         include: { items: true }
       }),
       prisma.client.findUnique({ where: { id: updatedInvoice.clientId! } }),
-      prisma.user.findUnique({ where: { id: updatedInvoice.userId } })
+      prisma.user.findUnique({
+        where: { id: updatedInvoice.userId },
+        include: { company: true },
+      })
     ]);
 
     if (invoiceWithItems && client && user) {

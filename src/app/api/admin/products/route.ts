@@ -1,7 +1,12 @@
-import { ProductStatus, ProductType } from '@prisma/client';
+import { Prisma, ProductStatus, ProductType } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { buildProductListContainsFilter, normalizeProductPayload, parseProductList } from '@/lib/products';
+import {
+  buildProductListContainsFilter,
+  normalizeProductPayload,
+  parseProductList,
+  serializeProductListAsPgArrayLiteral,
+} from '@/lib/products';
 import { ZodError } from 'zod';
 import { generateUniqueProductSlug, requireAdminUser } from './utils';
 
@@ -17,7 +22,7 @@ export async function GET(request: Request) {
   const q = url.searchParams.get('q')?.trim();
   const tag = url.searchParams.get('tag')?.trim();
 
-  const where: any = {};
+  const where: Prisma.ProductWhereInput = {};
   if (statusParam && Object.values(ProductStatus).includes(statusParam as ProductStatus)) {
     where.status = statusParam as ProductStatus;
   }
@@ -60,9 +65,29 @@ export async function POST(request: Request) {
     const body = await request.json();
     const normalized = normalizeProductPayload(body);
     const uniqueSlug = await generateUniqueProductSlug(prisma, normalized.slug);
-    const product = await prisma.product.create({
-      data: { ...normalized, slug: uniqueSlug },
-    });
+    let product;
+    try {
+      product = await prisma.product.create({
+        data: { ...normalized, slug: uniqueSlug },
+      });
+    } catch (error) {
+      const isMalformedArrayLiteral =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2007' &&
+        String((error as Error).message).includes('malformed array literal');
+
+      if (!isMalformedArrayLiteral) throw error;
+
+      product = await prisma.product.create({
+        data: {
+          ...normalized,
+          slug: uniqueSlug,
+          features: serializeProductListAsPgArrayLiteral(parseProductList(normalized.features)),
+          tags: serializeProductListAsPgArrayLiteral(parseProductList(normalized.tags)),
+        },
+      });
+    }
+
     return NextResponse.json({
       ...product,
       tags: parseProductList(product.tags),

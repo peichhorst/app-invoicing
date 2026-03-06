@@ -1,28 +1,26 @@
 // src/app/api/auth/login/route.ts
 import { NextResponse } from 'next/server';
 import { createSession, verifyPassword, sessionCookieOptions } from '../../../../lib/auth';
+import prisma from '@/lib/prisma';
 
 type LoginPayload = {
   email?: string;
   password?: string;
 };
 
-// Get Prisma client using the same method as other auth functions
-function getPrismaClient() {
-  try {
-    // Use synchronous require to avoid caching issues during development
-    const { prisma } = require('../../../../lib/prisma');
-    return prisma;
-  } catch (error) {
-    console.error('Failed to import Prisma client:', error);
-    return null;
-  }
-}
+type PrismaCandidate = {
+  __databaseUnavailable?: boolean;
+  user?: {
+    findUnique?: unknown;
+  };
+};
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as LoginPayload;
-    const { email, password } = body;
+    const rawEmail = typeof body.email === 'string' ? body.email : '';
+    const email = rawEmail.trim().toLowerCase();
+    const password = body.password;
 
     if (!email || !password) {
       return new Response(
@@ -34,9 +32,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const prisma = getPrismaClient();
+    const prismaCandidate = prisma as PrismaCandidate | null;
     
-    if (!prisma) {
+    if (
+      !prismaCandidate ||
+      prismaCandidate.__databaseUnavailable ||
+      typeof prismaCandidate.user?.findUnique !== 'function'
+    ) {
       return new Response(
         JSON.stringify({ error: 'Database unavailable.' }),
         {
@@ -46,54 +48,10 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if prisma has the expected methods (handle Prisma v7 compatibility)
-    if (typeof prisma.user?.findUnique !== 'function') {
-      console.warn('Prisma user.findUnique not available, using mock user lookup');
-      
-      // Try to find user in mock database
-      try {
-        const user = await prisma.user.findUnique({ where: { email } });
-        
-        if (!user) {
-          return new Response(
-            JSON.stringify({ error: 'Invalid credentials.' }),
-            {
-              status: 401,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-        }
-
-        // Verify password using bcrypt
-        const valid = await verifyPassword(password, user.password);
-        if (!valid) {
-          return new Response(
-            JSON.stringify({ error: 'Invalid credentials.' }),
-            {
-              status: 401,
-              headers: { 'Content-Type': 'application/json' },
-            }
-          );
-        }
-
-        const { token } = await createSession(user.id);
-        const res = NextResponse.json({ success: true, session_token: token });
-        res.cookies.set('session_token', token, sessionCookieOptions());
-        return res;
-      } catch (error) {
-        console.error('Mock user lookup failed:', error);
-        return new Response(
-          JSON.stringify({ error: 'Authentication failed.' }),
-          {
-            status: 500,
-            headers: { 'Content-Type': 'application/json' },
-          }
-        );
-      }
-    }
-
     // Use real Prisma client
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+    });
     
     if (!user) {
       return new Response(
@@ -123,9 +81,8 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     console.error('Login failed', error);
     return new Response(
-      JSON.stringify({ 
-        error: 'Login failed', 
-        message: error instanceof Error ? error.message : 'Unknown error' 
+      JSON.stringify({
+        error: 'Unable to sign in right now. Please try again.',
       }),
       {
         status: 500,

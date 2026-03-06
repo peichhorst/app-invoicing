@@ -26,6 +26,7 @@ Welcome to the ClientWave documentation. This documentation covers all aspects o
 - [API Reference](./api-reference.md) - Complete API documentation
 - [Webhooks](./webhooks.md) - Real-time event notifications
 - [SDKs](./sdks.md) - Software development kits
+- [Canary Release Runbook](./release-canary.md) - Safe production deploy checklist without staging
 - [Troubleshooting](./troubleshooting.md) - Common issues and solutions
 
 ### Support

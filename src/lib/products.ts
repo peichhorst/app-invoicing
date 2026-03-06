@@ -21,6 +21,16 @@ const normalizeList = (values: Array<string | null | undefined>) =>
 export const serializeProductList = (values?: Array<string | null | undefined> | null) =>
   JSON.stringify(normalizeList(values ?? []));
 
+const escapePgArrayValue = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+export const serializeProductListAsPgArrayLiteral = (
+  values?: Array<string | null | undefined> | null,
+) => {
+  const normalized = normalizeList(values ?? []);
+  const encoded = normalized.map((value) => `"${escapePgArrayValue(value)}"`).join(',');
+  return `{${encoded}}`;
+};
+
 export const parseProductList = (value?: string | string[] | null) => {
   if (!value) return [];
   if (Array.isArray(value)) return normalizeList(value);

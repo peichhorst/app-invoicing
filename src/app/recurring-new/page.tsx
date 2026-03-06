@@ -147,7 +147,7 @@ export default async function RecurringNewPage() {
                                 ? 'bg-green-100 text-green-800'
                                 : invoice.status === 'SIGNED' || invoice.status === 'COMPLETED'
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : invoice.status === 'UNPAID'
+                                : invoice.status === 'OPEN' || invoice.status === 'UNPAID'
                                 ? 'bg-brand-primary-100 text-brand-primary-800'
                                 : 'bg-gray-100 text-gray-800'
                             }`}
@@ -156,7 +156,7 @@ export default async function RecurringNewPage() {
                               ? 'Paid'
                               : invoice.status === 'SIGNED' || invoice.status === 'COMPLETED'
                               ? 'Contract'
-                              : invoice.status === 'UNPAID'
+                              : invoice.status === 'OPEN' || invoice.status === 'UNPAID'
                               ? `Unpaid${invoice.sentCount ? ` (${invoice.sentCount})` : ''}`
                               : invoice.status === 'VIEWED'
                               ? 'Viewed'

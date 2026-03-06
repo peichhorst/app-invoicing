@@ -11,9 +11,10 @@ type BeforeInstallPromptEvent = Event & {
 type Props = {
   className?: string;
   style?: CSSProperties;
+  variant?: 'default' | 'floating';
 };
 
-export function InstallPromptButton({ className = '', style }: Props) {
+export function InstallPromptButton({ className = '', style, variant = 'default' }: Props) {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [installed, setInstalled] = useState(false);
   const [isOnline, setIsOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
@@ -125,10 +126,21 @@ export function InstallPromptButton({ className = '', style }: Props) {
     window.location.href = '/';
   };
 
-  const baseClasses =
+  const defaultBaseClasses =
     'h-12 rounded-full border shadow-xl shadow-brand-primary-200/60 transition flex items-center justify-center gap-2 px-4';
-  const installClasses = 'border-brand-primary-200 bg-white text-brand-primary-700 hover:bg-brand-primary-50 cursor-pointer';
-  const offlineClasses = 'border-white/60 bg-white/90 text-brand-primary-700 hover:bg-white cursor-pointer';
+  const defaultInstallClasses = 'border-brand-primary-200 bg-white text-brand-primary-700 hover:bg-brand-primary-50 cursor-pointer';
+  const defaultOfflineClasses = 'border-white/60 bg-white/90 text-brand-primary-700 hover:bg-white cursor-pointer';
+  const floatingBaseClasses =
+    'h-14 rounded-full shadow-lg transition-all duration-300 flex items-center justify-center gap-2 px-5';
+  const floatingInstallClasses = 'bg-blue-600 text-white hover:scale-105 hover:bg-blue-700 cursor-pointer';
+  const floatingOfflineClasses = 'bg-blue-600 text-white hover:scale-105 hover:bg-blue-700 cursor-pointer';
+  const baseClasses = variant === 'floating' ? floatingBaseClasses : defaultBaseClasses;
+  const installClasses = variant === 'floating' ? floatingInstallClasses : defaultInstallClasses;
+  const offlineClasses = variant === 'floating' ? floatingOfflineClasses : defaultOfflineClasses;
+  const labelClasses =
+    variant === 'floating'
+      ? 'font-semibold uppercase tracking-wider text-[10px]'
+      : 'hidden font-semibold uppercase tracking-wider text-[10px] sm:inline';
 
   return (
     <>
@@ -153,7 +165,7 @@ export function InstallPromptButton({ className = '', style }: Props) {
             </>
           )}
         </svg>
-        <span className="hidden font-semibold uppercase tracking-wider text-[10px] sm:inline">Download App</span>
+        <span className={labelClasses}>Download App</span>
       </button>
       {showToast && (
         <div className="fixed left-1/2 bottom-20 z-50 -translate-x-1/2 max-w-sm rounded-xl border border-brand-primary-100 bg-white shadow-lg shadow-brand-primary-100/60">

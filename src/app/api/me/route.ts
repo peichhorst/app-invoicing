@@ -25,7 +25,7 @@ export async function GET() {
     email: user.email ?? null,
     firstName,
     lastName,
-    companyName: user.companyName ?? null,
+    companyName: user.company?.name ?? user.companyName ?? null,
     company: user.company
       ? {
           id: user.company.id,

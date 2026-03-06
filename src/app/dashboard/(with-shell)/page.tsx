@@ -5,7 +5,6 @@ import LeadsClientsSummary from './LeadsClientsSummary';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { DashboardCalendar } from './DashboardCalendar';
-import { AppointmentsSection } from '@/components/AppointmentsSection';
 import { getCurrentUser } from '@/lib/auth';
 import { describePlan, ensureTrialState } from '@/lib/plan';
 import { WelcomeConfetti } from './WelcomeConfetti';
@@ -13,10 +12,10 @@ import { Logo } from '@/components/Logo';
 import { LiveDateTime } from '@/components/LiveDateTime';
 import { UnreadMessagesSection } from '@/components/UnreadMessagesSection';
 import { QuickActions } from '@/components/QuickActions';
-import { InstallPromptButton } from '@/app/InstallPromptButton';
-import { SwitchBackButton } from '@/components/SwitchBackButton';
 import EchoThreadSearch from '@/components/EchoThreadSearch';
 import type { RevenueDebugData } from '@/types/revenue';
+import { normalizeSlug } from './scheduling/helpers';
+import { AppointmentScheduleTable } from '@/components/AppointmentScheduleTable';
 import {
   Users,
   FileText,
@@ -46,7 +45,7 @@ const formatPlanDate = (value?: Date | string | null) => {
 
 const navItems = [
   { label: 'Settings', href: '/dashboard/settings', icon: Settings },
-  { label: 'Schedule', href: '/dashboard/scheduling', icon: Calendar },
+  { label: 'Scheduling', href: '/dashboard/scheduling', icon: Calendar },
   { label: 'Leads', href: '/dashboard/leads', icon: UserPlus },
   { label: 'Clients', href: '/dashboard/clients', icon: Users },
   {
@@ -121,6 +120,9 @@ export default async function Page() {
     }
   } catch {}
   const companyLabel = hydratedUser?.company?.name ?? hydratedUser?.companyName ?? 'Personal account';
+  const schedulingUserSlug = normalizeSlug(
+    hydratedUser?.name ?? hydratedUser?.companyName ?? hydratedUser?.email ?? ''
+  ) || hydratedUser?.id || '';
   const companyLogoUrl = hydratedUser?.company?.logoUrl?.trim() ? hydratedUser.company.logoUrl : null;
   const companyIconUrl = hydratedUser?.company?.iconUrl?.trim() ? hydratedUser.company.iconUrl : null;
   const planLabel = plan
@@ -267,14 +269,13 @@ export default async function Page() {
                     <div className="flex items-start gap-4">
                       <div className="flex flex-col items-start">
                         <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Plan</p>
-                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{planLabel}</p>
+                    <p className="text-sm font-semibold text-[var(--foreground)]">{planLabel}</p>
                       </div>
                       <Link href="/dashboard/settings" className="inline-flex items-center justify-center rounded-full p-2 text-brand-primary-700 hover:bg-brand-primary-50 focus:outline-none focus:ring-2 focus:ring-brand-primary-600">
                         <Settings size={28} />
                         <span className="sr-only">Settings</span>
                       </Link>
-                    </div>
-                    <p className="text-xs text-zinc-700 dark:text-zinc-400">{planStatus}</p>
+                    </div>                   
                   </div>
                 )}
                 {!showPlan && (
@@ -286,9 +287,9 @@ export default async function Page() {
               </div>
               {/* Company info removed from here; will be placed below in the info grid */}
             </div>
-              <div className="bg-zinc-50 px-6 py-5 sm:px-8">
+              <div className="bg-[var(--color-surface-muted)] px-6 py-5 sm:px-8">
                 <div className="grid gap-3 md:grid-cols-4">
-                  <div className="flex flex-col items-center justify-center rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-3 shadow-sm text-center">
+                  <div className="flex flex-col items-center justify-center rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm text-center">
                   {companyLogoUrl ? (
                     <img
                       src={companyLogoUrl}
@@ -299,7 +300,7 @@ export default async function Page() {
                     <img src={companyIconUrl} alt="Company icon" className="h-12 w-12 object-contain" />
                   ) : (
                     <div
-                      className="h-12 w-12 overflow-hidden rounded-full border border-zinc-200 text-center text-sm font-semibold flex items-center justify-center"
+                      className="h-12 w-12 overflow-hidden rounded-full border border-[var(--color-border)] text-center text-sm font-semibold flex items-center justify-center"
                       style={{
                         background: hydratedUser?.company?.primaryColor || 'var(--color-brand-primary-700)',
                         color: 'var(--color-brand-contrast)',
@@ -313,12 +314,12 @@ export default async function Page() {
                     </div>
                   )}
                   {!companyLogoUrl && (
-                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{companyLabel}</span>
+                    <span className="text-sm font-semibold text-[var(--foreground)]">{companyLabel}</span>
                   )}
                 </div>
-                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-4 py-3 shadow-sm text-center">
+                <div className="flex flex-col items-center justify-center gap-1 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm text-center">
                   <div
-                    className="h-12 w-12 overflow-hidden rounded-full border border-zinc-200 text-center text-sm font-semibold flex items-center justify-center"
+                    className="h-12 w-12 overflow-hidden rounded-full border border-[var(--color-border)] text-center text-sm font-semibold flex items-center justify-center"
                     style={{
                       background: hydratedUser?.company?.primaryColor || 'var(--color-brand-primary-700)',
                       color: 'var(--color-brand-contrast)',
@@ -331,7 +332,7 @@ export default async function Page() {
                     )}
                   </div>
                   <div className="flex flex-col gap-0">
-                    <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 text-center">{hydratedUser?.name ?? hydratedUser?.email ?? 'Your account'}</span>
+                    <span className="text-sm font-semibold text-[var(--foreground)] text-center">{hydratedUser?.name ?? hydratedUser?.email ?? 'Your account'}</span>
                     {displayPosition && (
                       <span className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-primary-700 text-center">
                         {displayPosition}
@@ -359,8 +360,13 @@ export default async function Page() {
           <LeadsClientsSummary companyId={hydratedUser?.company?.id} totalRevenueDebug={totalRevenueDebug} />
 
 
-          {/* Appointments Section added below hero */}
-          <AppointmentsSection bookings={bookings} timezone={hydratedUser?.timezone ?? 'UTC'} />
+          {/* Appointments section (same action-capable table as Scheduling page) */}
+          <AppointmentScheduleTable
+            bookings={bookings}
+            timezone={hydratedUser?.timezone ?? 'UTC'}
+            userSlug={schedulingUserSlug}
+            canCancel
+          />
 
           <EchoThreadSearch />
 
@@ -387,10 +393,6 @@ export default async function Page() {
                   );
                 })}
                   </div>
-                </div>
-                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                  <InstallPromptButton className="transition duration-300" />
-                  <SwitchBackButton className="transition duration-300" />
                 </div>
               </div>
         </div>

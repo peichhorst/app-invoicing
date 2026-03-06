@@ -1,7 +1,11 @@
-import { ProductStatus } from '@prisma/client';
+import { Prisma, ProductStatus } from '@prisma/client';
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { normalizeProductPayload, parseProductList } from '@/lib/products';
+import {
+  normalizeProductPayload,
+  parseProductList,
+  serializeProductListAsPgArrayLiteral,
+} from '@/lib/products';
 import { generateUniqueProductSlug, requireAdminUser } from '../utils';
 import { ZodError } from 'zod';
 
@@ -49,10 +53,31 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const normalized = normalizeProductPayload({ ...existing, ...body });
     const uniqueSlug = await generateUniqueProductSlug(prisma, normalized.slug, existing.id);
-    const updated = await prisma.product.update({
-      where: { id: existing.id },
-      data: { ...normalized, slug: uniqueSlug },
-    });
+    let updated;
+    try {
+      updated = await prisma.product.update({
+        where: { id: existing.id },
+        data: { ...normalized, slug: uniqueSlug },
+      });
+    } catch (error) {
+      const isMalformedArrayLiteral =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2007' &&
+        String((error as Error).message).includes('malformed array literal');
+
+      if (!isMalformedArrayLiteral) throw error;
+
+      updated = await prisma.product.update({
+        where: { id: existing.id },
+        data: {
+          ...normalized,
+          slug: uniqueSlug,
+          features: serializeProductListAsPgArrayLiteral(parseProductList(normalized.features)),
+          tags: serializeProductListAsPgArrayLiteral(parseProductList(normalized.tags)),
+        },
+      });
+    }
+
     return NextResponse.json({
       ...updated,
       tags: parseProductList(updated.tags),

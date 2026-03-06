@@ -19,7 +19,6 @@ export default async function DashboardOnboardingPage({ searchParams }: PageProp
   const params = await searchParams;
   const mode = Array.isArray(params?.mode) ? params.mode[0] : params?.mode;
   const inviteMode = mode === 'invite';
-  const showBusiness = !inviteMode;
 
   const rawStepParam = Array.isArray(params?.step) ? params.step[0] : params?.step;
   let initialStep: OnboardingStep | undefined;
@@ -29,12 +28,15 @@ export default async function DashboardOnboardingPage({ searchParams }: PageProp
       initialStep = parsedStep as OnboardingStep;
     }
   }
-  if (!showBusiness && initialStep === 3) {
-    initialStep = 2;
-  }
   const user = await getCurrentUser();
   if (!user) {
     redirect('/auth');
+  }
+  const canManageBusinessSettings =
+    user.role === 'OWNER' || user.role === 'ADMIN' || user.role === 'SUPERADMIN';
+  const showBusiness = !inviteMode && canManageBusinessSettings;
+  if (!showBusiness && initialStep === 3) {
+    initialStep = 2;
   }
   const company = user.company;
   if (!company) {

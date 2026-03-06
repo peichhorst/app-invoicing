@@ -21,7 +21,7 @@ export default function InvoiceReportsLiveSummary({ year, month, status = 'ALL',
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm mt-4">
-      <h2 className="text-lg font-semibold text-brand-primary-700 mb-2">Live Invoice Summary</h2>
+      <h2 className="text-lg font-semibold text-brand-primary-700 mb-2">Invoice Summary</h2>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-brand-primary-600">Total Invoices</p>

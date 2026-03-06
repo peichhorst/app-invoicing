@@ -15,10 +15,9 @@ const GOOGLE_CALENDAR_SCOPES = [
 
 const CLIENT_ID = process.env.GOOGLE_CALENDAR_CLIENT_ID!;
 const CLIENT_SECRET = process.env.GOOGLE_CALENDAR_CLIENT_SECRET!;
-const REDIRECT_URI = process.env.GOOGLE_CALENDAR_REDIRECT_URI || 'http://localhost:3000/api/auth/google/calendar/callback';
-const WEBHOOK_URL = process.env.NEXT_PUBLIC_APP_URL 
-  ? `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/google-calendar`
-  : 'http://localhost:3000/api/webhooks/google-calendar';
+const APP_BASE_URL = 'https://www.clientwave.app';
+const REDIRECT_URI = `${APP_BASE_URL}/api/auth/google/calendar/callback`;
+const WEBHOOK_URL = `${APP_BASE_URL}/api/webhooks/google-calendar`;
 
 // Simple encryption for storing refresh tokens
 // In production, use a proper encryption library like @47ng/cloak
@@ -231,6 +230,7 @@ export async function createGoogleCalendarEvent(
     start: Date;
     end: Date;
     attendees?: string[];
+    privateExtendedProperties?: Record<string, string>;
   }
 ): Promise<string | null> {
   const accessToken = await getValidAccessToken(userId);
@@ -251,6 +251,11 @@ export async function createGoogleCalendarEvent(
       timeZone: 'UTC',
     },
     attendees: event.attendees?.map((email) => ({ email })),
+    extendedProperties: event.privateExtendedProperties
+      ? {
+          private: event.privateExtendedProperties,
+        }
+      : undefined,
     conferenceData: {
       createRequest: {
         requestId: `${userId}-${Date.now()}`,
@@ -276,6 +281,166 @@ export async function createGoogleCalendarEvent(
 
   const result = await response.json();
   return result.id; // Return the Google Calendar event ID
+}
+
+/**
+ * Delete Google Calendar events associated with a booking and notify attendees.
+ * Events are matched using private extended property: bookingId=<id>.
+ */
+export async function deleteGoogleCalendarEventsByBookingId(
+  userId: string,
+  bookingId: string,
+  sendUpdates: 'all' | 'externalOnly' | 'none' = 'all',
+): Promise<number> {
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) {
+    return 0;
+  }
+
+  const listUrl = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+  listUrl.searchParams.set('privateExtendedProperty', `bookingId=${bookingId}`);
+  listUrl.searchParams.set('singleEvents', 'true');
+  listUrl.searchParams.set('showDeleted', 'false');
+  listUrl.searchParams.set('maxResults', '20');
+
+  const listResponse = await fetch(listUrl.toString(), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!listResponse.ok) {
+    const error = await listResponse.text();
+    console.error('Failed to list Google events for booking cancel:', error);
+    return 0;
+  }
+
+  const listData = await listResponse.json();
+  const items = Array.isArray(listData?.items) ? listData.items : [];
+  if (items.length === 0) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+  for (const item of items) {
+    const eventId = item?.id;
+    if (!eventId) continue;
+    const deleteUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=${encodeURIComponent(sendUpdates)}`;
+    const deleteResponse = await fetch(deleteUrl, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (deleteResponse.ok || deleteResponse.status === 410 || deleteResponse.status === 404) {
+      deletedCount += 1;
+    } else {
+      const error = await deleteResponse.text();
+      console.error('Failed to delete Google event for booking cancel:', { eventId, error });
+    }
+  }
+
+  return deletedCount;
+}
+
+/**
+ * Fallback cancellation path for older events that were not tagged with bookingId.
+ * Matches events by overlap window + attendee email and/or client name.
+ */
+export async function deleteGoogleCalendarEventsByMatch(
+  userId: string,
+  options: {
+    start: Date;
+    end: Date;
+    clientEmail?: string | null;
+    clientName?: string | null;
+  },
+  sendUpdates: 'all' | 'externalOnly' | 'none' = 'all',
+): Promise<number> {
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) {
+    return 0;
+  }
+
+  const windowStart = new Date(options.start.getTime() - 15 * 60 * 1000);
+  const windowEnd = new Date(options.end.getTime() + 15 * 60 * 1000);
+
+  const listUrl = new URL('https://www.googleapis.com/calendar/v3/calendars/primary/events');
+  listUrl.searchParams.set('timeMin', windowStart.toISOString());
+  listUrl.searchParams.set('timeMax', windowEnd.toISOString());
+  listUrl.searchParams.set('singleEvents', 'true');
+  listUrl.searchParams.set('showDeleted', 'false');
+  listUrl.searchParams.set('maxResults', '50');
+  listUrl.searchParams.set('orderBy', 'startTime');
+
+  const listResponse = await fetch(listUrl.toString(), {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!listResponse.ok) {
+    const error = await listResponse.text();
+    console.error('Failed to list Google events for fallback cancellation:', error);
+    return 0;
+  }
+
+  const data = await listResponse.json();
+  const items = Array.isArray(data?.items) ? data.items : [];
+  if (!items.length) return 0;
+
+  const normalizedEmail = options.clientEmail?.trim().toLowerCase() || null;
+  const normalizedName = options.clientName?.trim().toLowerCase() || null;
+
+  const matches = items.filter((item) => {
+    const startRaw = item?.start?.dateTime || item?.start?.date;
+    const endRaw = item?.end?.dateTime || item?.end?.date;
+    if (!startRaw || !endRaw) return false;
+    const eventStart = new Date(startRaw);
+    const eventEnd = new Date(endRaw);
+    if (Number.isNaN(eventStart.getTime()) || Number.isNaN(eventEnd.getTime())) return false;
+
+    const overlaps = options.start < eventEnd && options.end > eventStart;
+    if (!overlaps) return false;
+
+    const attendeeEmails: string[] = Array.isArray(item?.attendees)
+      ? item.attendees
+          .map((attendee: { email?: string }) => attendee?.email?.toLowerCase())
+          .filter((email: string | undefined): email is string => Boolean(email))
+      : [];
+
+    const attendeeMatch = normalizedEmail ? attendeeEmails.includes(normalizedEmail) : false;
+    const summary = String(item?.summary || '').toLowerCase();
+    const description = String(item?.description || '').toLowerCase();
+    const nameMatch = normalizedName
+      ? summary.includes(normalizedName) || description.includes(normalizedName)
+      : false;
+
+    return attendeeMatch || nameMatch;
+  });
+
+  if (!matches.length) return 0;
+
+  let deletedCount = 0;
+  for (const match of matches) {
+    const eventId = match?.id;
+    if (!eventId) continue;
+    const deleteUrl = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=${encodeURIComponent(sendUpdates)}`;
+    const deleteResponse = await fetch(deleteUrl, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (deleteResponse.ok || deleteResponse.status === 410 || deleteResponse.status === 404) {
+      deletedCount += 1;
+    } else {
+      const error = await deleteResponse.text();
+      console.error('Failed to delete Google event during fallback cancellation:', { eventId, error });
+    }
+  }
+
+  return deletedCount;
 }
 
 /**

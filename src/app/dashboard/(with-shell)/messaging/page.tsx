@@ -5,7 +5,6 @@ import prisma from '@/lib/prisma';
 import { buildListContainsFilter, parseRecipientList } from '@/lib/messageRecipients';
 import { NewMessageForm } from './NewMessageForm';
 import InboxList from './InboxList';
-import { DebugPanel } from '@/components/DebugPanel';
 
 type PageProps = {
   searchParams?: Promise<{ tab?: string | string[]; thread?: string | string[] }>;
@@ -42,7 +41,7 @@ export default async function MessagesPage({ searchParams }: PageProps) {
   }
 
   const params = await searchParams;
-  const activeTab = typeof params?.tab === 'string' ? params.tab : 'unread';
+  const activeTab = typeof params?.tab === 'string' ? params.tab : 'all';
   const activeThreadId = typeof params?.thread === 'string' ? params.thread : null;
 
   const rawMessages = await prisma.message.findMany({
@@ -288,7 +287,6 @@ export default async function MessagesPage({ searchParams }: PageProps) {
         />
       </div>
 
-      <DebugPanel />
     </div>
   );
 }

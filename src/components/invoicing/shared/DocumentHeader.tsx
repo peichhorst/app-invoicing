@@ -1,5 +1,4 @@
 import React from 'react';
-import Image from 'next/image';
 
 export type DocumentType = 'invoice' | 'proposal' | 'contract';
 
@@ -61,12 +60,11 @@ export default function DocumentHeader({
         <div className="space-y-2">
           {company?.logo && (
             <div className="mb-3">
-              <Image
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
                 src={company.logo}
                 alt={company.name}
-                width={120}
-                height={40}
-                className="h-10 w-auto object-contain"
+                className={`${documentType === 'invoice' ? 'h-14' : 'h-10'} w-auto object-contain`}
               />
             </div>
           )}

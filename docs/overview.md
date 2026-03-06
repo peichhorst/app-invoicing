@@ -35,4 +35,38 @@ New users typically begin by:
 3. Importing existing client information
 4. Beginning to track new opportunities
 
-Our platform integrates seamlessly with popular tools like Google Calendar and QuickBooks, making it easy to incorporate into existing workflows.
+Our platform integrates seamlessly with popular tools like Google Calendar, making it easy to incorporate into existing workflows.
+
+## Upgrade Experience
+
+The Pro upgrade flow now uses a unified checkout section that combines:
+- plan pricing and value summary
+- expanded feature highlights
+- secure Stripe checkout in the same card
+
+This keeps upgrade context and payment actions in one place.
+
+## Header Navigation
+
+- On mobile, the standalone header Dashboard button is hidden.
+- The header profile/menu dropdown is available whether authenticated or not.
+- Dashboard is accessed from the header dropdown menu (not a standalone header button).
+- When logged out, the dropdown trigger uses a hamburger icon instead of the user avatar/chevron.
+- The dropdown trigger uses a brand-color border and transparent background to match the mobile hamburger style.
+- The logged-out dropdown hamburger now matches the primary mobile hamburger size and icon scale.
+- The main mobile sidebar hamburger toggle is shown only when authenticated.
+- On mobile when authenticated, the main sidebar hamburger appears on the opposite side of the user menu dropdown trigger.
+- The dropdown keeps `Documentation`, `Chat`, and `Theme` actions visible.
+- `Settings` is hidden from that dropdown.
+- `Logout` appears for authenticated users.
+
+## Landing Screenshots
+
+- Landing page screenshots use an interactive magnifier-style zoom.
+- Moving the cursor across a screenshot shifts zoom focus to the pointer position.
+- The magnifier icon appears in the top-right when idle, hides during hover zoom, and clicking a screenshot opens a lightbox view.
+
+## Chat UI
+
+- The chat page no longer renders the debug panel.
+- The floating chat launcher is anchored to the bottom-left side.

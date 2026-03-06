@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 type Position = { id: string; name: string };
 type Member = { id: string; name?: string | null; email: string };
 
@@ -23,6 +24,7 @@ export function NewMessageForm({
   replyParticipantIds = [],
   forceReplyButtons = false,
 }: NewMessageFormProps) {
+  const router = useRouter();
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [fileUploading, setFileUploading] = useState(false);
@@ -174,6 +176,7 @@ export function NewMessageForm({
       setInternalNote(false);
       setPositions(new Set());
       setUsers(new Set());
+      router.refresh();
       setShowToast(true);
       setTimeout(() => setShowToast(false), 5000);
     } catch (err) {
@@ -403,7 +406,7 @@ export function NewMessageForm({
         </button>
       </div>
       {showToast && (
-        <div className="fixed bottom-4 right-4 z-50 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-lg text-emerald-800">
+        <div className="fixed bottom-24 right-4 z-50 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 shadow-lg text-emerald-800">
           <p className="text-sm font-semibold">Message sent</p>
           <p className="text-xs">Your recipients will be notified.</p>
         </div>

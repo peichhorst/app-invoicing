@@ -3,7 +3,6 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { DebugPanel } from '@/components/DebugPanel';
 
 interface Message {
   id: string;
@@ -619,7 +618,6 @@ const SimpleChatBot = () => {
           )}
         </div>
       </div>
-      <DebugPanel />
     </div>
   );
 };

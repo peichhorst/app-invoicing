@@ -33,6 +33,7 @@ type Toast = {
   title: string;
   body: string;
   reverted?: boolean;
+  partiallyRefunded?: boolean;
   isMessage?: boolean;
   timestamp: number;
 };
@@ -41,7 +42,7 @@ type Toast = {
  * React-based toast listener with BroadcastChannel + light polling fallback.
  * - Throttles duplicates for same invoice/status to avoid double-firing (broadcast + poll)
  * - Chime only for positive events
- * - Red styling for reverted payments
+ * - Distinct styling for refunded (red) and partially refunded (purple)
  * - Newest on top
  */
 export function InviteConfirmListener({ userId }: { userId?: string }) {
@@ -61,6 +62,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
   );
+  const [notificationPromptDismissed, setNotificationPromptDismissed] = useState(false);
   const [localTabId, setLocalTabId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -161,11 +163,12 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
       body: string,
       logicalKey: string,
       reverted?: boolean,
+      partiallyRefunded?: boolean,
       isMessage?: boolean,
       soundType?: 'payment' | 'message' | 'success',
     ) => {
       const now = Date.now();
-      const bucketKey = `${logicalKey}:${reverted ? 'rev' : isMessage ? 'msg' : 'paid'}`;
+      const bucketKey = `${logicalKey}:${partiallyRefunded ? 'partial' : reverted ? 'rev' : isMessage ? 'msg' : 'paid'}`;
       const lastTime = recentKeysRef.current.get(bucketKey);
       if (lastTime && now - lastTime < 3000) {
         return; // throttle duplicate of same invoice/status within 3s
@@ -174,7 +177,10 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
 
       const id = `${logicalKey}-${now}`;
       playChimeOnce(id, reverted, soundType || (isMessage ? 'message' : 'payment'));
-        setToasts((prev) => [...prev, { id, logicalKey, title, body, reverted, timestamp: now, isMessage }]);
+        setToasts((prev) => [
+          ...prev,
+          { id, logicalKey, title, body, reverted, partiallyRefunded, timestamp: now, isMessage },
+        ]);
         triggerDesktopNotification(title, body);
       },
     [playChimeOnce, triggerDesktopNotification],
@@ -191,7 +197,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         const user = payload?.user || {};
         const key = `invite-${user.email || user.name || Date.now()}`;
         const body = `${user.name || 'Someone'} (${user.email || 'email hidden'}) is now confirmed.`;
-        showToast('Invite Confirmation', body, key, false, false, 'success');
+        showToast('Invite Confirmation', body, key, false, false, false, 'success');
         router.refresh();
         inviteCountRef.current = (inviteCountRef.current ?? 0) + 1;
         persistCounts();
@@ -227,7 +233,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         const body = slotLabel
           ? `New booking at ${slotLabel}`
           : `New booking scheduled${dateLabel ? ` for ${dateLabel}` : ''}`;
-        showToast('New booking', body, bookingKey, false, false, 'success');
+        showToast('New booking', body, bookingKey, false, false, false, 'success');
         processedBookingKeysRef.current.add(bookingFingerprint);
         setTimeout(() => {
           processedBookingKeysRef.current.delete(bookingFingerprint);
@@ -246,20 +252,23 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         }
         const key = `message-${messageId || Date.now()}`;
         const body = `${fromName || 'Someone'}: ${text || 'New message'}`;
-        showToast('New Message', body, key, false, true);
+        showToast('New Message', body, key, false, false, true);
         router.refresh();
         messageCountRef.current = (messageCountRef.current ?? 0) + 1;
         persistCounts();
         return;
       }
       if (type === 'invoice-paid') {
-        const { invoiceId, invoiceNumber, clientName, reverted } = payload || {};
+        const { invoiceId, invoiceNumber, clientName, reverted, status } = payload || {};
         // Use invoiceId for key (most reliable)
         const key = invoiceId ? `invoice-${invoiceId}` : 'unknown';
+        const normalizedStatus = typeof status === 'string' ? status.toUpperCase() : '';
+        const partiallyRefunded = Boolean(reverted) && normalizedStatus === 'PARTIALLY_REFUNDED';
+        const fullyRefunded = Boolean(reverted) && !partiallyRefunded;
         
         // Create fingerprint using count and reverted state ONLY (ignore invoice details)
         // This way both broadcast and polling will generate the same fingerprint
-        const changeFingerprint = `count:${newCount}:${reverted ? 'rev' : 'paid'}`;
+        const changeFingerprint = `count:${newCount}:${partiallyRefunded ? 'partial' : fullyRefunded ? 'rev' : 'paid'}`;
 
         // If we've already processed this exact change, skip it
         if (processedCountChangesRef.current.has(changeFingerprint)) {
@@ -276,13 +285,20 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         
         const label = invoiceNumber ? `Invoice #${invoiceNumber}` : invoiceId ? `Invoice ${invoiceId}` : 'An invoice';
         const clientLabel = clientName ? ` – ${clientName}` : '';
-        const body = `${label}${clientLabel} was ${reverted ? 'reverted to Unpaid' : 'marked paid'}.`;
-        showToast('Invoice updated', body, key, Boolean(reverted), false);
+        const body = `${label}${clientLabel} was ${
+          partiallyRefunded ? 'partially refunded' : fullyRefunded ? 'refunded' : 'marked paid'
+        }.`;
+        const title = partiallyRefunded
+          ? 'Invoice Partially Refunded'
+          : fullyRefunded
+          ? 'Invoice Refunded'
+          : 'Invoice Paid!';
+        showToast(title, body, key, fullyRefunded, partiallyRefunded, false);
         router.refresh();
         if (typeof newCount === 'number') {
           paidCountRef.current = newCount;
         } else {
-          paidCountRef.current = (paidCountRef.current ?? 0) + (reverted ? -1 : 1);
+          paidCountRef.current = (paidCountRef.current ?? 0) + (fullyRefunded || partiallyRefunded ? -1 : 1);
         }
         persistCounts();
         return;
@@ -440,7 +456,10 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   }, [processEvent, countsHydrated, userId]);
 
   const showPermissionPrompt =
-    isMounted && notificationPermission === 'default' && typeof Notification !== 'undefined';
+    isMounted &&
+    notificationPermission === 'default' &&
+    typeof Notification !== 'undefined' &&
+    !notificationPromptDismissed;
 
   if (!isMounted) {
     return null;
@@ -449,7 +468,15 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
   return (
     <>
       {showPermissionPrompt && (
-        <div className="fixed bottom-4 right-4 z-50 w-72 space-y-2 rounded-xl border border-zinc-200 bg-white/90 p-3 text-xs text-zinc-700 shadow-lg backdrop-blur">
+        <div className="fixed bottom-24 right-4 z-50 w-72 space-y-2 rounded-xl border border-zinc-200 bg-white/90 p-3 text-xs text-zinc-700 shadow-lg backdrop-blur">
+          <button
+            type="button"
+            onClick={() => setNotificationPromptDismissed(true)}
+            className="absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded border border-zinc-300 bg-white text-[10px] font-semibold text-zinc-600 hover:bg-zinc-100"
+            aria-label="Dismiss notification prompt"
+          >
+            X
+          </button>
           <p className="font-semibold text-zinc-900">Enable desktop alerts?</p>
           <p className="text-[10px] text-zinc-500">
             Grant browser notifications to hear the chime even when the tab is hidden.
@@ -464,7 +491,7 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
         </div>
       )}
       {toasts.length ? (
-        <div className="fixed bottom-4 right-4 z-50 space-y-3">
+        <div className="fixed bottom-24 right-4 z-50 space-y-3">
           {[...toasts].reverse().map((toast) => {
             const colors = toast.isMessage
               ? {
@@ -474,6 +501,15 @@ export function InviteConfirmListener({ userId }: { userId?: string }) {
                   time: 'text-brand-accent-600',
                   body: 'text-brand-accent-700',
                   button: 'text-brand-accent-700 hover:text-brand-accent-900',
+                }
+              : toast.partiallyRefunded
+              ? {
+                  bg: 'border border-purple-200 bg-purple-50',
+                  dot: 'bg-purple-500',
+                  title: 'text-purple-800',
+                  time: 'text-purple-600',
+                  body: 'text-purple-700',
+                  button: 'text-purple-700 hover:text-purple-900',
                 }
               : toast.reverted
               ? {

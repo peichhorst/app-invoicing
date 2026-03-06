@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { getGoogleCalendarBusyTimes } from '@/lib/google-calendar';
+import { fromZonedTime } from 'date-fns-tz';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,25 +34,37 @@ export async function GET(request: NextRequest) {
   const normalizedSlug = normalizeSlug(userSlug);
   const nameCandidate = slugToName(normalizedSlug);
 
+  const baseWhere = {
+    OR: [
+      { id: normalizedSlug },
+      { email: normalizedSlug },
+      { name: { equals: nameCandidate, mode: 'insensitive' as const } },
+    ],
+  };
 
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { id: normalizedSlug },
-        { email: normalizedSlug },
-        { name: { equals: nameCandidate, mode: 'insensitive' } },
-      ],
-    },
-    select: {
-      id: true,
-      timezone: true,
-      company: {
-        select: {
-          primaryColor: true,
-        },
+  const selectUser = {
+    id: true,
+    timezone: true,
+    company: {
+      select: {
+        primaryColor: true,
       },
     },
-  });
+  };
+
+  // Prefer a matching user with active availability to avoid slug collisions.
+  const user =
+    (await prisma.user.findFirst({
+      where: {
+        ...baseWhere,
+        availabilities: { some: { isActive: true } },
+      },
+      select: selectUser,
+    })) ??
+    (await prisma.user.findFirst({
+      where: baseWhere,
+      select: selectUser,
+    }));
 
   if (!user) {
     return NextResponse.json({ error: 'User not found' }, { status: 404, headers: corsHeaders });
@@ -85,6 +98,7 @@ export async function GET(request: NextRequest) {
     where: {
       userId: user.id,
       startTime: { lt: future },
+      status: { notIn: ['CANCELLED', 'CANCELED', 'cancelled', 'canceled'] },
     },
     select: { startTime: true, endTime: true },
   });
@@ -123,9 +137,10 @@ export async function GET(request: NextRequest) {
     return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
   };
 
-  // Generate all possible slots from availability
-  const generateSlots = (dayConfig: typeof availability[0], date: Date) => {
-    const slots: Array<{ start: Date; end: Date; startTime24: string }> = [];
+
+  // Generate all possible slots from availability in host timezone, converted to UTC Date instants.
+  const generateSlots = (dayConfig: typeof availability[0], dateKey: string) => {
+    const slots: Array<{ start: Date; end: Date; startTime24: string; date: string }> = [];
     const startMin = parseTime(dayConfig.startTime);
     const endMin = parseTime(dayConfig.endTime);
     const duration = dayConfig.duration || 30;
@@ -133,67 +148,77 @@ export async function GET(request: NextRequest) {
     
     let cursor = startMin;
     while (cursor + duration <= endMin) {
-      const slotStart = new Date(date);
-      slotStart.setHours(Math.floor(cursor / 60), cursor % 60, 0, 0);
-      
-      const slotEnd = new Date(date);
-      slotEnd.setHours(Math.floor((cursor + duration) / 60), (cursor + duration) % 60, 0, 0);
+      const startTime24 = formatTime(cursor);
+      const endTime24 = formatTime(cursor + duration);
+      const slotStart = fromZonedTime(`${dateKey} ${startTime24}`, hostTimezone);
+      const slotEnd = fromZonedTime(`${dateKey} ${endTime24}`, hostTimezone);
       
       slots.push({
         start: slotStart,
         end: slotEnd,
-        startTime24: formatTime(cursor),
+        startTime24,
+        date: dateKey,
       });
       
+      // Classic buffer mode: next slot starts after duration + buffer.
       cursor += duration + buffer;
     }
     return slots;
   };
 
-  // Check if a Google Calendar event overlaps with a time slot
-  const hasOverlap = (slotStart: Date, slotEnd: Date, busyPeriods: typeof googleBusyTimes): boolean => {
+  // Check if a busy period overlaps with a slot.
+  const hasOverlap = (slotStart: Date, slotEnd: Date, busyPeriods: Array<{ start: Date; end: Date }>): boolean => {
     return busyPeriods.some(busy => {
-      // Two time periods overlap if: start1 < end2 && end1 > start2
       return slotStart < busy.end && slotEnd > busy.start;
     });
   };
 
-  // Build list of blocked slots from Google Calendar
   const googleBlockedSlots: Array<{ date: string; startTime: string }> = [];
+  const hostDateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: hostTimezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const hostWeekdayFormatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: hostTimezone,
+    weekday: 'short',
+  });
+  const weekdayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
   
-  // For each day in the next 30 days
-  for (let offset = 0; offset < 30; offset++) {
+  // For each day in the next ~6 months (matches booking UI horizon).
+  for (let offset = 0; offset < 180; offset++) {
     const checkDate = new Date(now);
     checkDate.setDate(now.getDate() + offset);
-    checkDate.setHours(0, 0, 0, 0);
-    
-    const dayOfWeek = checkDate.getDay();
+    const dateKey = hostDateFormatter.format(checkDate);
+    const dayOfWeek = weekdayMap[hostWeekdayFormatter.format(checkDate)] ?? checkDate.getDay();
     const dayConfig = availability.find((a: typeof availability[0]) => a.dayOfWeek === dayOfWeek);
     
     if (!dayConfig) continue;
     
     // Generate all slots for this day
-    const daySlots = generateSlots(dayConfig, checkDate);
+    const daySlots = generateSlots(dayConfig, dateKey);
     
-    // Check each slot against Google Calendar busy times
+    // Check each slot against Google busy times.
     daySlots.forEach(slot => {
       if (hasOverlap(slot.start, slot.end, googleBusyTimes)) {
-        const dateKey = slot.start.toLocaleDateString('en-CA', { timeZone: hostTimezone });
         googleBlockedSlots.push({
-          date: dateKey,
+          date: slot.date,
           startTime: slot.startTime24,
-        });
-        console.log('Blocking slot due to Google Calendar:', {
-          date: dateKey,
-          time: slot.startTime24,
-          slotStart: slot.start.toISOString(),
-          slotEnd: slot.end.toISOString(),
         });
       }
     });
   }
 
-  // Combine app bookings and Google Calendar blocked slots
+  // Combine app bookings and Google Calendar blocked slots.
   const allBusySlots = [
     ...bookings.map((b: { startTime: Date; endTime: Date }) => {
       const start = b.startTime;
@@ -206,7 +231,7 @@ export async function GET(request: NextRequest) {
       const date = start.toLocaleDateString('en-CA', { timeZone: hostTimezone });
       return { date, startTime: startTime24, source: 'booking' };
     }),
-    ...googleBlockedSlots.map(s => ({ ...s, source: 'google' })),
+    ...googleBlockedSlots.map((slot) => ({ ...slot, source: 'google' })),
   ];
 
   const bookedSlots = allBusySlots

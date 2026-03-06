@@ -28,6 +28,14 @@ type EnsureStripeWebhookOptions = {
   companyId?: string | null;
 };
 
+function isConnectedAccountWebhookNotAllowedError(error: unknown) {
+  const message =
+    typeof error === 'object' && error && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '')
+      : String(error ?? '');
+  return message.includes('not permitted to configure webhook endpoints on a connected account');
+}
+
 async function createStripeWebhook(accountId: string) {
   return await stripeConnect.webhookEndpoints.create(
     {
@@ -66,6 +74,17 @@ export async function ensureStripeWebhookForAccount(
 
   let endpoint: Stripe.WebhookEndpoint | null = null;
   const existing = await prisma.stripeWebhookEndpoint.findUnique({ where: { accountId } });
+  const storedSecret = existing?.signingSecret?.trim() || null;
+
+  // If we already have a stored signing secret, treat this account as verified and avoid
+  // relying on Stripe endpoint retrieval, which does not always include `secret`.
+  if (storedSecret) {
+    return {
+      endpointId: existing?.endpointId ?? null,
+      signingSecret: storedSecret,
+      platformManaged: true,
+    };
+  }
 
   if (existing?.endpointId) {
     try {
@@ -83,15 +102,43 @@ export async function ensureStripeWebhookForAccount(
   }
 
   if (!endpoint) {
-    endpoint = await createStripeWebhook(accountId);
+    try {
+      endpoint = await createStripeWebhook(accountId);
+    } catch (error) {
+      if (isConnectedAccountWebhookNotAllowedError(error)) {
+        console.warn('Connected-account webhook endpoint creation not permitted; falling back to platform Connect webhook mode', {
+          accountId,
+          companyId: options?.companyId,
+        });
+        return { endpointId: null, signingSecret: null, platformManaged: false };
+      }
+      throw error;
+    }
   }
 
   if (!endpoint.secret) {
-    logContext('Stripe webhook endpoint did not return a signing secret', {
-      accountId,
-      companyId: options?.companyId,
-    });
-    throw new Error('Stripe webhook endpoint did not return a signing secret');
+    // Stripe does not return webhook secrets when retrieving existing endpoints.
+    // If no secret is available at this point, request a fresh endpoint so Stripe returns one.
+    try {
+      endpoint = await createStripeWebhook(accountId);
+    } catch (error) {
+      if (isConnectedAccountWebhookNotAllowedError(error)) {
+        console.warn('Connected-account webhook endpoint creation not permitted after missing secret; using manual mode', {
+          accountId,
+          companyId: options?.companyId,
+        });
+        return { endpointId: endpoint?.id ?? null, signingSecret: null, platformManaged: false };
+      }
+      throw error;
+    }
+
+    if (!endpoint.secret) {
+      logContext('Stripe webhook endpoint did not return a signing secret', {
+        accountId,
+        companyId: options?.companyId,
+      });
+      throw new Error('Stripe webhook endpoint did not return a signing secret');
+    }
   }
 
   await prisma.stripeWebhookEndpoint.upsert({
@@ -113,4 +160,14 @@ export async function ensureStripeWebhookForAccount(
 export async function getStripeWebhookSecret(accountId: string) {
   const record = await prisma.stripeWebhookEndpoint.findUnique({ where: { accountId } });
   return record?.signingSecret ?? null;
+}
+
+export async function listStripeWebhookSecrets(): Promise<string[]> {
+  const rows = await prisma.stripeWebhookEndpoint.findMany({
+    select: { signingSecret: true },
+  });
+  const secrets = rows
+    .map((row) => (typeof row.signingSecret === 'string' ? row.signingSecret.trim() : ''))
+    .filter((value): value is string => value.length > 0);
+  return Array.from(new Set<string>(secrets));
 }

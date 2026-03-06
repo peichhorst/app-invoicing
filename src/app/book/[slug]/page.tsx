@@ -1,5 +1,6 @@
 import BookingFormClient from './BookingFormClient';
 import prisma from '@/lib/prisma';
+import { resolveAppBaseUrl } from '@/lib/app-url';
 
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -70,21 +71,37 @@ const slugToName = (slug: string) => slug.replace(/[-_]+/g, ' ').trim();
 async function loadAvailability(slug: string) {
   const normalizedSlug = normalizeSlug(slug);
   const nameCandidate = slugToName(normalizedSlug);
-  const user = await prisma.user.findFirst({
-    where: {
-      OR: [
-        { id: normalizedSlug },
-        { email: normalizedSlug },
-        { name: { equals: nameCandidate, mode: 'insensitive' } },
-      ],
-    },
-    select: { id: true, timezone: true },
-  });
+  const baseWhere = {
+    OR: [
+      { id: normalizedSlug },
+      { email: normalizedSlug },
+      { name: { equals: nameCandidate, mode: 'insensitive' as const } },
+    ],
+  };
+
+  // Prefer the matching user that actually has active availability.
+  const user =
+    (await prisma.user.findFirst({
+      where: {
+        ...baseWhere,
+        availabilities: { some: { isActive: true } },
+      },
+      select: { id: true, timezone: true },
+    })) ??
+    (await prisma.user.findFirst({
+      where: baseWhere,
+      select: { id: true, timezone: true },
+    }));
+
   if (!user) {
     return null;
   }
+
   const availability = await prisma.availability.findMany({
-    where: { userId: user.id, isActive: true },
+    where: {
+      userId: user.id,
+      isActive: true,
+    },
     orderBy: { dayOfWeek: 'asc' },
     select: {
       dayOfWeek: true,
@@ -102,6 +119,7 @@ async function loadAvailability(slug: string) {
   const bookings = await prisma.booking.findMany({
     where: {
       userId: user.id,
+      status: { notIn: ['CANCELLED', 'CANCELED', 'cancelled', 'canceled'] },
       startTime: {
         gte: now,
         lt: future,
@@ -214,21 +232,19 @@ export default async function BookingPage({ params }: { params: Promise<{ slug?:
     .filter((day) => day.slots.length > 0);
 
   const normalizedSlug = normalizeSlug(slug);
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+  const baseUrl = resolveAppBaseUrl();
   const bookingLink = `${baseUrl}/book/${normalizedSlug}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white via-blue-50 to-white px-4 py-8">
       <div className="mx-auto max-w-5xl space-y-8">
-        <div className="space-y-2 text-center">
+        <div id="booking-request-header" className="space-y-2 text-center">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-blue-600">Book a session</p>
-          <h1 className="text-3xl font-semibold text-zinc-900">Schedule time with our team</h1>
+          <h1 className="text-3xl font-semibold text-zinc-900">Schedule Meeting</h1>
           <p className="text-sm text-zinc-600">
-            Browse available time slots and request a meeting. Confirmation emails are sent to you and the owner automatically.
+            Select date and time to request a meeting. 
           </p>
-          <p className="text-xs text-zinc-500">
-            Public booking link: <span className="font-mono text-[11px] text-blue-600">{bookingLink}</span>
-          </p>
+         
         </div>
         <BookingFormClient
           slug={slug}

@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     const { idToken } = (await request.json()) as GooglePayload;
 
     if (!idToken) {
-      return new Response("Google credential missing.", {
+      return new Response("Google sign-in request is missing required credentials.", {
         status: 400,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
@@ -75,8 +75,9 @@ export async function POST(request: Request) {
     const tokenResponse = await fetch(`${GOOGLE_TOKENINFO_URL}?${params}`);
 
     if (!tokenResponse.ok) {
-      const error = await tokenResponse.text();
-      return new Response(`Google verification failed: ${error}`, {
+      const providerError = await tokenResponse.text();
+      console.error("Google token verification failed", providerError);
+      return new Response("Google sign-in failed. Please try again.", {
         status: 400,
         headers: { "Content-Type": "text/plain; charset=utf-8" },
       });
@@ -113,8 +114,7 @@ export async function POST(request: Request) {
     return res;
   } catch (error: unknown) {
     console.error("Google auth failed", error);
-    const detail = error instanceof Error ? error.message : "Unknown error";
-    return new Response(`Google authentication failed: ${detail}`, {
+    return new Response("Google authentication failed. Please try again.", {
       status: 500,
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });

@@ -26,9 +26,31 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ClientWave - Client & Invoicing Management Made Simple",
-  description: "ClientWave - Client & Invoicing Management Made Simple",
+  title: "ClientWave - Business Management Suite",
+  description: "ClientWave helps service businesses manage clients, invoices, payments, scheduling, and reporting in one platform.",
+  metadataBase: new URL("https://app.clientwave.app"),
   manifest: "/manifest.webmanifest",
+  openGraph: {
+    title: "ClientWave - Business Management Suite",
+    description: "Manage clients, invoices, payments, scheduling, and reporting in one platform.",
+    url: "https://app.clientwave.app",
+    siteName: "ClientWave",
+    type: "website",
+    images: [
+      {
+        url: "/icon-512.png",
+        width: 512,
+        height: 512,
+        alt: "ClientWave",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ClientWave - Business Management Suite",
+    description: "Manage clients, invoices, payments, scheduling, and reporting in one platform.",
+    images: ["/icon-512.png"],
+  },
 };
 
 export const viewport = {
@@ -118,12 +140,11 @@ export default async function RootLayout({
               (function() {
                 try {
                   var theme = localStorage.getItem('clientwave-theme');
-                  if (theme === 'dark' || theme === 'light') {
-                    document.documentElement.classList.remove('light', 'dark');
-                    document.documentElement.classList.add(theme);
-                  } else {
-                    document.documentElement.classList.add('light');
-                  }
+                  var finalTheme = (theme === 'dark' || theme === 'light') ? theme : 'light';
+                  document.documentElement.classList.remove('light', 'dark');
+                  document.documentElement.classList.add(finalTheme);
+                  document.documentElement.setAttribute('data-theme', finalTheme);
+                  document.documentElement.style.colorScheme = finalTheme;
                 } catch (e) {}
               })();
             `,
@@ -149,10 +170,9 @@ export default async function RootLayout({
           <ScrollToTop />
             <MobileSidebarProvider>
             {user && <PresencePing />}
-            {user && (
             <AppHeader
-              key={`${user.name}-${user.company?.isOnboarded}`}
-              user={{
+              key={user ? `${user.name}-${user.company?.isOnboarded}` : 'guest-header'}
+              user={user ? {
                 name: user.name,
                 email: user.email,
                 role: user.role,
@@ -162,11 +182,10 @@ export default async function RootLayout({
                 companyPrimaryColor: user.company?.primaryColor ?? null,
                 companyId: user.company?.id ?? null,
                 useHeaderLogo: user.company?.useHeaderLogo ?? false,
-              }}
-              isOnboarding={user.company ? !user.company.isOnboarded : false}
+              } : null}
+              isOnboarding={Boolean(user?.company ? !user.company.isOnboarded : false)}
             />
-            )}
-            <main className="min-h-screen w-full bg-white dark:bg-zinc-900 bg-gradient-to-r- from-brand-primary-700 via-brand-secondary-700 to-brand-accent-700 px-0 sm:px-0 py-0 pt-[85px]">
+            <main className="min-h-screen w-full bg-[var(--background)] text-[var(--foreground)] px-0 sm:px-0 py-0 pt-[85px]">
               <div className="mx-auto w-full max-w-none px-0 sm:px-0 lg:px-0">{children}</div>
             </main>
             <FloatingChatButton />

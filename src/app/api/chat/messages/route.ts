@@ -7,6 +7,14 @@ import { debugLog } from '@/lib/debugLog';
 export const dynamic = 'force-dynamic';
 
 const SUPPORT_CONTEXT = 'SUPPORT_CHAT';
+const MISSING_SENDER_ROLE_COLUMN = 'senderRole';
+
+const isMissingSenderRoleColumnError = (error: unknown) => {
+  const err = error as { code?: string; meta?: { column?: unknown } };
+  if (err?.code !== 'P2022') return false;
+  const column = String(err?.meta?.column ?? '');
+  return column.includes(MISSING_SENDER_ROLE_COLUMN) || column.includes('(not available)');
+};
 
 const parseSince = (value: string | null) => {
   if (!value) return null;
@@ -80,18 +88,49 @@ export async function GET(request: Request) {
 
   debugLog('[CHAT_MSG_GET_RESOLVED]', { chatId: resolved.chatId, companyId: resolvedCompanyId, userRole: user.role });
 
-  const messages = await prisma.message.findMany({
-    where: {
-      ...(resolvedCompanyId ? { companyId: resolvedCompanyId } : {}),
-      contextType: SUPPORT_CONTEXT,
-      contextId: resolved.chatId,
-      ...(since ? { sentAt: { gt: since } } : {}),
-    },
-    include: {
-      from: { select: { id: true, name: true, email: true, role: true } },
-    },
-    orderBy: { sentAt: 'asc' },
-  });
+  const where = {
+    ...(resolvedCompanyId ? { companyId: resolvedCompanyId } : {}),
+    contextType: SUPPORT_CONTEXT,
+    contextId: resolved.chatId,
+    ...(since ? { sentAt: { gt: since } } : {}),
+  };
+
+  let messages: Array<{
+    id: string;
+    text: string;
+    sentAt: Date;
+    fromId: string;
+    contextId: string | null;
+    senderRole?: string | null;
+    from?: { id: string; name: string | null; email: string; role: string | null } | null;
+  }> = [];
+
+  try {
+    messages = await prisma.message.findMany({
+      where,
+      include: {
+        from: { select: { id: true, name: true, email: true, role: true } },
+      },
+      orderBy: { sentAt: 'asc' },
+    });
+  } catch (error) {
+    if (!isMissingSenderRoleColumnError(error)) {
+      throw error;
+    }
+    debugLog('[CHAT_MSG_GET_SCHEMA_FALLBACK]', { reason: 'Missing Message.senderRole column' });
+    messages = await prisma.message.findMany({
+      where,
+      select: {
+        id: true,
+        text: true,
+        sentAt: true,
+        fromId: true,
+        contextId: true,
+        from: { select: { id: true, name: true, email: true, role: true } },
+      },
+      orderBy: { sentAt: 'asc' },
+    });
+  }
 
   debugLog('[CHAT_MSG_GET_FETCHED]', { count: messages.length, chatId: resolved.chatId });
 
@@ -178,23 +217,56 @@ export async function POST(request: Request) {
 
     debugLog('[CHAT_MSG_BEFORE_CREATE]', { resolvedChatId: resolved.chatId, resolvedCompanyId, participants, toUserIds, senderRole });
 
-    const message = await prisma.message.create({
-      data: {
-        companyId: resolvedCompanyId,
-        fromId: user.id,
-        text: content,
-        fileUrl: null,
-        toAll: false,
-        contextType: SUPPORT_CONTEXT,
-        contextId: resolved.chatId,
-        senderRole,
-        ...(toUserIds.length ? { toUserIds } : {}),
-        ...(participants.length ? { participants } : {}),
-      },
-      include: {
-        from: { select: { id: true, name: true, email: true, role: true } },
-      },
-    });
+    let message: {
+      id: string;
+      text: string;
+      sentAt: Date;
+      fromId: string;
+      contextId: string | null;
+      senderRole?: string | null;
+      from?: { id: string; name: string | null; email: string; role: string | null } | null;
+    };
+
+    try {
+      message = await prisma.message.create({
+        data: {
+          companyId: resolvedCompanyId,
+          fromId: user.id,
+          text: content,
+          fileUrl: null,
+          toAll: false,
+          contextType: SUPPORT_CONTEXT,
+          contextId: resolved.chatId,
+          senderRole,
+          ...(toUserIds.length ? { toUserIds } : {}),
+          ...(participants.length ? { participants } : {}),
+        },
+        include: {
+          from: { select: { id: true, name: true, email: true, role: true } },
+        },
+      });
+    } catch (error) {
+      if (!isMissingSenderRoleColumnError(error)) {
+        throw error;
+      }
+      debugLog('[CHAT_MSG_POST_SCHEMA_FALLBACK]', { reason: 'Missing Message.senderRole column' });
+      message = await prisma.message.create({
+        data: {
+          companyId: resolvedCompanyId,
+          fromId: user.id,
+          text: content,
+          fileUrl: null,
+          toAll: false,
+          contextType: SUPPORT_CONTEXT,
+          contextId: resolved.chatId,
+          ...(toUserIds.length ? { toUserIds } : {}),
+          ...(participants.length ? { participants } : {}),
+        },
+        include: {
+          from: { select: { id: true, name: true, email: true, role: true } },
+        },
+      });
+    }
 
     debugLog('[CHAT_MSG_CREATED]', { 
       messageId: message.id, 

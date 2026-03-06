@@ -1,10 +1,10 @@
 # Database Setup
 
-This app reads its runtime database connection from `DATABASE_URL`. Keep the application, Prisma schema, and database migrations aligned to avoid runtime errors (for example, missing columns).
+This app reads runtime database connections from `DATABASE_URL` and `DIRECT_URL`. Keep the application, Prisma schema, and database migrations aligned to avoid runtime errors (for example, missing columns).
 
 ## Connection Sources
 
-- **Runtime**: `DATABASE_URL` (Supabase pooler URL with pgbouncer).
+- **Runtime (all environments)**: `DATABASE_URL` first, then fallback to `DIRECT_URL`.
 - **Migrations**: `DIRECT_URL` (direct Supabase connection) for reliable schema changes.
 
 ## Database Health Check
@@ -13,8 +13,15 @@ Use these quick checks when something feels out of sync.
 
 Usage Example
 ```bash
-# Confirm the app has a database URL at runtime
+# Confirm the app has runtime database URLs
+printenv DIRECT_URL
 printenv DATABASE_URL
+
+# Safe migration runner (tries direct + session pooler + diagnostics + SQL fallback hints)
+npm run migrate:safe
+
+# App-level health probe (env + live SELECT 1)
+curl -sS http://localhost:3000/api/health/db
 
 # Validate connectivity
 psql "$DATABASE_URL" -c "select now();"

@@ -1,4 +1,4 @@
-import { Payment, Prisma, PaymentStatus } from '@prisma/client';
+import { Payment, PaymentProvider, Prisma, PaymentStatus } from '@prisma/client';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import prisma from '@/lib/prisma';
@@ -24,6 +24,66 @@ async function findPaymentSafely(intentId: string, metadataId?: string | null) {
     payment = await prisma.payment.findUnique({ where: { id: metadataId } });
   }
   return payment;
+}
+
+async function createFallbackPaymentFromInvoice(args: {
+  invoiceId: string;
+  intent: PaymentIntentWithCharges;
+}) {
+  const { invoiceId, intent } = args;
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: invoiceId },
+    select: {
+      id: true,
+      clientId: true,
+      currency: true,
+      total: true,
+    },
+  });
+  if (!invoice?.clientId) return null;
+
+  const charge = intent.charges?.data?.[0];
+  const latestChargeId =
+    typeof intent.latest_charge === 'string'
+      ? intent.latest_charge
+      : intent.latest_charge?.id ?? null;
+  const chargeId = charge?.id ?? latestChargeId;
+  const balanceTransactionId = (charge?.balance_transaction as string) ?? null;
+  const capturedAmount = Number.isFinite(intent.amount_received)
+    ? intent.amount_received / 100
+    : (intent.amount ?? 0) / 100;
+  const metadataBaseAmountCents = Number(intent.metadata?.baseAmountCents ?? NaN);
+  const serviceAmountFromMetadata =
+    Number.isFinite(metadataBaseAmountCents) && metadataBaseAmountCents > 0
+      ? metadataBaseAmountCents / 100
+      : null;
+  const serviceAmount = Math.max(
+    0,
+    serviceAmountFromMetadata ?? Number(invoice.total ?? 0) ?? capturedAmount
+  );
+
+  const created = await prisma.payment.create({
+    data: {
+      invoiceId: invoice.id,
+      clientId: invoice.clientId,
+      amount: serviceAmount,
+      currency: (invoice.currency ?? 'USD').toUpperCase(),
+      provider: PaymentProvider.stripe,
+      status: PaymentStatus.succeeded,
+      paidAt: new Date(),
+      stripePaymentIntentId: intent.id,
+      stripeCustomerId: typeof intent.customer === 'string' ? intent.customer : null,
+      stripeChargeId: chargeId,
+      stripeBalanceTransactionId: balanceTransactionId,
+      metadata: {
+        source: 'webhook-fallback',
+        invoiceId,
+      },
+    },
+  });
+
+  await reconcileInvoiceStatus(invoice.id);
+  return created;
 }
 
 async function updatePaymentAndReconcile(paymentId: string, data: Prisma.PaymentUpdateInput) {
@@ -128,6 +188,23 @@ export async function handleStripeEvent(event: Stripe.Event) {
       console.info(`Looking up payment for intent ${intent.id}`);
       const payment = await findPaymentSafely(intent.id, intent.metadata?.paymentId ?? null);
       if (!payment) {
+        const metadataInvoiceId =
+          typeof intent.metadata?.invoiceId === 'string' ? intent.metadata.invoiceId.trim() : '';
+        if (metadataInvoiceId) {
+          const fallbackPayment = await createFallbackPaymentFromInvoice({
+            invoiceId: metadataInvoiceId,
+            intent,
+          });
+          if (fallbackPayment) {
+            await logPaymentRow(event, fallbackPayment);
+            void sendStripePaymentNotification(
+              event,
+              `Payment intent ${intent.id} succeeded and created fallback payment row`,
+              { id: fallbackPayment.id, invoiceId: fallbackPayment.invoiceId }
+            );
+            break;
+          }
+        }
         console.info(`No payment found for intent ${intent.id}`);
         break;
       }

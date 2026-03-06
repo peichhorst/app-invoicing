@@ -59,11 +59,16 @@ export async function PUT(request: Request) {
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const body = (await request.json()) as ProfilePayload;
-
     const normalizedState = normalizeStateValue(body.state ?? user.company?.state ?? undefined);
+    const normalizedPersonalCompanyName =
+      typeof body.companyName === 'string' ? body.companyName.trim() || null : null;
     const data: Record<string, any> = {
       name: body.name || user.name,
-      companyName: body.companyName ?? null,
+      companyName: user.companyId
+        ? null
+        : body.companyName === undefined
+        ? (user.companyName ?? null)
+        : normalizedPersonalCompanyName,
       logoDataUrl: sanitizeLogoUrl(body.logoDataUrl),
       signatureDataUrl: sanitizeLogoUrl(body.signatureDataUrl),
       phone: body.phone ?? null,

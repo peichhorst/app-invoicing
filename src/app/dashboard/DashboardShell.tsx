@@ -2,10 +2,16 @@
 
 import { ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
-import { DashboardSidebar } from './DashboardSidebar';
+import { DashboardSidebar, type SidebarProfile } from './DashboardSidebar';
 import { useMobileSidebar } from '@/components/MobileSidebarContext';
 
-export function DashboardShell({ children }: { children: ReactNode }) {
+type DashboardShellProps = {
+  children: ReactNode;
+  sidebarRole?: string | null;
+  sidebarProfile?: SidebarProfile | null;
+};
+
+export function DashboardShell({ children, sidebarRole = null, sidebarProfile = null }: DashboardShellProps) {
   const pathname = usePathname();
   const { mobileOpen, close } = useMobileSidebar();
   const hideSidebar = pathname?.startsWith('/dashboard/onboarding');
@@ -15,11 +21,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [pathname, close]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
+    <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
       <div className="flex min-h-screen">
         {!hideSidebar && (
           <div className="hidden md:block md:w-70">
-            <DashboardSidebar />
+            <DashboardSidebar role={sidebarRole} profile={sidebarProfile} />
           </div>
         )}
         <div className="flex-1 min-w-0">
@@ -49,7 +55,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   />
                 </svg>
               </button>
-              <DashboardSidebar className="h-full pt-4" />
+              <DashboardSidebar className="h-full pt-4" role={sidebarRole} profile={sidebarProfile} />
             </div>
           </div>
         </div>

@@ -2,7 +2,6 @@
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { normalizeStateValue } from '@/lib/states';
-import { useRouter } from 'next/navigation';
 import { Country, State, City } from 'country-state-city';
 import { HexColorPicker } from 'react-colorful';
 import { INDUSTRY_OPTIONS, OTHER_INDUSTRY_VALUE } from '@/constants/industry';
@@ -28,6 +27,9 @@ type CompanySettingsProps = {
   initialMailToAddressTo?: string | null;
   initialTrackdriveToken?: string | null;
   initialTrackdriveEnabled?: boolean | null;
+  initialStripeFeeResponsibility?: 'business_absorbs' | 'client_pays' | null;
+  initialStripePaymentMethodCard?: boolean | null;
+  initialStripePaymentMethodAch?: boolean | null;
   onboardingMode?: boolean;
   onSaveSuccess?: () => void;
   initialAddress?: {
@@ -47,6 +49,8 @@ type CompanySettingsProps = {
   hidePersonalFields?: boolean;
   shouldShowManualStripeWebhookWarning?: boolean;
   initialStripeWebhookSecret?: string | null;
+  stripeAccountType?: 'none' | 'standard' | 'express' | 'custom' | null;
+  stripeWebhookMode?: 'platform_managed' | 'manual' | null;
   stripeWebhookStatus?: 'verified' | 'pending' | 'error' | null;
   stripeWebhookLastError?: string | null;
 };
@@ -202,6 +206,9 @@ export default function CompanySettings(props: CompanySettingsProps) {
     initialMailToAddressTo,
     initialTrackdriveToken,
     initialTrackdriveEnabled,
+    initialStripeFeeResponsibility,
+    initialStripePaymentMethodCard,
+    initialStripePaymentMethodAch,
     onboardingMode = false,
     onSaveSuccess,
     initialAddress,
@@ -212,6 +219,8 @@ export default function CompanySettings(props: CompanySettingsProps) {
     hidePersonalFields = false,
     shouldShowManualStripeWebhookWarning = false,
     initialStripeWebhookSecret = null,
+    stripeAccountType = null,
+    stripeWebhookMode = null,
     stripeWebhookStatus = null,
     stripeWebhookLastError = null,
   } = props;
@@ -333,7 +342,6 @@ export default function CompanySettings(props: CompanySettingsProps) {
         updateAllAccentColors(defaultPalette);
         window.dispatchEvent(new CustomEvent('accent-color-updated', { detail: defaultPalette[500] }));
       };
-  const router = useRouter();
   const effectiveInitialName = onboardingMode ? '' : initialName ?? '';
   const effectiveInitialEmail = initialEmail ?? '';
   const effectiveInitialAddress = onboardingMode
@@ -370,6 +378,10 @@ export default function CompanySettings(props: CompanySettingsProps) {
   const defaultMailToEnabled = initialMailToAddressEnabled ?? !normalizedMailTo;
   const normalizedTrackdriveToken = initialTrackdriveToken?.trim() ?? '';
   const normalizedTrackdriveEnabled = Boolean(initialTrackdriveEnabled);
+  const normalizedStripeFeeResponsibility =
+    initialStripeFeeResponsibility === 'client_pays' ? 'client_pays' : 'business_absorbs';
+  const normalizedStripePaymentMethodCard = initialStripePaymentMethodCard !== false;
+  const normalizedStripePaymentMethodAch = Boolean(initialStripePaymentMethodAch);
   const normalizedInitialIndustry = initialIndustry?.trim() ?? '';
   const initialIndustryState = deriveIndustryStateFromLabel(normalizedInitialIndustry);
   const initialIndustrySelection = initialIndustryState.selection;
@@ -399,28 +411,41 @@ export default function CompanySettings(props: CompanySettingsProps) {
   const [useCustomStripe, setUseCustomStripe] = useState(Boolean(normalizedStripeAccountId || normalizedStripePublishableKey));
   const [stripeAccountIdValue, setStripeAccountIdValue] = useState(normalizedStripeAccountId);
   const [stripePublishableKeyValue, setStripePublishableKeyValue] = useState(normalizedStripePublishableKey);
-  const [showStripeManualInstructions, setShowStripeManualInstructions] = useState(false);
+  const [showAdvancedStripeOptions, setShowAdvancedStripeOptions] = useState(false);
   const showManualWebhookWarning =
     useCustomStripe &&
     Boolean(
-      stripeAccountIdValue && stripePublishableKeyValue && shouldShowManualStripeWebhookWarning,
+      stripeAccountIdValue &&
+        stripePublishableKeyValue &&
+        stripeAccountType !== 'express' &&
+        shouldShowManualStripeWebhookWarning,
     );
+  const [stripeWebhookModeState, setStripeWebhookModeState] = useState<'platform_managed' | 'manual' | null>(stripeWebhookMode);
+  const [stripeWebhookStatusState, setStripeWebhookStatusState] = useState<'verified' | 'pending' | 'error' | null>(stripeWebhookStatus);
+  const [stripeWebhookLastErrorState, setStripeWebhookLastErrorState] = useState<string | null>(stripeWebhookLastError);
+  const [isWebhookSyncing, setIsWebhookSyncing] = useState(false);
+  const showExpressManagedWebhookSummary = stripeAccountType === 'express';
   const webhookStatusInfo = useMemo(() => {
-    switch (stripeWebhookStatus) {
+    switch (stripeWebhookStatusState) {
       case 'verified':
-        return { text: 'Verified (platform-managed)', color: 'text-emerald-600' };
+        return { text: 'Verified', color: 'text-emerald-600' };
       case 'pending':
-        return { text: 'Pending (manual webhook setup required)', color: 'text-amber-600' };
+        return { text: 'Pending', color: 'text-amber-600' };
       case 'error':
         return {
-          text: stripeWebhookLastError ? `Error: ${stripeWebhookLastError}` : 'Webhook error',
+          text: stripeWebhookLastErrorState ? `Error: ${stripeWebhookLastErrorState}` : 'Webhook error',
           color: 'text-rose-600',
         };
       default:
         return { text: 'Status unknown', color: 'text-zinc-500' };
     }
-  }, [stripeWebhookStatus, stripeWebhookLastError]);
+  }, [stripeWebhookStatusState, stripeWebhookLastErrorState]);
   const [stripeWebhookSecretValue, setStripeWebhookSecretValue] = useState(initialStripeWebhookSecret ?? '');
+  const [stripeFeeResponsibility, setStripeFeeResponsibility] = useState<'business_absorbs' | 'client_pays'>(
+    normalizedStripeFeeResponsibility,
+  );
+  const [stripePaymentMethodCard, setStripePaymentMethodCard] = useState(normalizedStripePaymentMethodCard);
+  const [stripePaymentMethodAch, setStripePaymentMethodAch] = useState(normalizedStripePaymentMethodAch);
   const [useVenmo, setUseVenmo] = useState(Boolean(normalizedVenmoHandle));
   const [useZelle, setUseZelle] = useState(Boolean(normalizedZelleHandle));
   const [venmoHandleValue, setVenmoHandleValue] = useState(normalizedVenmoHandle);
@@ -587,6 +612,10 @@ export default function CompanySettings(props: CompanySettingsProps) {
         : customPayableValue.trim() !== normalizedMailTo));
   const leadDirty =
     leadTokenEnabled !== normalizedTrackdriveEnabled || leadTokenValue.trim() !== normalizedTrackdriveToken;
+  const stripeFeeDirty = stripeFeeResponsibility !== normalizedStripeFeeResponsibility;
+  const stripeMethodsDirty =
+    stripePaymentMethodCard !== normalizedStripePaymentMethodCard ||
+    stripePaymentMethodAch !== normalizedStripePaymentMethodAch;
   const iconDirty = companyIconUrl.trim() !== normalizedInitialIcon;
   const sloganDirty = companySlogan.trim() !== normalizedInitialSlogan;
   const computedIndustryValue = useMemo(() => {
@@ -607,6 +636,8 @@ export default function CompanySettings(props: CompanySettingsProps) {
       logoDirty ||
       accentDirty ||
       stripeDirty ||
+      stripeFeeDirty ||
+      stripeMethodsDirty ||
       venmoDirty ||
       zelleDirty ||
       mailToDirty ||
@@ -616,7 +647,7 @@ export default function CompanySettings(props: CompanySettingsProps) {
   );
   // Only disable button if not hydrated or pending
   const disabled = !hydrated || isPending;
-  const buttonLabel = isPending ? 'Saving...' : (onboardingMode ? 'Save & Continue' : 'Save Changes');
+  const buttonLabel = isPending ? 'Saving...' : 'Save';
   const description = onboardingMode
     ? 'Fill in these details so your workspace can start sending invoices.'
     : 'Update the business identity that appears on invoices and documents.';
@@ -729,6 +760,9 @@ export default function CompanySettings(props: CompanySettingsProps) {
             primaryColor: accentColor || null,
             industry: computedIndustryValue || null,
             useHeaderLogo,
+            stripeFeeResponsibility,
+            stripePaymentMethodCard,
+            stripePaymentMethodAch,
             ...(showManualWebhookWarning ? { stripeWebhookSecret: stripeWebhookSecretValue.trim() || null } : {}),
         };
         if (onboardingMode) {
@@ -764,12 +798,10 @@ export default function CompanySettings(props: CompanySettingsProps) {
         setError(null);
         // After save, update all accent color variables for global design (fallback to defaults when cleared)
         updateAllAccentColors(accentColor || defaultPalette);
-        // After save, redirect to dashboard (non-onboarding) or trigger onboarding callback
+        // After save, only onboarding should advance flow; settings should stay on the current tab/page.
         if (onboardingMode && onSaveSuccess) {
           // In onboarding mode, call the success callback to move to next step
           onSaveSuccess();
-        } else {
-          window.location.href = '/dashboard';
         }
       } catch (err) {
         const reason = err instanceof Error ? err.message : 'Request failed.';
@@ -823,7 +855,32 @@ export default function CompanySettings(props: CompanySettingsProps) {
     return parts.join(', ');
   }, [addressLine1, city, stateValue, postalCode, country]);
   const [mapMode, setMapMode] = useState<'roadmap' | 'satellite'>('roadmap');
+  const stripeSectionRef = useRef<HTMLDivElement | null>(null);
   const STRIPE_LOSS_DOC = 'https://dashboard.stripe.com/settings/connect/platform-profile';
+  const STRIPE_WEBHOOK_ENDPOINT = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.clientwave.app'}/api/stripe/webhook`;
+  const STRIPE_RETURN_PARAM = 'stripe_return';
+
+  useEffect(() => {
+    setStripeWebhookModeState(stripeWebhookMode);
+    setStripeWebhookStatusState(stripeWebhookStatus);
+    setStripeWebhookLastErrorState(stripeWebhookLastError);
+  }, [stripeWebhookMode, stripeWebhookStatus, stripeWebhookLastError]);
+
+  const scrollToStripeSection = () => {
+    window.setTimeout(() => {
+      stripeSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.get(STRIPE_RETURN_PARAM) !== '1') return;
+    scrollToStripeSection();
+    currentUrl.searchParams.delete(STRIPE_RETURN_PARAM);
+    const cleanedUrl = `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`;
+    window.history.replaceState({}, '', cleanedUrl);
+  }, []);
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
@@ -844,6 +901,7 @@ export default function CompanySettings(props: CompanySettingsProps) {
         setUseCustomStripe(true);
         setStripeMessage('Stripe credentials received. Save to keep them.');
         setStripeErrorLink(null);
+        scrollToStripeSection();
       }
     };
     window.addEventListener('message', handler);
@@ -1066,6 +1124,11 @@ export default function CompanySettings(props: CompanySettingsProps) {
       } else {
         returnUrl = '/dashboard/settings?tab=business';
       }
+      if (returnUrl) {
+        const url = new URL(returnUrl, window.location.origin);
+        url.searchParams.set(STRIPE_RETURN_PARAM, '1');
+        returnUrl = `${url.pathname}${url.search}${url.hash}`;
+      }
       const payload: Record<string, string> = {};
       if (endpoint === '/api/payments/account-link') {
         payload.mode = mode;
@@ -1079,7 +1142,19 @@ export default function CompanySettings(props: CompanySettingsProps) {
         headers: body ? { 'Content-Type': 'application/json' } : {},
         body,
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const text = await res.text();
+        let message = text || 'Failed to create Stripe link.';
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.error && typeof parsed.error === 'string') {
+            message = parsed.error;
+          }
+        } catch {
+          // Non-JSON response; keep raw text.
+        }
+        throw new Error(message);
+      }
       const data = await res.json();
       const url = toLocalUrl(data?.url as string | undefined ?? '');
       if (url) {
@@ -1103,6 +1178,34 @@ export default function CompanySettings(props: CompanySettingsProps) {
   ) => {
     if (paymentDisabled) return;
     void requestStripeLink(endpoint, mode);
+  };
+
+  const handleWebhookSync = async () => {
+    if (paymentDisabled || !stripeAccountIdValue || !stripePublishableKeyValue || isWebhookSyncing) return;
+    setIsWebhookSyncing(true);
+    setStripeMessage('Syncing Stripe webhook...');
+    try {
+      const res = await fetch('/api/payments/webhook-sync', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const errorMessage = typeof data?.error === 'string' ? data.error : 'Webhook sync failed.';
+        setStripeWebhookStatusState('error');
+        setStripeWebhookLastErrorState(errorMessage);
+        setStripeMessage(errorMessage);
+        return;
+      }
+      setStripeWebhookModeState('platform_managed');
+      setStripeWebhookStatusState(data?.status === 'verified' ? 'verified' : 'pending');
+      setStripeWebhookLastErrorState(null);
+      setStripeMessage(typeof data?.message === 'string' ? data.message : 'Webhook sync updated.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Webhook sync failed.';
+      setStripeWebhookStatusState('error');
+      setStripeWebhookLastErrorState(message);
+      setStripeMessage(message);
+    } finally {
+      setIsWebhookSyncing(false);
+    }
   };
 
 
@@ -1751,7 +1854,7 @@ export default function CompanySettings(props: CompanySettingsProps) {
               </div>
             )}
 
-            <div className="space-y-2">
+            <div id="stripe" ref={stripeSectionRef} className="space-y-2">
               <label className={paymentLabelClass}>
                 <input
                   type="checkbox"
@@ -1760,19 +1863,156 @@ export default function CompanySettings(props: CompanySettingsProps) {
                   disabled={paymentDisabled}
                   className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
                 />
-                Online Payment (Requires Stripe Account) (PRO)
+                Online Payment Via Stripe (PRO)
               </label>
               {useCustomStripe && (
                 <div className="space-y-4 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+                  <div className="space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-600">Stripe Processing Fees</p>
+                    <div className="space-y-2">
+                      <label className="flex items-start gap-2 text-sm text-zinc-800">
+                        <input
+                          type="radio"
+                          name="stripe-fee-responsibility"
+                          value="business_absorbs"
+                          checked={stripeFeeResponsibility === 'business_absorbs'}
+                          onChange={() => setStripeFeeResponsibility('business_absorbs')}
+                          disabled={paymentDisabled}
+                          className="mt-0.5 h-4 w-4 border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+                        />
+                        <span>
+                          <span className="font-medium">Business absorbs Stripe fees</span>
+                          <span className="block text-xs text-zinc-500">Client pays invoice total only.</span>
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 text-sm text-zinc-800">
+                        <input
+                          type="radio"
+                          name="stripe-fee-responsibility"
+                          value="client_pays"
+                          checked={stripeFeeResponsibility === 'client_pays'}
+                          onChange={() => setStripeFeeResponsibility('client_pays')}
+                          disabled={paymentDisabled}
+                          className="mt-0.5 h-4 w-4 border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+                        />
+                        <span>
+                          <span className="font-medium">Client pays Stripe fees</span>
+                          <span className="block text-xs text-zinc-500">Checkout adds processing fee to the total.</span>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-zinc-200 bg-zinc-50 p-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-600">Accepted Online Payment Methods</p>
+                    <div className="space-y-2">
+                      <label className="flex items-start gap-2 text-sm text-zinc-800">
+                        <input
+                          type="checkbox"
+                          checked={stripePaymentMethodCard}
+                          onChange={(event) => {
+                            const next = event.target.checked;
+                            if (!next && !stripePaymentMethodAch) return;
+                            setStripePaymentMethodCard(next);
+                          }}
+                          disabled={paymentDisabled}
+                          className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+                        />
+                        <span>
+                          <span className="font-medium">Card</span>
+                          <span className="block text-xs text-zinc-500">Visa, Mastercard, Amex, and supported wallets.</span>
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 text-sm text-zinc-800">
+                        <input
+                          type="checkbox"
+                          checked={stripePaymentMethodAch}
+                          onChange={(event) => {
+                            const next = event.target.checked;
+                            if (!next && !stripePaymentMethodCard) return;
+                            setStripePaymentMethodAch(next);
+                          }}
+                          disabled={paymentDisabled}
+                          className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
+                        />
+                        <span>
+                          <span className="font-medium">ACH (US bank account)</span>
+                          <span className="block text-xs text-zinc-500">Only appears when eligible on the connected Stripe account.</span>
+                        </span>
+                      </label>
+                      {!stripePaymentMethodCard && !stripePaymentMethodAch && (
+                        <p className="text-xs text-rose-600">Enable at least one online payment method.</p>
+                      )}
+                    </div>
+                  </div>
                   {stripeAccountIdValue && stripePublishableKeyValue ? (
-                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
-                      Stripe connected.
+                    <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                      <p className="font-semibold">Stripe connected.</p>
+                      <p className="mt-1 text-xs">
+                        Connected account ID:{' '}
+                        <code className="rounded bg-emerald-100 px-1 py-0.5 font-mono text-[11px] text-emerald-900">
+                          {stripeAccountIdValue}
+                        </code>
+                      </p>
                     </div>
                   ) : (
                     <p className="text-sm text-zinc-600">
                       Connect Stripe to automatically fill your publishable key and Connect account ID via OAuth.
                     </p>
                   )}
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        stripeAccountIdValue && stripePublishableKeyValue
+                          ? resetStripeFields()
+                          : handleStripeLink('/api/payments/account-link')
+                      }
+                      disabled={paymentDisabled}
+                      className="inline-flex w-full items-center justify-center rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-brand-primary-200 disabled:bg-brand-primary-200 disabled:text-zinc-500"
+                    >
+                      {stripeAccountIdValue && stripePublishableKeyValue ? 'Disconnect Stripe' : 'Connect with Stripe'}
+                    </button>
+                    {(!stripeAccountIdValue || !stripePublishableKeyValue) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvancedStripeOptions((prev) => !prev)}
+                          disabled={paymentDisabled}
+                          className="inline-flex w-full items-center justify-center rounded-full border border-zinc-300 bg-white px-4 py-2 text-xs font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                        >
+                          {showAdvancedStripeOptions ? 'Hide Alternative Setup' : 'Alternative Setup'}
+                        </button>
+                        {showAdvancedStripeOptions && (
+                          <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3">
+                            <div className="mb-3 space-y-2 text-xs text-zinc-600">
+                              <p>Use this if you already have a Stripe account and want to connect it directly.</p>
+                              <p>Standard accounts require manual webhook setup after connect.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleStripeLink('/api/payments/account-link', 'standard')}
+                              disabled={paymentDisabled}
+                              className="inline-flex w-full items-center justify-center rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-brand-primary-200 disabled:bg-brand-primary-200 disabled:text-zinc-500"
+                            >
+                              Start Standard Stripe Connect
+                            </button>
+                            <div className="mt-3 space-y-2 text-xs text-zinc-600">
+                              <p>
+                                1. Log into your Stripe Dashboard, open Developers -&gt; API keys, and copy your{' '}
+                                <code className="rounded bg-zinc-200 px-1 py-0.5 text-[0.65rem] text-zinc-900">pk_live...</code>{' '}
+                                publishable key into the first field above.
+                              </p>
+                              <p>
+                                2. Go to Settings -&gt; Connect -&gt; Accounts and copy your connected account ID (
+                                <code className="rounded bg-zinc-200 px-1 py-0.5 text-[0.65rem] text-zinc-900">acct_...</code>) into the second field.
+                              </p>
+                              <p>3. Save the form to enable online payments without using the automatic Stripe flow.</p>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-1">
                       <label className="text-xs font-medium text-zinc-700">Stripe Publishable Key</label>
@@ -1793,54 +2033,74 @@ export default function CompanySettings(props: CompanySettingsProps) {
                       />
                     </div>
                   </div>
-                  <div className="flex flex-col gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        stripeAccountIdValue && stripePublishableKeyValue
-                          ? resetStripeFields()
-                          : handleStripeLink('/api/payments/account-link')
-                      }
-                      disabled={paymentDisabled}
-                      className="inline-flex w-full items-center justify-center rounded-full border border-brand-primary-600 bg-brand-primary-600 px-4 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:border-brand-primary-200 disabled:bg-brand-primary-200 disabled:text-zinc-500"
-                    >
-                      {stripeAccountIdValue && stripePublishableKeyValue ? 'Disconnect Stripe' : 'Connect with Stripe'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleStripeLink('/api/payments/account-link', 'standard')}
-                      disabled={paymentDisabled}
-                      className="text-xs font-semibold text-zinc-600 underline-offset-4 hover:text-zinc-900 disabled:text-zinc-400"
-                    >
-                      Advanced: Connect existing Stripe (Standard, manual webhook required)
-                    </button>
-                    {(!stripeAccountIdValue || !stripePublishableKeyValue) && (
-                      <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-3">
-                        <button
-                          type="button"
-                          onClick={() => setShowStripeManualInstructions((prev) => !prev)}
-                          className="flex w-full items-center justify-between text-left text-sm font-semibold text-zinc-800"
-                        >
-                          <span>Alternative instructions</span>
-                          <span className="text-xs text-zinc-500">{showStripeManualInstructions ? 'Hide' : 'Show'}</span>
-                        </button>
-                        {showStripeManualInstructions && (
-                          <div className="mt-2 space-y-2 text-xs text-zinc-600">
+                    {stripeAccountIdValue && stripePublishableKeyValue && (
+                      showExpressManagedWebhookSummary ? (
+                        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-700">
+                          <p className="font-semibold uppercase tracking-[0.2em] text-zinc-500">Stripe Webhook Handling</p>
+                          <div className="mt-2 space-y-1">
                             <p>
-                              1. Log into your Stripe Dashboard, open Developers → API keys, and copy your{' '}
-                              <code className="rounded bg-zinc-200 px-1 py-0.5 text-[0.65rem] text-zinc-900">pk_live...</code>{' '}
-                              publishable key into the first field above.
+                              Status:{' '}
+                              <span className="font-semibold text-emerald-600">Managed by ClientWave platform</span>
                             </p>
                             <p>
-                              2. Go to Settings → Connect → Accounts and copy your connected account ID (
-                              <code className="rounded bg-zinc-200 px-1 py-0.5 text-[0.65rem] text-zinc-900">acct_...</code>) into the second field.
+                              Account type:{' '}
+                              <span className="font-semibold text-zinc-900">Express</span>
                             </p>
-                            <p>3. Save the form to enable online payments without using the automatic Stripe flow.</p>
+                            <p>
+                              Account ID:{' '}
+                              <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-zinc-900">
+                                {stripeAccountIdValue}
+                              </code>
+                            </p>
                           </div>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-700">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="font-semibold uppercase tracking-[0.2em] text-zinc-500">Stripe Webhook Health</p>
+                            <button
+                              type="button"
+                              onClick={handleWebhookSync}
+                              disabled={paymentDisabled || isWebhookSyncing}
+                              className="inline-flex items-center justify-center rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isWebhookSyncing ? 'Syncing...' : 'Retry Webhook Sync'}
+                            </button>
+                          </div>
+                          <div className="mt-2 space-y-1">
+                            <p>
+                              Mode:{' '}
+                              <span className="font-semibold text-zinc-900">
+                                {stripeWebhookModeState === 'platform_managed'
+                                  ? 'Platform Managed'
+                                  : stripeWebhookModeState === 'manual'
+                                    ? 'Manual'
+                                    : 'Unknown'}
+                              </span>
+                            </p>
+                            <p>
+                              Status:{' '}
+                              <span className={`font-semibold ${webhookStatusInfo.color}`}>{webhookStatusInfo.text}</span>
+                            </p>
+                            <p>
+                              Account ID:{' '}
+                              <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-zinc-900">
+                                {stripeAccountIdValue}
+                              </code>
+                            </p>
+                            <p>
+                              Endpoint:{' '}
+                              <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px] text-zinc-900">
+                                {STRIPE_WEBHOOK_ENDPOINT}
+                              </code>
+                            </p>
+                            {stripeWebhookLastErrorState && (
+                              <p className="text-rose-600">Last Error: {stripeWebhookLastErrorState}</p>
+                            )}
+                          </div>
+                        </div>
+                      )
                     )}
-                  </div>
                     {stripeMessage && <p className="text-xs text-amber-600">{stripeMessage}</p>}
                     {stripeErrorLink && stripeErrorLink.trim().length > 0 && (
                       <p className="text-xs text-amber-600">
@@ -1879,33 +2139,6 @@ export default function CompanySettings(props: CompanySettingsProps) {
                 )}
             </div>
           </div>
-        </section>
-
-        <section className="space-y-3 rounded-2xl border border-zinc-200 bg-white/70 p-6 shadow-sm">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-zinc-500">Lead generation</p>
-          </div>
-          <label className={paymentLabelClass}>
-            <input
-              type="checkbox"
-              checked={leadTokenEnabled}
-              onChange={(event) => setLeadTokenEnabled(event.target.checked)}
-              className="h-4 w-4 rounded border-zinc-300 text-brand-primary-600 focus:ring-brand-primary-500"
-              disabled={paymentDisabled}
-            />
-            Enable TrackDrive
-          </label>
-          {leadTokenEnabled && (
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-zinc-700">TrackDrive token</label>
-              <input
-                value={leadTokenValue}
-                onChange={(event) => setLeadTokenValue(event.target.value)}
-                placeholder="Enter TrackDrive token"
-                className={paymentDisabled ? disabledInputClass : inputClass}
-              />
-            </div>
-          )}
         </section>
 
         {hydrated && (
@@ -1949,3 +2182,5 @@ export default function CompanySettings(props: CompanySettingsProps) {
     </section>
   );
 }
+
+

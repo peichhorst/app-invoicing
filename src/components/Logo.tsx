@@ -96,14 +96,14 @@ export function Logo({ className = '', showText = true, size = 'md', src, alt, t
       </span>
       {showText && (
         <span
-          className={`${textSizeClasses[size]} font-extrabold tracking-tight antialiased text-brand-primary-700`}
+          className={`${textSizeClasses[size]} font-extrabold tracking-tight antialiased text-brand-primary-700 whitespace-nowrap`}
           style={{
             fontFamily: '"Geist", "Inter", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif',
             color: 'var(--color-brand-primary-700)',
             lineHeight: '0.9'
           }}
         >
-          Client Wave
+          ClientWave
         </span>
       )}
     </span>

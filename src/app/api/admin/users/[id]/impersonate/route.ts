@@ -5,6 +5,7 @@ import { createSession, sessionCookieOptions, getCurrentUser } from '@/lib/auth'
 
 const SESSION_COOKIE = 'session_token';
 const BACKUP_COOKIE = 'session_token_backup';
+const IMPERSONATING_COOKIE = 'impersonating_session';
 
 export async function POST(
   request: NextRequest,
@@ -39,6 +40,11 @@ export async function POST(
     res.cookies.set(BACKUP_COOKIE, currentToken, {
       ...sessionCookieOptions(),
       httpOnly: false, // allow client to detect and show switch-back UI
+      secure: process.env.NODE_ENV !== 'development',
+    });
+    res.cookies.set(IMPERSONATING_COOKIE, '1', {
+      ...sessionCookieOptions(),
+      httpOnly: false, // client needs this for SwitchBackButton visibility
       secure: process.env.NODE_ENV !== 'development',
     });
   }

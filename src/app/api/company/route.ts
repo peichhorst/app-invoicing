@@ -32,6 +32,9 @@ type CompanyPayload = {
   isWhiteLabelEligible?: boolean | null;
   industry?: string | null;
   stripeWebhookSecret?: string | null;
+  stripeFeeResponsibility?: 'business_absorbs' | 'client_pays' | null;
+  stripePaymentMethodCard?: boolean | null;
+  stripePaymentMethodAch?: boolean | null;
 };
 
 const sanitizeWebsite = (value?: string | null) => {
@@ -232,6 +235,33 @@ export async function PUT(request: Request) {
   }
   if (body.industry !== undefined) {
     data.industry = sanitizeText(body.industry);
+  }
+  if (body.stripeFeeResponsibility !== undefined) {
+    const feeResponsibility =
+      body.stripeFeeResponsibility === 'client_pays' ? 'client_pays' : 'business_absorbs';
+    data.stripeFeeResponsibility = feeResponsibility;
+  }
+  if (body.stripePaymentMethodCard !== undefined) {
+    (data as Record<string, unknown>).stripePaymentMethodCard = Boolean(body.stripePaymentMethodCard);
+  }
+  if (body.stripePaymentMethodAch !== undefined) {
+    (data as Record<string, unknown>).stripePaymentMethodAch = Boolean(body.stripePaymentMethodAch);
+  }
+  if ((body.stripePaymentMethodCard !== undefined || body.stripePaymentMethodAch !== undefined)) {
+    const nextCardEnabled =
+      body.stripePaymentMethodCard !== undefined
+        ? Boolean(body.stripePaymentMethodCard)
+        : existing.stripePaymentMethodCard;
+    const nextAchEnabled =
+      body.stripePaymentMethodAch !== undefined
+        ? Boolean(body.stripePaymentMethodAch)
+        : existing.stripePaymentMethodAch;
+    if (!nextCardEnabled && !nextAchEnabled) {
+      return NextResponse.json(
+        { error: 'Enable at least one online payment method (Card or ACH).' },
+        { status: 400 },
+      );
+    }
   }
   if (body.completeOnboarding) {
     data.isOnboarded = true;

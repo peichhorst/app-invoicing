@@ -2,9 +2,10 @@
 import { NextResponse } from 'next/server';
 import { destroySession } from '@/lib/auth';
 import { cookies } from 'next/headers';
+import { resolveAppBaseUrl } from '@/lib/app-url';
 
 async function handleLogout(request: Request) {
-  const baseUrl = request?.url ? new URL(request.url).origin : 'http://localhost:3000';
+  const baseUrl = request?.url ? new URL(request.url).origin : resolveAppBaseUrl();
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get('session_token')?.value;

@@ -7,12 +7,16 @@ import { useFieldArray, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { InvoiceStatus } from '@prisma/client';
-import { Document, Page, StyleSheet, Text, View, pdf } from '@react-pdf/renderer';
 import { GripVertical } from 'lucide-react';
 import { ClientForm, type ClientFormValues } from '@/components/ClientForm';
 import DocumentPreview from '@/components/invoicing/DocumentPreview';
 import { useClientOptions } from '@/components/invoicing/useClientOptions';
 import { ClientSelect } from '@/components/invoicing/ClientSelect';
+import {
+  getRecurringPaymentTerms,
+  resolveInvoiceCompanyPreview,
+  resolveInvoicePaymentMethods,
+} from '@/lib/invoice-presentation';
 
 export type DocumentType = 'invoice' | 'recurring-invoice' | 'proposal' | 'contract';
 
@@ -30,6 +34,29 @@ export type DocumentEditorConfig = {
   showValidUntil?: boolean; // Proposals have valid until date
   enableTax?: boolean; // Invoices support tax
   upgradeHref?: string; // Upgrade link for Pro features
+  lockClientSelection?: boolean; // Prevent client reassignment in edit mode
+  initialValues?: Partial<{
+    invoiceNumber: string;
+    clientId: string;
+    title: string;
+    description: string;
+    scope: string;
+    issueDate: string;
+    dueDate: string;
+    validUntil: string;
+    notes: string;
+    recurringEnabled: boolean;
+    recurringInterval: 'day' | 'week' | 'month' | 'quarter' | 'year';
+    recurringDayOfMonth: number;
+    recurringDayOfWeek: number;
+    items: Array<{
+      description: string;
+      quantity: number;
+      unitPrice: number;
+      taxRate?: number;
+      taxEnabled?: boolean;
+    }>;
+  }>;
   onSubmit: (values: any, status: string) => Promise<{ id?: string; invoiceNumber?: string }>;
 };
 
@@ -54,7 +81,7 @@ const createSchema = (config: DocumentEditorConfig) =>
       dueDate: z.string().optional(),
       validUntil: config.showValidUntil ? z.string().optional() : z.string().optional(),
       notes: z.string().max(1000, 'Notes must be under 1000 characters').optional().or(z.literal('')),
-      recurringEnabled: config.alwaysRecurring ? z.literal(true) : z.boolean().optional(),
+      recurringEnabled: z.boolean().optional(),
       recurringInterval: z.enum(['day', 'week', 'month', 'quarter', 'year']).optional(),
       recurringDayOfMonth: z.number().int().min(1).max(31).optional(),
       recurringDayOfWeek: z.number().int().min(1).max(7).optional(),
@@ -82,6 +109,13 @@ const currencyFormatter = new Intl.NumberFormat('en-US', {
 
 const formatCurrency = (value: number) => currencyFormatter.format(Number.isFinite(value) ? value : 0);
 
+const parseLocalDateInput = (value?: string) => {
+  if (!value) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00` : value;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 function calculateNextRecurringDate(
   issueDateStr: string | undefined,
   interval: 'day' | 'week' | 'month' | 'quarter' | 'year' | undefined,
@@ -89,8 +123,8 @@ function calculateNextRecurringDate(
   dayOfWeek: number | undefined
 ): Date | null {
   if (!issueDateStr || !interval) return null;
-  const base = new Date(issueDateStr);
-  if (Number.isNaN(base.getTime())) return null;
+  const base = parseLocalDateInput(issueDateStr);
+  if (!base) return null;
 
   if (interval === 'day') {
     const next = new Date(base);
@@ -125,7 +159,6 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [isPending, startTransition] = useTransition();
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [dueEnabled, setDueEnabled] = useState(true);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [planTier, setPlanTier] = useState<string | null>(null);
@@ -136,6 +169,7 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
   const [showNewClient, setShowNewClient] = useState(false);
   const [addingClient, setAddingClient] = useState(false);
   const [sendFirstNow, setSendFirstNow] = useState(true);
+  const clientSelectionLocked = Boolean(config.lockClientSelection);
 
   const defaultDates = useMemo(() => {
     const today = new Date();
@@ -253,8 +287,47 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
   }, [loadedClients]);
 
   useEffect(() => {
+    if (!config.initialValues) return;
+    reset({
+      clientId: config.initialValues.clientId ?? '',
+      title: config.initialValues.title ?? '',
+      description: config.initialValues.description ?? '',
+      scope: config.initialValues.scope ?? '',
+      issueDate: config.initialValues.issueDate ?? defaultDates.issueDate,
+      dueDate: config.initialValues.dueDate ?? '',
+      validUntil: config.initialValues.validUntil ?? '',
+      notes: config.initialValues.notes ?? '',
+      recurringEnabled:
+        config.initialValues.recurringEnabled ??
+        (config.alwaysRecurring ? true : false),
+      recurringInterval: config.initialValues.recurringInterval ?? 'month',
+      recurringDayOfMonth: config.initialValues.recurringDayOfMonth ?? defaultRecurringDay,
+      recurringDayOfWeek: config.initialValues.recurringDayOfWeek ?? 1,
+      items:
+        config.initialValues.items && config.initialValues.items.length > 0
+          ? config.initialValues.items.map((item) => ({
+              description: item.description ?? '',
+              quantity: Number(item.quantity ?? 1) || 1,
+              unitPrice: Number(item.unitPrice ?? 0) || 0,
+              taxRate: Number(item.taxRate ?? 0) || 0,
+              taxEnabled: config.enableTax ? Boolean(item.taxEnabled) : false,
+            }))
+          : [
+              {
+                description: '',
+                quantity: 1,
+                unitPrice: 0,
+                taxRate: 0,
+                taxEnabled: false,
+              },
+            ],
+    });
+    setDueEnabled(Boolean(config.initialValues.dueDate));
+  }, [config.initialValues, config.alwaysRecurring, config.enableTax, defaultDates.issueDate, defaultRecurringDay, reset]);
+
+  useEffect(() => {
     let isMounted = true;
-    fetch('/api/auth/me')
+    fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
       .then(async (res) => {
         if (!res.ok) throw new Error('Failed to load plan');
         return res.json();
@@ -304,18 +377,20 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
   const watchedTitle = useWatch({ control, name: 'title' });
   const watchedScope = useWatch({ control, name: 'scope' });
   const watchedDescription = useWatch({ control, name: 'description' });
+  const watchedValidUntil = useWatch({ control, name: 'validUntil' });
   const recurringEnabledWatch = useWatch({ control, name: 'recurringEnabled' });
   const recurringIntervalWatch = useWatch({ control, name: 'recurringInterval' });
   const recurringDayOfMonthWatch = useWatch({ control, name: 'recurringDayOfMonth' });
   const recurringDayOfWeekWatch = useWatch({ control, name: 'recurringDayOfWeek' });
   const issueDateWatch = useWatch({ control, name: 'issueDate' });
+  const recurringEnabledEffective = config.alwaysRecurring || Boolean(recurringEnabledWatch);
 
   const canUseRecurring = planTier === 'PRO' || planTier === 'PRO_TRIAL';
 
   const nextRecurringPreview = useMemo(() => {
     if (!config.enableRecurring && !config.alwaysRecurring) return null;
     if (config.enableRecurring && !canUseRecurring) return null;
-    if (!recurringEnabledWatch) return null;
+    if (!recurringEnabledEffective) return null;
     return calculateNextRecurringDate(
       issueDateWatch,
       recurringIntervalWatch ?? 'month',
@@ -326,7 +401,7 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
     config.enableRecurring,
     config.alwaysRecurring,
     canUseRecurring,
-    recurringEnabledWatch,
+    recurringEnabledEffective,
     issueDateWatch,
     recurringIntervalWatch,
     recurringDayOfMonthWatch,
@@ -377,8 +452,9 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
     setSavingStatus(status);
 
     const onValid = async (values: FormValues) => {
-      try {
-        startTransition(async () => {
+      startTransition(() => {
+        void (async () => {
+          try {
           const result = await config.onSubmit(values, status);
           setToast({
             message: `${config.title} ${result.invoiceNumber || ''} ${status === 'DRAFT' ? 'saved' : 'sent'} successfully`,
@@ -387,18 +463,44 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
           setTimeout(() => {
             router.push(config.backHref);
           }, 800);
-        });
-      } catch (error: any) {
-        setToast({
-          message: error?.message || 'Something went wrong',
-          variant: 'error',
-        });
-        setSavingStatus(null);
-      }
+          } catch (error: any) {
+            setToast({
+              message: error?.message || 'Something went wrong',
+              variant: 'error',
+            });
+            setSavingStatus(null);
+          }
+        })();
+      });
     };
 
     const onInvalid = () => {
       setSavingStatus(null);
+      const firstErrorMessage = (() => {
+        const walk = (value: any): string | null => {
+          if (!value) return null;
+          if (typeof value.message === 'string' && value.message.trim()) return value.message.trim();
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              const found = walk(entry);
+              if (found) return found;
+            }
+            return null;
+          }
+          if (typeof value === 'object') {
+            for (const key of Object.keys(value)) {
+              const found = walk(value[key]);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+        return walk(errors);
+      })();
+      setToast({
+        message: firstErrorMessage || 'Please fix the highlighted form errors and try again.',
+        variant: 'error',
+      });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -407,25 +509,7 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
 
   const selectedClient = clientOptions.find((c) => c.id === getValues('clientId'));
 
-  const companyForPreview = currentUser
-    ? {
-        name: currentUser.company?.name || currentUser.companyName || currentUser.name || 'Your Company',
-        logoUrl: currentUser.company?.logoUrl || undefined,
-        address:
-          [
-            currentUser.company?.addressLine1,
-            currentUser.company?.addressLine2,
-            [currentUser.company?.city, currentUser.company?.state, currentUser.company?.postalCode]
-              .filter(Boolean)
-              .join(', '),
-            currentUser.company?.country,
-          ]
-            .filter(Boolean)
-            .join('\n') || undefined,
-        email: currentUser.company?.email || currentUser.email || undefined,
-        phone: currentUser.company?.phone || undefined,
-      }
-    : undefined;
+  const companyForPreview = currentUser ? resolveInvoiceCompanyPreview(currentUser) : undefined;
 
   const clientForPreview = selectedClient
     ? {
@@ -433,6 +517,11 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
         companyName: selectedClient.companyName || undefined,
       }
     : undefined;
+
+  const previewDocumentNumber =
+    config.type === 'invoice' || config.type === 'recurring-invoice'
+      ? config.initialValues?.invoiceNumber?.trim() || undefined
+      : undefined;
 
   const lineItemsForPreview =
     watchedItems?.map((item) => {
@@ -455,6 +544,25 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
     tax: summary.tax,
     total: summary.total,
   };
+
+  const paymentMethodsForPreview = useMemo(() => {
+    if (!currentUser) return undefined;
+    return resolveInvoicePaymentMethods(currentUser);
+  }, [currentUser]);
+
+  const recurringPaymentTermsForPreview = useMemo(() => {
+    return getRecurringPaymentTerms({
+      recurring: recurringEnabledEffective,
+      recurringInterval: recurringIntervalWatch ?? 'month',
+      recurringDayOfMonth: recurringDayOfMonthWatch ?? null,
+      recurringDayOfWeek: recurringDayOfWeekWatch ?? null,
+    });
+  }, [
+    recurringEnabledEffective,
+    recurringIntervalWatch,
+    recurringDayOfMonthWatch,
+    recurringDayOfWeekWatch,
+  ]);
 
   return (
     <div className="min-h-screen bg-gray-50 px-4 py-10 sm:px-8 lg:px-10">
@@ -496,6 +604,7 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
                         }}
                         clients={clientOptions}
                         loading={clientsLoading}
+                        disabled={clientSelectionLocked}
                         label="Client"
                         required
                       />
@@ -504,11 +613,15 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
                     <button
                       type="button"
                       onClick={() => setShowNewClient(true)}
-                      className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm hover:bg-brand-primary-700"
+                      disabled={clientSelectionLocked}
+                      className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-2 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       + Add New Client
                     </button>
                   </div>
+                  {clientSelectionLocked && (
+                    <p className="text-xs text-zinc-500">Client cannot be changed after invoice creation.</p>
+                  )}
                   {errors.clientId && <p className="text-xs text-rose-500">{errors.clientId.message}</p>}
 
                   {config.showTitle && (
@@ -795,7 +908,7 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
                         type="checkbox"
                         {...register('recurringEnabled')}
                         disabled={config.alwaysRecurring || (config.enableRecurring && !canUseRecurring)}
-                        checked={config.alwaysRecurring || recurringEnabledWatch}
+                        checked={recurringEnabledEffective}
                         className={`h-4 w-4 rounded border-zinc-300 text-purple-600 focus:ring-purple-500 ${
                           config.alwaysRecurring || (config.enableRecurring && !canUseRecurring)
                             ? 'cursor-not-allowed opacity-50'
@@ -804,7 +917,7 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
                       />
                       Send this invoice automatically every...
                     </label>
-                    {recurringEnabledWatch && (
+                    {recurringEnabledEffective && (
                       <div className="space-y-3 rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-4">
                         <div className="grid gap-3 sm:grid-cols-2">
                           <div className="space-y-2">
@@ -895,28 +1008,6 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
                 </div>
               </section>
 
-              {/* Action Buttons */}
-              <div className="flex flex-col gap-3 border-t border-zinc-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-zinc-500">All amounts are saved in USD.</p>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <button
-                    type="button"
-                    disabled={isPending || savingStatus !== null}
-                    onClick={() => triggerSubmit('DRAFT')}
-                    className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {savingStatus === 'DRAFT' ? 'Saving...' : 'Save Draft'}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isPending || savingStatus !== null}
-                    onClick={() => triggerSubmit(config.type === 'proposal' || config.type === 'contract' ? 'SENT' : 'UNPAID')}
-                    className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {savingStatus ? 'Sending...' : 'Save & Send'}
-                  </button>
-                </div>
-              </div>
             </form>
 
             {/* Preview */}
@@ -927,20 +1018,46 @@ export function DocumentEditor({ config }: { config: DocumentEditorConfig }) {
                 client={clientForPreview}
                 lineItems={lineItemsForPreview}
                 totals={totalsForPreview}
-                documentNumber={undefined}
-                issueDate={issueDateWatch ? new Date(issueDateWatch) : undefined}
+                paymentMethods={config.type === 'invoice' || config.type === 'recurring-invoice' ? paymentMethodsForPreview : undefined}
+                showPoweredByClientWave={planTier === 'FREE'}
+                documentNumber={previewDocumentNumber}
+                issueDate={issueDateWatch ? parseLocalDateInput(issueDateWatch) ?? undefined : undefined}
                 dueDate={
-                  config.showValidUntil && watch('validUntil')
-                    ? new Date(watch('validUntil') + 'T00:00:00')
+                  config.showValidUntil && watchedValidUntil
+                    ? parseLocalDateInput(watchedValidUntil) ?? undefined
                     : watchedDueDate
-                    ? new Date(watchedDueDate + 'T00:00:00')
+                    ? parseLocalDateInput(watchedDueDate) ?? undefined
                     : undefined
                 }
                 paymentTerms={watchedNotes || undefined}
+                recurringPaymentTerms={recurringPaymentTermsForPreview}
                 notes={watchedScope || undefined}
                 proposalTitle={watchedTitle || undefined}
                 proposalDescription={watchedDescription || undefined}
               />
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex flex-col gap-3 border-t border-zinc-100 pt-2 sm:flex-row sm:items-center sm:justify-between">
+              <button
+                type="button"
+                disabled={isPending || savingStatus !== null}
+                onClick={() => triggerSubmit('DRAFT')}
+                className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingStatus === 'DRAFT' ? 'Saving...' : 'Save Draft'}
+              </button>
+            <div className="flex flex-col gap-3 sm:flex-row">
+            
+              <button
+                type="button"
+                disabled={isPending || savingStatus !== null}
+                onClick={() => triggerSubmit(config.type === 'proposal' || config.type === 'contract' ? 'SENT' : 'OPEN')}
+                className="inline-flex items-center justify-center rounded-lg bg-brand-primary-600 px-6 py-3 text-sm font-semibold text-[var(--color-brand-contrast)] shadow-sm transition hover:bg-brand-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingStatus ? 'Sending...' : 'Save & Send'}
+              </button>
             </div>
           </div>
 

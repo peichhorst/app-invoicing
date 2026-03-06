@@ -13,6 +13,7 @@ interface PaymentTermsFooterProps {
   };
   documentType?: DocumentType;
   showThankYou?: boolean;
+  showPoweredByClientWave?: boolean;
 }
 
 export default function PaymentTermsFooter({
@@ -22,6 +23,7 @@ export default function PaymentTermsFooter({
   bankDetails,
   documentType = 'invoice',
   showThankYou = true,
+  showPoweredByClientWave = false,
 }: PaymentTermsFooterProps) {
   const dueDateLabel = dueDate
     ? new Date(dueDate).toLocaleDateString('en-US', {
@@ -110,6 +112,9 @@ export default function PaymentTermsFooter({
           <p className="text-sm font-medium text-gray-500">
             Thank you for your business!
           </p>
+          {showPoweredByClientWave && (
+            <p className="mt-1 text-xs text-gray-400">Powered by ClientWave</p>
+          )}
         </div>
       )}
     </div>

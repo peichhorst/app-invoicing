@@ -24,7 +24,7 @@ export function AppointmentsSection({ bookings, timezone }: AppointmentsSectionP
       <div className="pt-6 pb-2 px-4">
         {bookings.length === 0 ? (
           <div className="mt-4 rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-8 text-center">
-            <p className="text-sm text-zinc-500">No bookings yet. Share your booking link to get started.</p>
+            <p className="text-sm text-zinc-500">No bookings yet.</p>
           </div>
         ) : (
           <>

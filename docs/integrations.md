@@ -9,8 +9,20 @@ The Integrations module connects ClientWave with your existing tools and service
 - **Two-way Sync**: Events automatically sync in both directions
 - **Availability Management**: Block out unavailable times
 - **Time Zone Handling**: Automatic adjustment for different regions
+- **Public Booking Time Zone Selector**: Visitors can switch display timezone on booking pages without changing host availability rules
 - **Meeting Invites**: Send calendar invitations to clients
 - **Conflict Prevention**: Avoid double-booking scenarios
+- **OAuth Base URL**: Google Calendar OAuth callback and webhook URLs are currently hard-forced to `https://www.clientwave.app` (no localhost/env fallback) to avoid callback drift during production rollout.
+- **Connected State UI**: When connected, Settings shows a Stripe-style emerald `Connected` badge with check icon, and the `Disconnect` action appears directly beneath that status indicator.
+- **Booking Link Copy**: Scheduling public booking links include a one-click copy action, matching the embed snippet copy workflow.
+- **Availability-Gated Share/Embed**: In Scheduling, the `Share & Embed` block appears below availability settings, is greyed out until at least one day is selected, and includes an accordion summary of chosen slots.
+
+**Usage Example (Public Booking Timezone):**
+- Open a public booking page and use the **Time zone** dropdown above the calendar.
+- Pick a timezone such as `America/New_York`.
+- Calendar availability remains based on the host schedule, while slot labels and selected date/time display in the chosen visitor timezone.
+- Booking submission is still saved in UTC and synced to calendar integrations as normal.
+- The booking panel shows **Meeting length** above slot options so visitors understand session duration before selecting a time.
 
 #### Microsoft Outlook
 - **Exchange Support**: Direct integration with Exchange servers
@@ -53,6 +65,17 @@ The Integrations module connects ClientWave with your existing tools and service
 - **Subscription Billing**: Recurring payment management
 - **Dispute Handling**: Automated chargeback management
 - **Fraud Protection**: Built-in fraud detection
+- **Connect OAuth Safety**: Stripe Connect return URLs are constrained to in-app relative paths, and Connect token exchange supports `STRIPE_CONNECT_SECRET_KEY` with `STRIPE_SECRET_KEY` fallback.
+- **Connect Modes**: The primary **Connect with Stripe** action uses Express onboarding via account links.
+- **Alternative Setup Toggle**: A secondary **Alternative Setup** toggle appears under the primary button when not connected.
+- **Standard Fallback**: Expanding **Alternative Setup** shows manual instructions and one branded **Start Standard Stripe Connect** button for existing Stripe account linking.
+- **Return UX**: After Stripe onboarding redirects back, Business Settings auto-scrolls to the Stripe section for immediate verification and save.
+- **Express Webhook UI**: For Express + platform-managed webhook mode, Business Settings shows a simplified “Managed by ClientWave platform” webhook status card instead of detailed manual diagnostics.
+- **Stripe Fee Responsibility**: Business Settings includes a Stripe fee responsibility selector:
+  - `Business absorbs Stripe fees`
+  - `Client pays Stripe fees` (adds processing fee in checkout)
+- **Webhook Handling**: Webhook setup is handled automatically by the connect flow; in Stripe configurations that block connected-account endpoints, the app falls back to platform-level webhook handling.
+- **Connected Account Visibility**: Business Settings now shows the currently connected Stripe account ID (`acct_...`) in the Stripe connected status block.
 
 #### PayPal
 - **Digital Wallet**: Accept PayPal account payments
@@ -210,6 +233,8 @@ The Integrations module connects ClientWave with your existing tools and service
 - **Rate Limiting**: API limits affecting performance
 - **Data Conflicts**: Discrepancies between systems
 - **Connection Timeouts**: Network-related issues
+- **Stripe Connect loss-responsibility block**: If Stripe returns a notice to review connected-account loss responsibilities, complete that one-time setup at `https://dashboard.stripe.com/settings/connect/platform-profile`, then retry connecting.
+- **Connected-account webhook restriction**: Some Stripe account/platform configurations block creating webhook endpoints directly on connected accounts. In that case, ClientWave falls back to platform Connect webhook handling and marks webhook mode/status accordingly.
 
 ## Support
 

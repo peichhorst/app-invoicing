@@ -89,6 +89,11 @@ enum StripeWebhookStatus {
   error
 }
 
+enum StripeFeeResponsibility {
+  business_absorbs
+  client_pays
+}
+
 model StripeWebhookEndpoint {
   id            String   @id @default(cuid())
   accountId     String   @unique
@@ -532,6 +537,9 @@ model Company {
   stripeWebhookStatus          StripeWebhookStatus?
   stripeWebhookLastError       String?
   stripeWebhookPlatformManaged Boolean?
+  stripeFeeResponsibility      StripeFeeResponsibility @default(business_absorbs)
+  stripePaymentMethodCard      Boolean              @default(true)
+  stripePaymentMethodAch       Boolean              @default(false)
   venmoHandle                  String?
   zelleHandle                  String?
   mailToAddressEnabled         Boolean              @default(false)

@@ -11,8 +11,13 @@ type RouteContext = {
 };
 
 const toErrorMessage = (err: unknown) => (err instanceof Error ? err.message : 'Unknown error');
+const MANUAL_PAYMENT_METHODS = ['venmo', 'zelle', 'check', 'cash', 'other'] as const;
+type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
 
-export async function POST(_req: Request, { params }: RouteContext) {
+const isManualPaymentMethod = (value: unknown): value is ManualPaymentMethod =>
+  typeof value === 'string' && MANUAL_PAYMENT_METHODS.includes(value as ManualPaymentMethod);
+
+export async function POST(req: Request, { params }: RouteContext) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -20,6 +25,24 @@ export async function POST(_req: Request, { params }: RouteContext) {
     const companyId = user.companyId ?? user.company?.id ?? null;
 
     const { id } = await params;
+    const body = await req.json().catch(() => ({}));
+    const paymentMethodRaw = body?.paymentMethod;
+    const otherPaymentMethodRaw =
+      typeof body?.otherPaymentMethod === 'string' ? body.otherPaymentMethod.trim() : '';
+
+    if (!isManualPaymentMethod(paymentMethodRaw)) {
+      return NextResponse.json(
+        { error: 'Select a payment method: Venmo, Zelle, Check, Cash, or Other.' },
+        { status: 400 },
+      );
+    }
+
+    if (paymentMethodRaw === 'other' && !otherPaymentMethodRaw) {
+      return NextResponse.json(
+        { error: 'Enter the custom payment method when selecting Other.' },
+        { status: 400 },
+      );
+    }
     const invoice = await prisma.invoice.findFirst({
       where: isOwnerOrAdmin
         ? { id, user: { companyId: companyId ?? undefined } }
@@ -54,6 +77,21 @@ export async function POST(_req: Request, { params }: RouteContext) {
           amount: new Prisma.Decimal(invoice.total ?? 0),
           currency: invoice.currency ?? 'USD',
           paidAt: new Date(),
+          metadata: {
+            manualPaymentMethod: paymentMethodRaw,
+            ...(paymentMethodRaw === 'other' ? { manualPaymentMethodOther: otherPaymentMethodRaw } : {}),
+          },
+        },
+      });
+    } else {
+      await prisma.payment.update({
+        where: { id: existingPayment.id },
+        data: {
+          metadata: {
+            ...(typeof existingPayment.metadata === 'object' && existingPayment.metadata ? existingPayment.metadata : {}),
+            manualPaymentMethod: paymentMethodRaw,
+            manualPaymentMethodOther: paymentMethodRaw === 'other' ? otherPaymentMethodRaw : null,
+          },
         },
       });
     }
@@ -146,7 +184,7 @@ export async function DELETE(_req: Request, { params }: RouteContext) {
 
     await reconcileInvoiceStatus(id);
     const refreshed = await prisma.invoice.findUnique({ where: { id } });
-    const nextStatus = refreshed?.status ?? 'UNPAID';
+    const nextStatus = refreshed?.status ?? 'OPEN';
     return NextResponse.json({ ok: true, status: nextStatus });
   } catch (err) {
     console.error('Unmark invoice paid failed', err);
